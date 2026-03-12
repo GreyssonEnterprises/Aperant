@@ -5,7 +5,7 @@
 
 import { mkdir, writeFile, readFile, stat } from 'fs/promises';
 import path from 'path';
-import type { Project } from '../../../shared/types';
+import type { Project, TaskMetadata } from '../../../shared/types';
 import type { GitLabAPIIssue, GitLabAPINoteBasic, GitLabConfig } from './types';
 import { labelMatchesWholeWord } from '../shared/label-utils';
 import { sanitizeText, sanitizeStringArray } from '../shared/sanitize';
@@ -460,11 +460,12 @@ export async function createSpecForIssue(
     await writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');
 
     // Create task_metadata.json (consistent with GitHub format for backend compatibility)
-    const taskMetadata = {
+    const taskMetadata: TaskMetadata = {
       sourceType: 'gitlab' as const,
       gitlabIssueIid: safeIssue.iid,
       gitlabUrl: safeIssue.web_url,
       category: determineCategoryFromLabels(safeIssue.labels || []),
+      userDescription: safeIssue.description || '',
       // Store baseBranch for worktree creation and QA comparison
       ...(baseBranch && { baseBranch })
     };

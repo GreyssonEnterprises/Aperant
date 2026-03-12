@@ -440,14 +440,16 @@ export function UsageIndicator() {
         );
       }
     } else {
-      // No cached data for target — clear stale usage so it shows loading
-      setUsage(null);
+      // No cached data for target — keep old usage while waiting for fresh data
+      // (setting null causes "Usage data unavailable" flash; the backend checkNow()
+      // triggered by setQueueOrder will push fresh data via onUsageUpdated event)
     }
 
     await setQueueOrder(newOrder);
 
-    // Fetch fresh data from backend
-    window.electronAPI.requestUsageUpdate();
+    // The queue order handler triggers checkNow() on the UsageMonitor,
+    // which will emit 'usage-updated' with fresh data for the new active profile.
+    // Also request all profiles to refresh the sidebar.
     window.electronAPI.requestAllProfilesUsage?.();
   }, [settings.globalPriorityOrder, providerAccounts, setQueueOrder, otherProfiles, usage, isCrossProviderMode]);
 
@@ -757,6 +759,7 @@ export function UsageIndicator() {
     const unsubscribeAllProfiles = window.electronAPI.onAllProfilesUsageUpdated?.((allProfilesUsage) => {
       // Filter out the active profile - we only want to show "other" profiles
       const nonActiveProfiles = allProfilesUsage.allProfiles.filter(p => !p.isActive);
+      console.log('[UsageIndicator] Event: all profiles updated:', nonActiveProfiles.map(p => ({ id: p.profileId, name: p.profileName, session: p.sessionPercent, weekly: p.weeklyPercent })));
       setOtherProfiles(nonActiveProfiles);
       // Track if active profile needs re-auth
       const activeProfile = allProfilesUsage.allProfiles.find(p => p.isActive);
@@ -781,6 +784,8 @@ export function UsageIndicator() {
     window.electronAPI.requestAllProfilesUsage?.().then((result) => {
       if (result.success && result.data) {
         const nonActiveProfiles = result.data.allProfiles.filter(p => !p.isActive);
+        console.log('[UsageIndicator] Initial allProfiles received:', result.data.allProfiles.map(p => ({ id: p.profileId, name: p.profileName, active: p.isActive, session: p.sessionPercent, weekly: p.weeklyPercent })));
+        console.log('[UsageIndicator] Non-active profiles for matching:', nonActiveProfiles.map(p => ({ id: p.profileId, name: p.profileName })));
         setOtherProfiles(nonActiveProfiles);
         // Track if active profile needs re-auth (even if main usage is unavailable)
         const activeProfile = result.data.allProfiles.find(p => p.isActive);
@@ -864,6 +869,17 @@ export function UsageIndicator() {
                     ?? (hasOAuthMonitoring
                       ? otherProfiles.find(p => p.profileName === account.name || p.profileEmail === account.name)
                       : undefined);
+
+                  if (!profileData && hasOAuthMonitoring) {
+                    console.log('[UsageIndicator] No profileData match for account:', {
+                      accountId: account.id,
+                      accountName: account.name,
+                      claudeProfileId: account.claudeProfileId,
+                      provider: account.provider,
+                      authType: account.authType,
+                      otherProfileIds: otherProfiles.map(p => ({ id: p.profileId, name: p.profileName }))
+                    });
+                  }
 
                   return (
                     <div

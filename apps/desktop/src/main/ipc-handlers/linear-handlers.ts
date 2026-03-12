@@ -524,7 +524,8 @@ ${safeDescription || 'No description provided.'}
               linearIssueId: sanitizeText(issue.id, 100),
               linearIdentifier: safeIdentifier,
               linearUrl: safeUrl,
-              category: 'feature'
+              category: 'feature',
+              userDescription: description,
             };
             // lgtm[js/http-to-file-access] - specDir is controlled, Linear data sanitized
             writeFileSync(path.join(specDir, 'task_metadata.json'), JSON.stringify(metadata, null, 2), 'utf-8');

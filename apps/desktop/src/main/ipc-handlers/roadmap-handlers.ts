@@ -585,6 +585,7 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join("\n"
           sourceType: "roadmap",
           featureId: feature.id,
           category: "feature",
+          userDescription: taskDescription,
         };
         await writeFileWithRetry(path.join(specDir, "task_metadata.json"), JSON.stringify(metadata, null, 2), { encoding: 'utf-8' });
 

@@ -447,28 +447,48 @@ export class ProjectStore {
           }
         }
 
-        let description = '';
-        const requirementsPath = path.join(specPath, AUTO_BUILD_PATHS.REQUIREMENTS);
-        // PRIORITY 1: Read original user task description from requirements.json
-        if (existsSync(requirementsPath)) {
+        // Try to read task metadata (read early — userDescription is the preferred source)
+        const metadataPath = path.join(specPath, 'task_metadata.json');
+        let metadata: TaskMetadata | undefined;
+        if (existsSync(metadataPath)) {
           try {
-            const reqContent = readFileSync(requirementsPath, 'utf-8');
-            const requirements = JSON.parse(reqContent);
-            if (typeof requirements.task_description === 'string' && requirements.task_description.trim()) {
-              // Use the full task description that the user entered
-              description = requirements.task_description.trim();
-            }
+            const content = readFileSync(metadataPath, 'utf-8');
+            metadata = JSON.parse(content);
           } catch {
             // Ignore parse errors
           }
         }
 
-        // PRIORITY 2: Fallback to plan description if user requirement text is missing
+        // Resolve task description with priority fallback:
+        // PRIORITY 0: task_metadata.json userDescription (immutable — spec pipeline can't overwrite)
+        // PRIORITY 1: requirements.json task_description (original format, before spec pipeline rewrites it)
+        // PRIORITY 2: implementation_plan.json description (AI-generated summary)
+        // PRIORITY 3: spec.md Overview section (AI-synthesized content)
+        let description = '';
+
+        if (typeof metadata?.userDescription === 'string' && metadata.userDescription.trim()) {
+          description = metadata.userDescription.trim();
+        }
+
+        if (!description) {
+          const requirementsPath = path.join(specPath, AUTO_BUILD_PATHS.REQUIREMENTS);
+          if (existsSync(requirementsPath)) {
+            try {
+              const reqContent = readFileSync(requirementsPath, 'utf-8');
+              const requirements = JSON.parse(reqContent);
+              if (typeof requirements.task_description === 'string' && requirements.task_description.trim()) {
+                description = requirements.task_description.trim();
+              }
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+
         if (!description && plan?.description) {
           description = plan.description;
         }
 
-        // PRIORITY 3: Final fallback to spec.md Overview (AI-synthesized content)
         if (!description && existsSync(specFilePath)) {
           try {
             const content = readFileSync(specFilePath, 'utf-8');
@@ -481,18 +501,6 @@ export class ProjectStore {
             }
           } catch {
             // Ignore read errors
-          }
-        }
-
-        // Try to read task metadata
-        const metadataPath = path.join(specPath, 'task_metadata.json');
-        let metadata: TaskMetadata | undefined;
-        if (existsSync(metadataPath)) {
-          try {
-            const content = readFileSync(metadataPath, 'utf-8');
-            metadata = JSON.parse(content);
-          } catch {
-            // Ignore parse errors
           }
         }
 

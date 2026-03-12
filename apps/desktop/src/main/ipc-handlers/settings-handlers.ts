@@ -1039,6 +1039,16 @@ export function registerSettingsHandlers(
           // Non-fatal: usage-monitor may use stale order until next app restart
         }
 
+        // Trigger immediate usage check so the new active profile's data is fetched
+        // Without this, the UI shows "Usage data unavailable" until the next polling cycle
+        try {
+          const { getUsageMonitor } = await import('../claude-profile/usage-monitor');
+          const monitor = getUsageMonitor();
+          monitor.checkNow();
+        } catch {
+          // Non-fatal: usage will be fetched on next poll
+        }
+
         console.warn('[PROVIDER_ACCOUNTS_SET_QUEUE_ORDER] Queue order updated:', order.length, 'accounts');
         return { success: true };
       } catch (error) {

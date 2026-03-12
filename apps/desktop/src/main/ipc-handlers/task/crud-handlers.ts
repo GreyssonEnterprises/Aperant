@@ -207,10 +207,11 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
       const specDir = path.join(specsDir, specId);
       mkdirSync(specDir, { recursive: true });
 
-      // Build metadata with source type
+      // Build metadata with source type and preserve original user description
       const taskMetadata: TaskMetadata = {
         sourceType: 'manual',
-        ...metadata
+        ...metadata,
+        userDescription: description,
       };
 
       // Process and save attached images
@@ -590,6 +591,11 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
             }
 
             updatedMetadata.attachedImages = savedImages;
+          }
+
+          // Keep userDescription in sync when description is edited
+          if (updates.description !== undefined) {
+            updatedMetadata.userDescription = updates.description;
           }
 
           // Sanitize thinking levels and update task_metadata.json

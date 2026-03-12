@@ -214,6 +214,7 @@ export class UsageMonitor extends EventEmitter {
   private currentUsage: ClaudeUsageSnapshot | null = null;
   private currentUsageProfileId: string | null = null; // Track which profile's usage is in currentUsage
   private isChecking = false;
+  private pendingCheckAfterCurrent = false;
 
   // Per-profile API failure tracking with cooldown-based retry
   // Map<profileId, lastFailureTimestamp> - stores when API last failed for this profile
@@ -310,7 +311,12 @@ export class UsageMonitor extends EventEmitter {
 
     this.debugLog('[UsageMonitor] Starting with interval: ' + interval + ' ms (5-minute updates for active profile usage stats)');
 
-    // Check immediately
+    // Fetch all profiles usage immediately on startup so the UI shows real data.
+    // This runs independently of checkUsageAndSwap — even if the active profile's
+    // fetch fails (e.g., 429), inactive profiles still get fetched and displayed.
+    this.fetchAllProfilesOnStartup();
+
+    // Check immediately (handles proactive swap for active profile)
     this.checkUsageAndSwap();
 
     // Then check periodically
@@ -327,6 +333,43 @@ export class UsageMonitor extends EventEmitter {
       clearInterval(this.intervalId);
       this.intervalId = null;
       this.debugLog('[UsageMonitor] Stopped');
+    }
+  }
+
+  /**
+   * Fetch all profiles' usage on startup so the UI shows real data immediately.
+   * Runs asynchronously — doesn't block app startup. Errors are non-fatal.
+   *
+   * We wait briefly for checkUsageAndSwap() to populate currentUsage (active profile),
+   * then call getAllProfilesUsage() which fetches inactive profiles and combines everything.
+   * If the active profile fetch fails (e.g., 429), we still call _doGetAllProfilesUsage
+   * directly to populate inactive profile data for the UI.
+   */
+  private async fetchAllProfilesOnStartup(): Promise<void> {
+    try {
+      // Wait for checkUsageAndSwap() to have a chance to populate currentUsage.
+      // 5s is enough for most API responses; if it fails, we proceed with partial data.
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      console.log('[UsageMonitor] Startup: fetching all profiles usage for UI...');
+
+      let allProfilesUsage: AllProfilesUsage | null;
+      if (this.currentUsage) {
+        // Active profile data is available — use the normal path
+        allProfilesUsage = await this.getAllProfilesUsage(true);
+      } else {
+        // Active profile fetch failed (429, etc.) — fetch inactive profiles directly
+        console.log('[UsageMonitor] Startup: active profile usage unavailable, fetching inactive profiles directly');
+        allProfilesUsage = await this._doGetAllProfilesUsage(true);
+      }
+
+      if (allProfilesUsage) {
+        this.emit('all-profiles-usage-updated', allProfilesUsage);
+        console.log('[UsageMonitor] Startup: all profiles usage emitted to UI (' + allProfilesUsage.allProfiles.length + ' profiles)');
+      }
+    } catch (error) {
+      // Non-fatal — the regular polling will pick it up
+      console.log('[UsageMonitor] Startup: failed to fetch all profiles usage (non-fatal):', error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -447,6 +490,7 @@ export class UsageMonitor extends EventEmitter {
       await this.appendZAIAccounts(allProfiles);
 
       // Return minimal data with auth status - don't return null!
+      console.log('[UsageMonitor] getAllProfilesUsage fast-path (no currentUsage):', allProfiles.map(p => ({ id: p.profileId, name: p.profileName, email: p.profileEmail, active: p.isActive })));
       return {
         activeProfile: {
           profileId: activeProfileId || '',
@@ -760,9 +804,18 @@ export class UsageMonitor extends EventEmitter {
     // Sort by availability score (highest first = most available)
     allProfiles.sort((a, b) => b.availabilityScore - a.availabilityScore);
 
+    // Build active profile data — may be null on startup if the active profile's fetch failed
+    const activeProfile = this.currentUsage ?? {
+      profileId: settings.activeProfileId || '',
+      profileName: settings.profiles.find(p => p.id === settings.activeProfileId)?.name || '',
+      sessionPercent: 0,
+      weeklyPercent: 0,
+      fetchedAt: new Date(),
+    };
+
+    console.log('[UsageMonitor] _doGetAllProfilesUsage complete:', allProfiles.map(p => ({ id: p.profileId, name: p.profileName, session: p.sessionPercent, weekly: p.weeklyPercent, active: p.isActive })));
     return {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      activeProfile: this.currentUsage!, // Non-null: _doGetAllProfilesUsage is only called when currentUsage is set
+      activeProfile,
       allProfiles,
       fetchedAt: new Date()
     };
@@ -1316,7 +1369,8 @@ export class UsageMonitor extends EventEmitter {
    */
   private async checkUsageAndSwap(): Promise<void> {
     if (this.isChecking) {
-      return; // Prevent concurrent checks
+      this.pendingCheckAfterCurrent = true; // Re-run after current check completes
+      return;
     }
 
     this.isChecking = true;
@@ -1436,6 +1490,13 @@ export class UsageMonitor extends EventEmitter {
       console.error('[UsageMonitor] Check failed:', error);
     } finally {
       this.isChecking = false;
+      // If a check was requested while we were busy, run it now
+      if (this.pendingCheckAfterCurrent) {
+        this.pendingCheckAfterCurrent = false;
+        this.checkUsageAndSwap().catch(error => {
+          console.error('[UsageMonitor] Pending check failed:', error);
+        });
+      }
     }
   }
 

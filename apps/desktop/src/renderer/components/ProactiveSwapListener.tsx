@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw, X } from 'lucide-react';
 import { Button } from './ui/button';
+import { loadSettings } from '../stores/settings-store';
 
 interface SwapNotification {
   fromProfile: string;
@@ -33,6 +34,15 @@ export function ProactiveSwapListener() {
 
       setNotification(notif);
       setIsVisible(true);
+
+      // Reload settings so the UI reflects the new active account
+      // (proactive swap updates globalPriorityOrder in the settings file)
+      loadSettings();
+
+      // Request fresh usage data for the new active profile
+      // Without this, UsageIndicator shows "Usage data unavailable" until next poll
+      window.electronAPI.requestUsageUpdate();
+      window.electronAPI.requestAllProfilesUsage?.();
 
       // Auto-hide after 5 seconds
       setTimeout(() => {

@@ -165,6 +165,7 @@ export async function createSpecForIssue(
       githubIssueNumber: issueNumber,
       githubUrl: safeGithubUrl,
       category,
+      userDescription: safeDescription,
       // Store baseBranch for worktree creation and QA comparison
       // This comes from project.settings.mainBranch or task-level override
       ...(baseBranch && { baseBranch })
