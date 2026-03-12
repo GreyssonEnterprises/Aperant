@@ -341,6 +341,15 @@ async function runSingleSession(
           modelId: phaseModelId,
         })
       : undefined,
+    onAccountSwitch: config.accountQueue?.length
+      ? async (failedAccountId: string) => {
+          const { resolveAuthFromQueue } = await import('../auth/resolver');
+          return resolveAuthFromQueue(baseSession.modelId, config.accountQueue!, {
+            excludeAccountIds: [failedAccountId],
+          });
+        }
+      : undefined,
+    currentAccountId: config.currentAccountId,
   };
 
   let sessionResult: SessionResult;
@@ -517,6 +526,15 @@ async function runDefaultSession(
             modelId: session.modelId,
           })
         : undefined,
+      onAccountSwitch: config.accountQueue?.length
+        ? async (failedAccountId: string) => {
+            const { resolveAuthFromQueue } = await import('../auth/resolver');
+            return resolveAuthFromQueue(session.modelId, config.accountQueue!, {
+              excludeAccountIds: [failedAccountId],
+            });
+          }
+        : undefined,
+      currentAccountId: config.currentAccountId,
     }, {
       contextWindowLimit,
       apiKey: session.apiKey,
@@ -1113,6 +1131,15 @@ async function runAgenticSpecOrchestrator(
             modelId: session.modelId,
           })
         : undefined,
+      onAccountSwitch: config.accountQueue?.length
+        ? async (failedAccountId: string) => {
+            const { resolveAuthFromQueue } = await import('../auth/resolver');
+            return resolveAuthFromQueue(session.modelId, config.accountQueue!, {
+              excludeAccountIds: [failedAccountId],
+            });
+          }
+        : undefined,
+      currentAccountId: config.currentAccountId,
     }, {
       contextWindowLimit,
       apiKey: session.apiKey,

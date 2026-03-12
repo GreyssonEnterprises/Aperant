@@ -140,6 +140,10 @@ export class AgentManager extends EventEmitter {
     provider: string;
     modelId: string;
     configDir?: string;
+    /** Full ordered account queue for worker-side auto-swap */
+    accountQueue?: ProviderAccount[];
+    /** The account ID selected for this session */
+    currentAccountId?: string;
   }> {
     // Read provider accounts and priority order from settings
     const settings = readSettingsFile();
@@ -181,6 +185,8 @@ export class AgentManager extends EventEmitter {
           provider: resolved.resolvedProvider,
           modelId: resolved.resolvedModelId,
           configDir: undefined, // Queue-based auth handles its own token refresh
+          accountQueue: orderedQueue,
+          currentAccountId: resolved.accountId,
         };
       }
       console.warn('[AgentManager] No available account in provider queue, falling back to legacy profile');
@@ -413,6 +419,8 @@ export class AgentManager extends EventEmitter {
       projectId,
       processType: 'spec-creation',
       session: sessionConfig,
+      accountQueue: resolved.accountQueue,
+      currentAccountId: resolved.currentAccountId,
     };
 
     // Store context for potential restart
@@ -537,6 +545,8 @@ export class AgentManager extends EventEmitter {
       projectId,
       processType: 'task-execution',
       session: sessionConfig,
+      accountQueue: resolved.accountQueue,
+      currentAccountId: resolved.currentAccountId,
     };
 
     // Store context for potential restart
@@ -640,6 +650,8 @@ export class AgentManager extends EventEmitter {
       projectId,
       processType: 'qa-process',
       session: sessionConfig,
+      accountQueue: resolved.accountQueue,
+      currentAccountId: resolved.currentAccountId,
     };
 
     await this.processManager.spawnWorkerProcess(taskId, executorConfig, {}, 'qa-process', projectId);

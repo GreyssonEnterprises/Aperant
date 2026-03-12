@@ -27,6 +27,7 @@ import { buildThinkingProviderOptions } from '../config/types';
 import { createStreamHandler } from './stream-handler';
 import type { FullStreamPart } from './stream-handler';
 import { classifyError, isAuthenticationError, isRateLimitError } from './error-classifier';
+import { extractWaitDuration, sleepWithAbort, formatWaitDuration } from './rate-limit-wait';
 import { ProgressTracker } from './progress-tracker';
 import type {
   SessionConfig,
@@ -196,7 +197,19 @@ export async function runAgentSession(
           activeAccountId = newAuth.accountId;
           continue;
         }
-        // No more accounts available — fall through to legacy retry
+        // No more accounts available — try wait-and-retry for session limits
+        if (isRateLimitError(error)) {
+          const waitInfo = extractWaitDuration(error);
+          if (waitInfo) {
+            onEvent?.({
+              type: 'status',
+              text: `Rate limited. Waiting ${formatWaitDuration(waitInfo.waitMs)} for reset...`,
+            });
+            const completed = await sleepWithAbort(waitInfo.waitMs, activeConfig.abortSignal);
+            if (completed) continue; // Retry after wait
+            // Aborted during wait — fall through to error
+          }
+        }
       }
 
       // Legacy auth refresh (single-provider token refresh)
@@ -363,6 +376,7 @@ async function executeStream(
 
   const result = streamText({
     model: config.model,
+    maxRetries: 0, // Prevent AI SDK from retrying against same rate-limited account — our catch block handles retry with account switching
     system: isCodex ? undefined : config.systemPrompt,
     messages: aiMessages,
     tools: tools ?? {},

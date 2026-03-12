@@ -272,16 +272,34 @@ export class BuildOrchestrator extends EventEmitter {
           `Implementation plan is invalid and cannot be executed: ${errorDetail}`);
       }
 
-      // Check if build is already complete
+      // Guard: if all subtasks appear "completed" but no coding has actually happened,
+      // the spec pipeline or planner marked them erroneously. Reset to "pending".
+      // This catches the case where the spec orchestrator created the plan (isFirstRun=false)
+      // but the planner LLM set all subtasks to "completed" during planning.
       if (await this.isBuildComplete()) {
-        this.transitionPhase('complete', 'Build already complete');
-        return this.buildOutcome(true, Date.now() - startTime);
+        const hasCodedBefore = await this.hasCodingEvidence();
+        if (!hasCodedBefore) {
+          this.emitTyped('log', 'All subtasks marked completed but no coding evidence found — resetting to pending');
+          await this.resetSubtaskStatuses();
+        } else {
+          // Coding happened — check if QA already passed before declaring complete.
+          // This handles the restart-after-QA-failure case: skip coding, re-run QA.
+          const qaStatus = await this.readQAStatus();
+          if (qaStatus === 'passed') {
+            this.transitionPhase('complete', 'Build already complete');
+            return this.buildOutcome(true, Date.now() - startTime);
+          }
+          // QA failed or never ran — skip coding, fall through to QA
+          this.emitTyped('log', `Coding complete but QA status is "${qaStatus}" — skipping to QA`);
+        }
       }
 
-      // Coding phase
-      const codingResult = await this.runCodingPhase();
-      if (!codingResult.success) {
-        return this.buildOutcome(false, Date.now() - startTime, codingResult.error);
+      // Coding phase (skip if all subtasks already completed with coding evidence)
+      if (!await this.isBuildComplete()) {
+        const codingResult = await this.runCodingPhase();
+        if (!codingResult.success) {
+          return this.buildOutcome(false, Date.now() - startTime, codingResult.error);
+        }
       }
 
       // QA review phase
@@ -681,6 +699,26 @@ export class BuildOrchestrator extends EventEmitter {
       return false;
     } catch {
       return true;
+    }
+  }
+
+  /**
+   * Check if any coding work has actually been performed.
+   * Uses task_logs.json as evidence — if the coding phase has entries,
+   * real work was done. If not, the subtask statuses are from the planner.
+   */
+  private async hasCodingEvidence(): Promise<boolean> {
+    const taskLogsPath = join(this.config.specDir, 'task_logs.json');
+    try {
+      const raw = await readFile(taskLogsPath, 'utf-8');
+      const logs = JSON.parse(raw);
+      // Check if coding phase has any entries
+      if (logs?.phases?.coding?.entries?.length > 0) return true;
+      if (logs?.phases?.coding?.status === 'completed') return true;
+      return false;
+    } catch {
+      // No task_logs.json or invalid — no coding evidence
+      return false;
     }
   }
 

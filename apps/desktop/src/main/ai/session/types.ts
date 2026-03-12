@@ -170,7 +170,8 @@ export type StreamEvent =
   | ToolResultEvent
   | StepFinishEvent
   | ErrorEvent
-  | UsageUpdateEvent;
+  | UsageUpdateEvent
+  | StatusEvent;
 
 /** Incremental text output from the model */
 export interface TextDeltaEvent {
@@ -219,6 +220,12 @@ export interface ErrorEvent {
 export interface UsageUpdateEvent {
   type: 'usage-update';
   usage: TokenUsage;
+}
+
+/** Status update (e.g., waiting for rate limit reset) */
+export interface StatusEvent {
+  type: 'status';
+  text: string;
 }
 
 // =============================================================================

@@ -28,6 +28,7 @@ import type { McpClientResult } from '../mcp/types';
 import { createProvider, detectProviderFromModel } from '../providers/factory';
 import { buildToolRegistry } from '../tools/build-registry';
 import type { QueueResolvedAuth } from '../auth/types';
+import { wrapWithAutoSwap } from '../providers/auto-swap-middleware';
 import type {
   AgentClientConfig,
   AgentClientResult,
@@ -180,8 +181,13 @@ export async function createAgentClient(
     await closeAllMcpClients(mcpClients);
   };
 
+  // Wrap model with auto-swap middleware for transparent rate-limit failover
+  const wrappedModel = queueConfig
+    ? wrapWithAutoSwap(model, queueAuth, queueConfig.queue, queueConfig.requestedModel)
+    : model;
+
   return {
-    model,
+    model: wrappedModel,
     tools,
     mcpClients,
     systemPrompt,
@@ -285,8 +291,13 @@ export async function createSimpleClient(
     });
   }
 
+  // Wrap model with auto-swap middleware for transparent rate-limit failover
+  const wrappedModel = queueConfig
+    ? wrapWithAutoSwap(model, queueAuth, queueConfig.queue, queueConfig.requestedModel)
+    : model;
+
   return {
-    model,
+    model: wrappedModel,
     resolvedModelId,
     tools,
     systemPrompt,

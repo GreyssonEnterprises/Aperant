@@ -28,6 +28,10 @@ export interface WorkerConfig {
   processType: ProcessType;
   /** Serializable session config (model resolved in worker from these params) */
   session: SerializableSessionConfig;
+  /** Account queue for auto-swap on rate limit (resolved in main thread, serializable) */
+  accountQueue?: import('../../../shared/types/provider-account').ProviderAccount[];
+  /** Current account ID for the session (used to exclude on swap) */
+  currentAccountId?: string;
 }
 
 /**
@@ -189,4 +193,8 @@ export interface AgentExecutorConfig {
   session: SerializableSessionConfig;
   /** Optional auth refresh callback (runs in main thread) */
   onAuthRefresh?: RunnerOptions['onAuthRefresh'];
+  /** Account queue for auto-swap (resolved in main thread where settings are available) */
+  accountQueue?: import('../../../shared/types/provider-account').ProviderAccount[];
+  /** Current account ID from queue resolution */
+  currentAccountId?: string;
 }

@@ -100,22 +100,20 @@ const PUPPETEER_SERVER: McpServerConfig = {
 };
 
 /**
- * Auto-Claude MCP server - custom build management tools.
- * Used by planner, coder, and QA agents for build progress tracking.
+ * Auto-Claude MCP server - no longer used.
+ *
+ * The mcp__auto-claude__* tools (update_subtask_status, get_build_progress,
+ * record_discovery, record_gotcha, get_session_context, update_qa_status) are
+ * implemented as builtin TypeScript tools in tools/auto-claude/ and injected
+ * directly into agent sessions. The external Node.js subprocess is obsolete
+ * since the migration from Python to the Vercel AI SDK.
+ *
+ * Returning null prevents a crash when getMcpServerConfig('auto-claude') is
+ * called: resolveMcpServers() filters out null results automatically.
  */
-function createAutoClaudeServer(specDir: string): McpServerConfig {
-  return {
-    id: 'auto-claude',
-    name: 'Auto-Claude',
-    description: 'Build management tools (progress tracking, session context)',
-    enabledByDefault: true,
-    transport: {
-      type: 'stdio',
-      command: 'node',
-      args: ['auto-claude-mcp-server.js'],
-      env: { SPEC_DIR: specDir },
-    },
-  };
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function createAutoClaudeServer(_specDir: string): null {
+  return null;
 }
 
 // =============================================================================
@@ -176,8 +174,8 @@ export function getMcpServerConfig(
       return PUPPETEER_SERVER;
 
     case 'auto-claude': {
-      const specDir = options.specDir ?? '';
-      return createAutoClaudeServer(specDir);
+      // Tools are implemented as builtins; no external server process needed.
+      return createAutoClaudeServer(options.specDir ?? '');
     }
 
     default:

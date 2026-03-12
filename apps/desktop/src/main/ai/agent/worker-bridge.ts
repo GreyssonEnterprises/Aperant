@@ -92,6 +92,8 @@ export class WorkerBridge extends EventEmitter {
       projectId: config.projectId,
       processType: config.processType,
       session: config.session,
+      accountQueue: config.accountQueue,
+      currentAccountId: config.currentAccountId,
     };
 
     const workerPath = resolveWorkerPath();

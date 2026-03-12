@@ -872,7 +872,10 @@ export class AgentProcessManager {
       }
     });
 
+    let workerErrorOutput = '';
+
     bridge.on('error', (tId: string, error: string, pId?: string) => {
+      workerErrorOutput += error + '\n';
       this.emitter.emit('error', tId, error, pId);
     });
 
@@ -893,16 +896,17 @@ export class AgentProcessManager {
       }
 
       if (code !== 0) {
-        // Collect any output for rate limit / auth failure detection
-        // For worker threads, error messages are emitted via 'error' events
-        // rather than stdout parsing. The handleProcessFailure method still works
-        // with accumulated output if needed.
-        this.emitter.emit('execution-progress', tId, {
-          phase: 'failed',
-          phaseProgress: 0,
-          overallProgress: 0,
-          message: `Worker exited with code ${code}`,
-        }, pId);
+        // Attempt rate limit / auth failure detection and auto-swap
+        const wasHandled = this.handleProcessFailure(tId, workerErrorOutput, processType);
+
+        if (!wasHandled) {
+          this.emitter.emit('execution-progress', tId, {
+            phase: 'failed',
+            phaseProgress: 0,
+            overallProgress: 0,
+            message: `Worker exited with code ${code}`,
+          }, pId);
+        }
       }
 
       this.emitter.emit('exit', tId, code, pType, pId);
