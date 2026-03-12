@@ -255,6 +255,10 @@ export class QALoop extends EventEmitter {
           return this.outcome(false, iteration, Date.now() - startTime, 'cancelled');
         }
 
+        if (reviewResult.outcome === 'rate_limited') {
+          return this.outcome(false, iteration, Date.now() - startTime, 'error', reviewResult.error?.message ?? 'Rate limited during QA review');
+        }
+
         // Read QA signoff from implementation_plan.json
         const signoff = await this.readQASignoff();
         const status = this.resolveQAStatus(signoff);
@@ -318,7 +322,7 @@ export class QALoop extends EventEmitter {
             return this.outcome(false, iteration, Date.now() - startTime, 'cancelled');
           }
 
-          if (fixResult.outcome === 'error' || fixResult.outcome === 'auth_failure') {
+          if (fixResult.outcome === 'error' || fixResult.outcome === 'auth_failure' || fixResult.outcome === 'rate_limited') {
             this.emitTyped('log', `Fixer error: ${fixResult.error?.message ?? 'unknown'}`);
             await this.writeReports('max_iterations');
             return this.outcome(false, iteration, Date.now() - startTime, 'error', fixResult.error?.message);

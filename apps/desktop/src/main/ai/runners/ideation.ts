@@ -19,6 +19,8 @@ import { buildToolRegistry } from '../tools/build-registry';
 import type { ToolContext } from '../tools/types';
 import type { ModelShorthand, ThinkingLevel } from '../config/types';
 import type { SecurityProfile } from '../security/bash-validator';
+import { withRateLimitRetry } from '../session/rate-limit-retry';
+import { formatWaitDuration } from '../session/rate-limit-wait';
 
 // =============================================================================
 // Constants
@@ -97,6 +99,7 @@ export type IdeationStreamCallback = (event: IdeationStreamEvent) => void;
 export type IdeationStreamEvent =
   | { type: 'text-delta'; text: string }
   | { type: 'tool-use'; name: string }
+  | { type: 'status'; text: string }
   | { type: 'error'; error: string };
 
 // =============================================================================
@@ -186,42 +189,48 @@ export async function runIdeation(
   const userPrompt = `Analyze the project at ${projectDir} and generate up to ${maxIdeasPerType} ${ideationType.replace(/_/g, ' ')} ideas. Use the available tools to explore the codebase, then write your findings as a JSON file to the output directory.`;
 
   try {
-    const result = streamText({
-      model: client.model,
-      system: isCodex ? undefined : prompt,
-      prompt: userPrompt,
-      tools: client.tools,
-      stopWhen: stepCountIs(client.maxSteps),
-      abortSignal,
-      ...(isCodex ? {
-        providerOptions: {
-          openai: {
-            instructions: prompt,
-            store: false,
+    await withRateLimitRetry(async () => {
+      responseText = '';
+      const result = streamText({
+        model: client.model,
+        system: isCodex ? undefined : prompt,
+        prompt: userPrompt,
+        tools: client.tools,
+        stopWhen: stepCountIs(client.maxSteps),
+        abortSignal,
+        ...(isCodex ? {
+          providerOptions: {
+            openai: {
+              instructions: prompt,
+              store: false,
+            },
           },
-        },
-      } : {}),
-    });
+        } : {}),
+      });
 
-    for await (const part of result.fullStream) {
-      switch (part.type) {
-        case 'text-delta': {
-          responseText += part.text;
-          onStream?.({ type: 'text-delta', text: part.text });
-          break;
-        }
-        case 'tool-call': {
-          onStream?.({ type: 'tool-use', name: part.toolName });
-          break;
-        }
-        case 'error': {
-          const errorMsg =
-            part.error instanceof Error ? part.error.message : String(part.error);
-          onStream?.({ type: 'error', error: errorMsg });
-          break;
+      for await (const part of result.fullStream) {
+        switch (part.type) {
+          case 'text-delta': {
+            responseText += part.text;
+            onStream?.({ type: 'text-delta', text: part.text });
+            break;
+          }
+          case 'tool-call': {
+            onStream?.({ type: 'tool-use', name: part.toolName });
+            break;
+          }
+          case 'error': {
+            const errorMsg =
+              part.error instanceof Error ? part.error.message : String(part.error);
+            onStream?.({ type: 'error', error: errorMsg });
+            break;
+          }
         }
       }
-    }
+    }, {
+      signal: abortSignal,
+      onWaiting: (waitMs) => onStream?.({ type: 'status', text: `Rate limited. Waiting ${formatWaitDuration(waitMs)}...` }),
+    });
 
     return {
       success: true,

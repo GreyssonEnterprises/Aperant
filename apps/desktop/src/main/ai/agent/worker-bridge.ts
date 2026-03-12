@@ -214,6 +214,11 @@ export class WorkerBridge extends EventEmitter {
   /**
    * Handle the final session result from the worker.
    * Maps SessionResult.outcome to an exit code.
+   *
+   * For `rate_limited` and `auth_failure` outcomes, the error message is
+   * prefixed with a structured sentinel (`__WORKER_OUTCOME__:<outcome>`) so
+   * that AgentProcess can detect the failure type structurally instead of
+   * relying solely on text pattern matching.
    */
   private handleResult(taskId: string, result: SessionResult, projectId?: string): void {
     // Map outcome to exit code
@@ -224,7 +229,18 @@ export class WorkerBridge extends EventEmitter {
     this.emitTyped('log', taskId, summary, projectId);
 
     if (result.error) {
-      this.emitTyped('error', taskId, result.error.message, projectId);
+      // For structured outcomes that AgentProcess needs to react to, prefix the
+      // error message with a sentinel so the consuming layer can detect the
+      // outcome type without pattern-matching on human-readable text.
+      const needsSentinel = result.outcome === 'rate_limited' || result.outcome === 'auth_failure';
+      const errorMessage = needsSentinel
+        ? `__WORKER_OUTCOME__:${result.outcome} ${result.error.message}`
+        : result.error.message;
+      this.emitTyped('error', taskId, errorMessage, projectId);
+    } else if (result.outcome === 'rate_limited' || result.outcome === 'auth_failure') {
+      // No error object but the outcome still indicates a structured failure —
+      // emit the sentinel alone so AgentProcess can trigger the swap flow.
+      this.emitTyped('error', taskId, `__WORKER_OUTCOME__:${result.outcome}`, projectId);
     }
 
     // Emit exit and cleanup

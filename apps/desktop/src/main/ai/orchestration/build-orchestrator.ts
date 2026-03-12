@@ -276,11 +276,13 @@ export class BuildOrchestrator extends EventEmitter {
       // the spec pipeline or planner marked them erroneously. Reset to "pending".
       // This catches the case where the spec orchestrator created the plan (isFirstRun=false)
       // but the planner LLM set all subtasks to "completed" during planning.
-      if (await this.isBuildComplete()) {
+      let buildComplete = await this.isBuildComplete();
+      if (buildComplete) {
         const hasCodedBefore = await this.hasCodingEvidence();
         if (!hasCodedBefore) {
           this.emitTyped('log', 'All subtasks marked completed but no coding evidence found — resetting to pending');
           await this.resetSubtaskStatuses();
+          buildComplete = false; // We just reset, so it's no longer complete
         } else {
           // Coding happened — check if QA already passed before declaring complete.
           // This handles the restart-after-QA-failure case: skip coding, re-run QA.
@@ -295,7 +297,7 @@ export class BuildOrchestrator extends EventEmitter {
       }
 
       // Coding phase (skip if all subtasks already completed with coding evidence)
-      if (!await this.isBuildComplete()) {
+      if (!buildComplete) {
         const codingResult = await this.runCodingPhase();
         if (!codingResult.success) {
           return this.buildOutcome(false, Date.now() - startTime, codingResult.error);
@@ -544,6 +546,10 @@ export class BuildOrchestrator extends EventEmitter {
         return { success: false, error: 'Build cancelled' };
       }
 
+      if (reviewResult.outcome === 'error' || reviewResult.outcome === 'auth_failure' || reviewResult.outcome === 'rate_limited') {
+        return { success: false, error: reviewResult.error?.message ?? 'QA review session failed' };
+      }
+
       // Check QA result
       const qaStatus = await this.readQAStatus();
 
@@ -580,6 +586,15 @@ export class BuildOrchestrator extends EventEmitter {
         });
 
         this.emitTyped('session-complete', fixResult, 'qa_fixing');
+
+        if (fixResult.outcome === 'cancelled') {
+          return { success: false, error: 'Build cancelled' };
+        }
+
+        if (fixResult.outcome === 'error' || fixResult.outcome === 'auth_failure' || fixResult.outcome === 'rate_limited') {
+          return { success: false, error: fixResult.error?.message ?? 'QA fix session failed' };
+        }
+
         this.markPhaseCompleted('qa_fixing');
 
         // Delete qa_report.md before re-review so the reviewer writes a clean verdict.

@@ -23,6 +23,8 @@ import type { Tool as AITool } from 'ai';
 import * as crypto from 'node:crypto';
 
 import { createSimpleClient } from '../../client/factory';
+import { withRateLimitRetry } from '../../session/rate-limit-retry';
+import { formatWaitDuration } from '../../session/rate-limit-wait';
 import type { SimpleClientResult } from '../../client/types';
 import type { ModelShorthand, ThinkingLevel } from '../../config/types';
 import { buildThinkingProviderOptions } from '../../config/types';
@@ -557,43 +559,58 @@ export class ParallelOrchestratorReviewer {
       let stepCount = 0;
       let toolCallCount = 0;
       const toolsUsed = new Set<string>();
+      const { structuredOutput, textOutput } = await withRateLimitRetry(async () => {
+        // Reset counters on each retry attempt
+        stepCount = 0;
+        toolCallCount = 0;
+        toolsUsed.clear();
 
-      // Use streamText instead of generateText — Codex endpoint only supports streaming.
-      // Output.object() generates structured output as a final step after all tool calls.
-      const stream = streamText({
-        model: client.model,
-        system: genOptions.system,
-        messages: [{ role: 'user' as const, content: userMessage }],
-        tools,
-        stopWhen: stepCountIs(100),
-        output: Output.object({ schema: SpecialistOutputOutputSchema }),
-        abortSignal,
-        ...(genOptions.providerOptions ? { providerOptions: genOptions.providerOptions } : {}),
-        onStepFinish: ({ toolCalls }) => {
-          stepCount++;
-          if (toolCalls && toolCalls.length > 0) {
-            for (const tc of toolCalls) {
-              toolCallCount++;
-              toolsUsed.add(tc.toolName);
+        // Use streamText instead of generateText — Codex endpoint only supports streaming.
+        // Output.object() generates structured output as a final step after all tool calls.
+        const stream = streamText({
+          model: client.model,
+          system: genOptions.system,
+          messages: [{ role: 'user' as const, content: userMessage }],
+          tools,
+          stopWhen: stepCountIs(100),
+          output: Output.object({ schema: SpecialistOutputOutputSchema }),
+          abortSignal,
+          ...(genOptions.providerOptions ? { providerOptions: genOptions.providerOptions } : {}),
+          onStepFinish: ({ toolCalls }) => {
+            stepCount++;
+            if (toolCalls && toolCalls.length > 0) {
+              for (const tc of toolCalls) {
+                toolCallCount++;
+                toolsUsed.add(tc.toolName);
+              }
+              this.reportProgress({
+                phase: config.name,
+                progress: 40,
+                message: `[Specialist:${config.name}] Step ${stepCount}: ${toolCalls.length} tool call(s) — ${toolCalls.map((tc) => tc.toolName).join(', ')}`,
+                prNumber: context.prNumber,
+              });
             }
-            this.reportProgress({
-              phase: config.name,
-              progress: 40,
-              message: `[Specialist:${config.name}] Step ${stepCount}: ${toolCalls.length} tool call(s) — ${toolCalls.map((tc) => tc.toolName).join(', ')}`,
-              prNumber: context.prNumber,
-            });
-          }
-        },
+          },
+        });
+
+        // Consume the stream (required before accessing output/text)
+        for await (const _part of stream.fullStream) { /* consume */ }
+
+        return { structuredOutput: await stream.output, textOutput: await stream.text };
+      }, {
+        signal: abortSignal,
+        onWaiting: (waitMs) => this.reportProgress({
+          phase: config.name,
+          progress: 38,
+          message: `[Specialist:${config.name}] Rate limited. Waiting ${formatWaitDuration(waitMs)}...`,
+          prNumber: context.prNumber,
+        }),
       });
 
-      // Consume the stream (required before accessing output/text)
-      for await (const _part of stream.fullStream) { /* consume */ }
-
       // Use structured output if available, fall back to text parsing
-      const structuredOutput = await stream.output;
       const findings = structuredOutput
         ? parseSpecialistOutput(config.name, structuredOutput)
-        : parseSpecialistOutput(config.name, await stream.text);
+        : parseSpecialistOutput(config.name, textOutput);
 
       const toolSummary = toolCallCount > 0
         ? ` (${toolCallCount} tool calls: ${Array.from(toolsUsed).join(', ')})`
@@ -755,41 +772,53 @@ Validate each finding by reading the actual code at the specified file and line.
     try {
       let validatorToolCalls = 0;
 
-      // Use streamText — Codex endpoint only supports streaming.
-      // Output.object() generates the validation array (wrapped in { validations: [...] }) as a final step.
-      const stream = streamText({
-        model: client.model,
-        system: genOptions.system,
-        messages: [{ role: 'user' as const, content: userMessage }],
-        tools,
-        stopWhen: stepCountIs(150),
-        output: Output.object({ schema: FindingValidationsOutputSchema }),
-        abortSignal,
-        ...(genOptions.providerOptions ? { providerOptions: genOptions.providerOptions } : {}),
-        onStepFinish: ({ toolCalls }) => {
-          if (toolCalls && toolCalls.length > 0) {
-            validatorToolCalls += toolCalls.length;
-            this.reportProgress({
-              phase: 'validation',
-              progress: 75,
-              message: `[FindingValidator] Examining code: ${toolCalls.map((tc) => tc.toolName).join(', ')}`,
-              prNumber: context.prNumber,
-            });
-          }
-        },
+      const { structuredOutput: valOutput, textOutput: valText } = await withRateLimitRetry(async () => {
+        validatorToolCalls = 0;
+
+        // Use streamText — Codex endpoint only supports streaming.
+        // Output.object() generates the validation array (wrapped in { validations: [...] }) as a final step.
+        const stream = streamText({
+          model: client.model,
+          system: genOptions.system,
+          messages: [{ role: 'user' as const, content: userMessage }],
+          tools,
+          stopWhen: stepCountIs(150),
+          output: Output.object({ schema: FindingValidationsOutputSchema }),
+          abortSignal,
+          ...(genOptions.providerOptions ? { providerOptions: genOptions.providerOptions } : {}),
+          onStepFinish: ({ toolCalls }) => {
+            if (toolCalls && toolCalls.length > 0) {
+              validatorToolCalls += toolCalls.length;
+              this.reportProgress({
+                phase: 'validation',
+                progress: 75,
+                message: `[FindingValidator] Examining code: ${toolCalls.map((tc) => tc.toolName).join(', ')}`,
+                prNumber: context.prNumber,
+              });
+            }
+          },
+        });
+
+        // Consume stream before reading output
+        for await (const _part of stream.fullStream) { /* consume */ }
+
+        return { structuredOutput: await stream.output, textOutput: await stream.text };
+      }, {
+        signal: abortSignal,
+        onWaiting: (waitMs) => this.reportProgress({
+          phase: 'validation',
+          progress: 72,
+          message: `[FindingValidator] Rate limited. Waiting ${formatWaitDuration(waitMs)}...`,
+          prNumber: context.prNumber,
+        }),
       });
 
-      // Consume stream before reading output
-      for await (const _part of stream.fullStream) { /* consume */ }
-
       // Use structured output if available, fall back to text parsing
-      const structuredOutput = await stream.output;
       let rawValidations: Array<{ findingId: string; validationStatus: string; explanation: string }>;
-      if (structuredOutput) {
-        rawValidations = structuredOutput.validations;
+      if (valOutput) {
+        rawValidations = valOutput.validations;
       } else {
-        const text = await stream.text;
-        const parsed = parseLLMJson(text, FindingValidationArraySchema);
+        const parsed = parseLLMJson(valText, FindingValidationArraySchema);
         if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
           return findings; // Fail-safe: keep all findings
         }
@@ -913,28 +942,38 @@ Validate each finding by reading the actual code at the specified file and line.
     };
 
     try {
-      // Use streamText — Codex endpoint only supports streaming.
-      // Output.object() generates the structured verdict as a final step.
-      const stream = streamText({
-        model: client.model,
-        system: genOptions.system,
-        prompt,
-        output: Output.object({ schema: SynthesisResultOutputSchema }),
-        abortSignal,
-        ...(genOptions.providerOptions ? { providerOptions: genOptions.providerOptions } : {}),
+      const { structuredOutput: synthOutput, textOutput: synthText } = await withRateLimitRetry(async () => {
+        // Use streamText — Codex endpoint only supports streaming.
+        // Output.object() generates the structured verdict as a final step.
+        const stream = streamText({
+          model: client.model,
+          system: genOptions.system,
+          prompt,
+          output: Output.object({ schema: SynthesisResultOutputSchema }),
+          abortSignal,
+          ...(genOptions.providerOptions ? { providerOptions: genOptions.providerOptions } : {}),
+        });
+
+        // Consume stream before reading output
+        for await (const _part of stream.fullStream) { /* consume */ }
+
+        return { structuredOutput: await stream.output, textOutput: await stream.text };
+      }, {
+        signal: abortSignal,
+        onWaiting: (waitMs) => this.reportProgress({
+          phase: 'synthesizing',
+          progress: 62,
+          message: `[ParallelOrchestrator] Rate limited during synthesis. Waiting ${formatWaitDuration(waitMs)}...`,
+          prNumber: context.prNumber,
+        }),
       });
 
-      // Consume stream before reading output
-      for await (const _part of stream.fullStream) { /* consume */ }
-
       // Use structured output if available, fall back to text parsing
-      const structuredOutput = await stream.output;
       let data: { verdict: string; verdictReasoning: string; removedFindingIds: string[] } | null;
-      if (structuredOutput) {
-        data = structuredOutput;
+      if (synthOutput) {
+        data = synthOutput;
       } else {
-        const text = await stream.text;
-        data = parseLLMJson(text, SynthesisResultSchema);
+        data = parseLLMJson(synthText, SynthesisResultSchema);
       }
 
       if (!data) {

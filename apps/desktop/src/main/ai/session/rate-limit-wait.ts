@@ -52,9 +52,10 @@ export interface WaitDurationInfo {
  * Priority order:
  * 1. `Retry-After` header (seconds or HTTP-date)
  * 2. Reset time string from error message (e.g., "resets Dec 17 at 6am")
- * 3. Fallback: 5 minutes
+ * 3. Fallback: 5 minutes (only when no extraction attempted — i.e., no reset info found)
  *
- * Returns null for weekly limits (too long to auto-wait).
+ * Returns null for weekly limits (too long to auto-wait) or when message extraction
+ * explicitly detected a weekly limit and declined to provide a wait time.
  */
 export function extractWaitDuration(error: unknown): WaitDurationInfo | null {
   // Try Retry-After header from APICallError
@@ -62,10 +63,15 @@ export function extractWaitDuration(error: unknown): WaitDurationInfo | null {
   if (headerWait) return headerWait;
 
   // Try reset time from error message
-  const messageWait = extractFromErrorMessage(error);
-  if (messageWait) return messageWait;
+  // extractFromErrorMessage returns null for weekly limits — don't fall back in that case
+  const message = error instanceof Error ? error.message : String(error);
+  const hasResetPattern = /resets?\s+/i.test(message);
+  if (hasResetPattern) {
+    // Extraction was attempted; trust its result (null = weekly limit, don't wait)
+    return extractFromErrorMessage(error);
+  }
 
-  // Fallback: 5 minutes (safe default for session limits)
+  // No reset info found at all — fall back to 5 minutes (safe default for session limits)
   return {
     waitMs: DEFAULT_WAIT_MS,
     resetAt: new Date(Date.now() + DEFAULT_WAIT_MS),

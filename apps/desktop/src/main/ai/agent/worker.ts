@@ -34,7 +34,9 @@ import type {
   WorkerTaskEventMessage,
 } from './types';
 import type { Tool as AITool } from 'ai';
-import type { SessionConfig, StreamEvent, SessionResult } from '../session/types';
+import type { SessionConfig, StreamEvent, SessionResult, SessionError } from '../session/types';
+import type { QueueResolvedAuth } from '../auth/types';
+import type { ProviderAccount } from '../../../shared/types/provider-account';
 import { BuildOrchestrator } from '../orchestration/build-orchestrator';
 import { QALoop } from '../orchestration/qa-loop';
 import { SpecOrchestrator } from '../orchestration/spec-orchestrator';
@@ -121,6 +123,24 @@ parentPort.on('message', (msg: MainToWorkerMessage) => {
 // =============================================================================
 // Shared Helpers
 // =============================================================================
+
+/**
+ * Build the onAccountSwitch callback for runner options.
+ * Extracted to avoid triplication across the three session-launch call sites.
+ * The second parameter (error) is accepted for type correctness but not used yet.
+ */
+function buildAccountSwitchCallback(
+  modelId: string,
+  accountQueue?: ProviderAccount[],
+): ((failedAccountId: string, error: SessionError) => Promise<QueueResolvedAuth | null>) | undefined {
+  if (!accountQueue?.length) return undefined;
+  return async (failedAccountId: string) => {
+    const { resolveAuthFromQueue } = await import('../auth/resolver');
+    return resolveAuthFromQueue(modelId, accountQueue, {
+      excludeAccountIds: [failedAccountId],
+    });
+  };
+}
 
 /**
  * Reconstruct the SecurityProfile from the serialized form in session config.
@@ -341,14 +361,7 @@ async function runSingleSession(
           modelId: phaseModelId,
         })
       : undefined,
-    onAccountSwitch: config.accountQueue?.length
-      ? async (failedAccountId: string) => {
-          const { resolveAuthFromQueue } = await import('../auth/resolver');
-          return resolveAuthFromQueue(baseSession.modelId, config.accountQueue!, {
-            excludeAccountIds: [failedAccountId],
-          });
-        }
-      : undefined,
+    onAccountSwitch: buildAccountSwitchCallback(baseSession.modelId, config.accountQueue),
     currentAccountId: config.currentAccountId,
   };
 
@@ -526,14 +539,7 @@ async function runDefaultSession(
             modelId: session.modelId,
           })
         : undefined,
-      onAccountSwitch: config.accountQueue?.length
-        ? async (failedAccountId: string) => {
-            const { resolveAuthFromQueue } = await import('../auth/resolver');
-            return resolveAuthFromQueue(session.modelId, config.accountQueue!, {
-              excludeAccountIds: [failedAccountId],
-            });
-          }
-        : undefined,
+      onAccountSwitch: buildAccountSwitchCallback(session.modelId, config.accountQueue),
       currentAccountId: config.currentAccountId,
     }, {
       contextWindowLimit,
@@ -1131,14 +1137,7 @@ async function runAgenticSpecOrchestrator(
             modelId: session.modelId,
           })
         : undefined,
-      onAccountSwitch: config.accountQueue?.length
-        ? async (failedAccountId: string) => {
-            const { resolveAuthFromQueue } = await import('../auth/resolver');
-            return resolveAuthFromQueue(session.modelId, config.accountQueue!, {
-              excludeAccountIds: [failedAccountId],
-            });
-          }
-        : undefined,
+      onAccountSwitch: buildAccountSwitchCallback(session.modelId, config.accountQueue),
       currentAccountId: config.currentAccountId,
     }, {
       contextWindowLimit,

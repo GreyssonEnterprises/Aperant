@@ -29,6 +29,7 @@ import { createProvider, detectProviderFromModel } from '../providers/factory';
 import { buildToolRegistry } from '../tools/build-registry';
 import type { QueueResolvedAuth } from '../auth/types';
 import { wrapWithAutoSwap } from '../providers/auto-swap-middleware';
+import { notifyRendererOfSwap } from './swap-notifier';
 import type {
   AgentClientConfig,
   AgentClientResult,
@@ -182,8 +183,9 @@ export async function createAgentClient(
   };
 
   // Wrap model with auto-swap middleware for transparent rate-limit failover
+  console.log('[AutoSwap] createAgentClient for', agentType, '| account:', queueAuth?.accountId ?? 'legacy', '| queue:', queueConfig ? queueConfig.queue.length + ' accounts' : 'none');
   const wrappedModel = queueConfig
-    ? wrapWithAutoSwap(model, queueAuth, queueConfig.queue, queueConfig.requestedModel)
+    ? wrapWithAutoSwap(model, queueAuth, queueConfig.queue, queueConfig.requestedModel, notifyRendererOfSwap)
     : model;
 
   return {
@@ -292,8 +294,9 @@ export async function createSimpleClient(
   }
 
   // Wrap model with auto-swap middleware for transparent rate-limit failover
+  console.log('[AutoSwap] createSimpleClient | account:', queueAuth?.accountId ?? 'legacy', '| model:', resolvedModelId, '| queue:', queueConfig ? queueConfig.queue.length + ' accounts' : 'none');
   const wrappedModel = queueConfig
-    ? wrapWithAutoSwap(model, queueAuth, queueConfig.queue, queueConfig.requestedModel)
+    ? wrapWithAutoSwap(model, queueAuth, queueConfig.queue, queueConfig.requestedModel, notifyRendererOfSwap)
     : model;
 
   return {

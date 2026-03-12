@@ -21,6 +21,8 @@ import type { ModelShorthand, ThinkingLevel } from '../config/types';
 import type { SecurityProfile } from '../security/bash-validator';
 import { safeParseJson } from '../../utils/json-repair';
 import { tryLoadPrompt } from '../prompts/prompt-loader';
+import { withRateLimitRetry } from '../session/rate-limit-retry';
+import { formatWaitDuration } from '../session/rate-limit-wait';
 
 // =============================================================================
 // Constants
@@ -86,6 +88,7 @@ export type RoadmapStreamEvent =
   | { type: 'phase-complete'; phase: string; success: boolean }
   | { type: 'text-delta'; text: string }
   | { type: 'tool-use'; name: string }
+  | { type: 'status'; text: string }
   | { type: 'error'; error: string };
 
 // =============================================================================
@@ -145,38 +148,43 @@ Do NOT ask questions. Make educated inferences and create the file.`;
     const discoveryUserPrompt = 'Analyze the project and create the discovery document. Use the available tools to explore the codebase, then write your findings as JSON to the output file specified in the context above.';
 
     try {
-      const result = streamText({
-        model: client.model,
-        system: isCodexDiscovery ? undefined : prompt,
-        prompt: discoveryUserPrompt,
-        tools: client.tools,
-        stopWhen: stepCountIs(client.maxSteps),
-        abortSignal,
-        ...(isCodexDiscovery ? {
-          providerOptions: {
-            openai: {
-              instructions: prompt,
-              store: false,
+      await withRateLimitRetry(async () => {
+        const result = streamText({
+          model: client.model,
+          system: isCodexDiscovery ? undefined : prompt,
+          prompt: discoveryUserPrompt,
+          tools: client.tools,
+          stopWhen: stepCountIs(client.maxSteps),
+          abortSignal,
+          ...(isCodexDiscovery ? {
+            providerOptions: {
+              openai: {
+                instructions: prompt,
+                store: false,
+              },
             },
-          },
-        } : {}),
-      });
+          } : {}),
+        });
 
-      for await (const part of result.fullStream) {
-        switch (part.type) {
-          case 'text-delta':
-            onStream?.({ type: 'text-delta', text: part.text });
-            break;
-          case 'tool-call':
-            onStream?.({ type: 'tool-use', name: part.toolName });
-            break;
-          case 'error': {
-            const errorMsg = part.error instanceof Error ? part.error.message : String(part.error);
-            onStream?.({ type: 'error', error: errorMsg });
-            break;
+        for await (const part of result.fullStream) {
+          switch (part.type) {
+            case 'text-delta':
+              onStream?.({ type: 'text-delta', text: part.text });
+              break;
+            case 'tool-call':
+              onStream?.({ type: 'tool-use', name: part.toolName });
+              break;
+            case 'error': {
+              const errorMsg = part.error instanceof Error ? part.error.message : String(part.error);
+              onStream?.({ type: 'error', error: errorMsg });
+              break;
+            }
           }
         }
-      }
+      }, {
+        signal: abortSignal,
+        onWaiting: (waitMs) => onStream?.({ type: 'status', text: `Rate limited. Waiting ${formatWaitDuration(waitMs)}...` }),
+      });
 
       // Validate output
       if (existsSync(discoveryFile)) {
@@ -277,38 +285,43 @@ The JSON must contain: vision, target_audience (object with "primary" key), phas
     const featuresUserPrompt = 'Read the discovery data and generate a complete roadmap with prioritized features. Write the roadmap JSON to the output file specified in the context above.';
 
     try {
-      const result = streamText({
-        model: client.model,
-        system: isCodexFeatures ? undefined : prompt,
-        prompt: featuresUserPrompt,
-        tools: client.tools,
-        stopWhen: stepCountIs(client.maxSteps),
-        abortSignal,
-        ...(isCodexFeatures ? {
-          providerOptions: {
-            openai: {
-              instructions: prompt,
-              store: false,
+      await withRateLimitRetry(async () => {
+        const result = streamText({
+          model: client.model,
+          system: isCodexFeatures ? undefined : prompt,
+          prompt: featuresUserPrompt,
+          tools: client.tools,
+          stopWhen: stepCountIs(client.maxSteps),
+          abortSignal,
+          ...(isCodexFeatures ? {
+            providerOptions: {
+              openai: {
+                instructions: prompt,
+                store: false,
+              },
             },
-          },
-        } : {}),
-      });
+          } : {}),
+        });
 
-      for await (const part of result.fullStream) {
-        switch (part.type) {
-          case 'text-delta':
-            onStream?.({ type: 'text-delta', text: part.text });
-            break;
-          case 'tool-call':
-            onStream?.({ type: 'tool-use', name: part.toolName });
-            break;
-          case 'error': {
-            const errorMsg = part.error instanceof Error ? part.error.message : String(part.error);
-            onStream?.({ type: 'error', error: errorMsg });
-            break;
+        for await (const part of result.fullStream) {
+          switch (part.type) {
+            case 'text-delta':
+              onStream?.({ type: 'text-delta', text: part.text });
+              break;
+            case 'tool-call':
+              onStream?.({ type: 'tool-use', name: part.toolName });
+              break;
+            case 'error': {
+              const errorMsg = part.error instanceof Error ? part.error.message : String(part.error);
+              onStream?.({ type: 'error', error: errorMsg });
+              break;
+            }
           }
         }
-      }
+      }, {
+        signal: abortSignal,
+        onWaiting: (waitMs) => onStream?.({ type: 'status', text: `Rate limited. Waiting ${formatWaitDuration(waitMs)}...` }),
+      });
 
       // Validate and merge — read/write through fd to avoid TOCTOU
       let roadmapRaw: string | null = null;

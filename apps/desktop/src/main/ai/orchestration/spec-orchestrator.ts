@@ -553,7 +553,7 @@ export class SpecOrchestrator extends EventEmitter {
       errors.push(errorMsg);
 
       // Non-retryable errors
-      if (result.outcome === 'auth_failure') {
+      if (result.outcome === 'auth_failure' || result.outcome === 'rate_limited') {
         return { phase, success: false, errors, retries: attempt };
       }
 

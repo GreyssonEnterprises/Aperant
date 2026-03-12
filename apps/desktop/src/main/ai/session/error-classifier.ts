@@ -13,6 +13,8 @@
  * - generic: Everything else
  */
 
+import { APICallError } from '@ai-sdk/provider';
+
 import type { SessionError, SessionOutcome } from './types';
 
 // =============================================================================
@@ -96,6 +98,7 @@ export function isBillingError(error: unknown): boolean {
  */
 export function isRateLimitError(error: unknown): boolean {
   if (isBillingError(error)) return false;
+  if (APICallError.isInstance(error) && error.statusCode === 429) return true;
   const errorStr = errorToString(error);
   if (WORD_BOUNDARY_429.test(errorStr)) return true;
   return RATE_LIMIT_PATTERNS.some((p) => errorStr.includes(p));
@@ -105,6 +108,7 @@ export function isRateLimitError(error: unknown): boolean {
  * Check if an error is an authentication error (401 or similar).
  */
 export function isAuthenticationError(error: unknown): boolean {
+  if (APICallError.isInstance(error) && error.statusCode === 401) return true;
   const errorStr = errorToString(error);
   if (WORD_BOUNDARY_401.test(errorStr)) return true;
   return AUTH_PATTERNS.some((p) => errorStr.includes(p));
@@ -114,6 +118,14 @@ export function isAuthenticationError(error: unknown): boolean {
  * Check if an error is a 400 tool concurrency error from Claude API.
  */
 export function isToolConcurrencyError(error: unknown): boolean {
+  if (APICallError.isInstance(error) && error.statusCode === 400) {
+    const errorStr = errorToString(error);
+    return (
+      (errorStr.includes('tool') && errorStr.includes('concurrency')) ||
+      errorStr.includes('too many tools') ||
+      errorStr.includes('concurrent tool')
+    );
+  }
   const errorStr = errorToString(error);
   return (
     /\b400\b/.test(errorStr) &&

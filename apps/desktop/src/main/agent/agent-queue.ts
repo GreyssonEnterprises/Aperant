@@ -264,7 +264,7 @@ export class AgentQueueManager {
             abortSignal: abortController.signal,
           },
           (event: IdeationStreamEvent) => {
-            if (event.type === 'text-delta') {
+            if (event.type === 'text-delta' || event.type === 'status') {
               this.emitter.emit('ideation-log', projectId, event.text);
             }
           }

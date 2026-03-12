@@ -135,6 +135,13 @@ export class InsightsExecutor extends EventEmitter {
               } as InsightsStreamChunk);
               break;
             }
+            case 'status': {
+              this.emit('stream-chunk', projectId, {
+                type: 'text',
+                content: event.text,
+              } as InsightsStreamChunk);
+              break;
+            }
             case 'error': {
               allOutput = (allOutput + event.error).slice(-10000);
               this.emit('stream-chunk', projectId, {

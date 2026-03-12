@@ -15,6 +15,9 @@ import { streamText, stepCountIs } from 'ai';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { withRateLimitRetry } from '../session/rate-limit-retry';
+import { formatWaitDuration } from '../session/rate-limit-wait';
+
 import { createSimpleClient } from '../client/factory';
 import { buildToolRegistry } from '../tools/build-registry';
 import type { ToolContext } from '../tools/types';
@@ -85,6 +88,7 @@ export type InsightsStreamEvent =
   | { type: 'text-delta'; text: string }
   | { type: 'tool-start'; name: string; input: string }
   | { type: 'tool-end'; name: string }
+  | { type: 'status'; text: string }
   | { type: 'error'; error: string };
 
 // =============================================================================
@@ -272,48 +276,59 @@ export async function runInsightsQuery(
   const isCodexInsights = insightsModelId?.includes('codex') ?? false;
 
   try {
-    const result = streamText({
-      model: client.model,
-      system: isCodexInsights ? undefined : client.systemPrompt,
-      prompt: fullPrompt,
-      tools: client.tools,
-      stopWhen: stepCountIs(client.maxSteps),
-      abortSignal,
-      ...(isCodexInsights ? {
-        providerOptions: {
-          openai: {
-            instructions: client.systemPrompt,
-            store: false,
-          },
-        },
-      } : {}),
-    });
+    await withRateLimitRetry(
+      async () => {
+        responseText = '';
+        toolCalls.length = 0;
+        const result = streamText({
+          model: client.model,
+          system: isCodexInsights ? undefined : client.systemPrompt,
+          prompt: fullPrompt,
+          tools: client.tools,
+          stopWhen: stepCountIs(client.maxSteps),
+          abortSignal,
+          ...(isCodexInsights ? {
+            providerOptions: {
+              openai: {
+                instructions: client.systemPrompt,
+                store: false,
+              },
+            },
+          } : {}),
+        });
 
-    for await (const part of result.fullStream) {
-      switch (part.type) {
-        case 'text-delta': {
-          responseText += part.text;
-          onStream?.({ type: 'text-delta', text: part.text });
-          break;
+        for await (const part of result.fullStream) {
+          switch (part.type) {
+            case 'text-delta': {
+              responseText += part.text;
+              onStream?.({ type: 'text-delta', text: part.text });
+              break;
+            }
+            case 'tool-call': {
+              const args = 'input' in part ? (part.input as Record<string, unknown>) : {};
+              const input = extractToolInput(args);
+              toolCalls.push({ name: part.toolName, input });
+              onStream?.({ type: 'tool-start', name: part.toolName, input });
+              break;
+            }
+            case 'tool-result': {
+              onStream?.({ type: 'tool-end', name: part.toolName });
+              break;
+            }
+            case 'error': {
+              const errorMsg = part.error instanceof Error ? part.error.message : String(part.error);
+              onStream?.({ type: 'error', error: errorMsg });
+              break;
+            }
+          }
         }
-        case 'tool-call': {
-          const args = 'input' in part ? (part.input as Record<string, unknown>) : {};
-          const input = extractToolInput(args);
-          toolCalls.push({ name: part.toolName, input });
-          onStream?.({ type: 'tool-start', name: part.toolName, input });
-          break;
-        }
-        case 'tool-result': {
-          onStream?.({ type: 'tool-end', name: part.toolName });
-          break;
-        }
-        case 'error': {
-          const errorMsg = part.error instanceof Error ? part.error.message : String(part.error);
-          onStream?.({ type: 'error', error: errorMsg });
-          break;
-        }
-      }
-    }
+      },
+      {
+        signal: abortSignal,
+        onWaiting: (waitMs) =>
+          onStream?.({ type: 'status', text: `Rate limited. Waiting ${formatWaitDuration(waitMs)}...` }),
+      },
+    );
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     onStream?.({ type: 'error', error: errorMsg });

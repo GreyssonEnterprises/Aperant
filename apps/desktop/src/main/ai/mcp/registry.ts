@@ -99,23 +99,6 @@ const PUPPETEER_SERVER: McpServerConfig = {
   },
 };
 
-/**
- * Auto-Claude MCP server - no longer used.
- *
- * The mcp__auto-claude__* tools (update_subtask_status, get_build_progress,
- * record_discovery, record_gotcha, get_session_context, update_qa_status) are
- * implemented as builtin TypeScript tools in tools/auto-claude/ and injected
- * directly into agent sessions. The external Node.js subprocess is obsolete
- * since the migration from Python to the Vercel AI SDK.
- *
- * Returning null prevents a crash when getMcpServerConfig('auto-claude') is
- * called: resolveMcpServers() filters out null results automatically.
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function createAutoClaudeServer(_specDir: string): null {
-  return null;
-}
-
 // =============================================================================
 // Registry
 // =============================================================================
@@ -174,8 +157,11 @@ export function getMcpServerConfig(
       return PUPPETEER_SERVER;
 
     case 'auto-claude': {
-      // Tools are implemented as builtins; no external server process needed.
-      return createAutoClaudeServer(options.specDir ?? '');
+      // Tools are implemented as builtin TypeScript tools in tools/auto-claude/ and
+      // injected directly into agent sessions. The external Node.js subprocess is
+      // obsolete since the migration from Python to the Vercel AI SDK.
+      // resolveMcpServers() filters out null results automatically.
+      return null;
     }
 
     default:

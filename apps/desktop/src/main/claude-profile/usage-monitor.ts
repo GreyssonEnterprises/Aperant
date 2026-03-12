@@ -231,7 +231,7 @@ export class UsageMonitor extends EventEmitter {
   // Cache for all profiles' usage data
   // Map<profileId, { usage: ProfileUsageSummary, fetchedAt: number }>
   private allProfilesUsageCache: Map<string, { usage: ProfileUsageSummary; fetchedAt: number }> = new Map();
-  private static PROFILE_USAGE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache for inactive profiles
+  private static PROFILE_USAGE_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes cache for inactive profiles (endpoint is fragile, reduce load)
 
   // Request coalescing: track in-flight getAllProfilesUsage() promise to avoid parallel duplicate fetches
   private allProfilesUsageInflight: Promise<AllProfilesUsage | null> | null = null;
@@ -241,7 +241,7 @@ export class UsageMonitor extends EventEmitter {
 
   // Rate-limit (429) tracking: separate from general API failures, uses longer cooldown
   private rateLimitedProfiles: Map<string, number> = new Map(); // profileId -> 429 timestamp
-  private static RATE_LIMIT_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes cooldown for 429s
+  private static RATE_LIMIT_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes cooldown for 429s (endpoint may not recover quickly)
 
   // Debug flag for verbose logging
   private readonly isDebug = process.env.DEBUG === 'true';
@@ -292,7 +292,11 @@ export class UsageMonitor extends EventEmitter {
    * Note: Usage monitoring always runs to display the usage badge.
    * Proactive account swapping only occurs if enabled in settings.
    *
-   * Update interval: 60 seconds (60000ms) for active profile; inactive profiles every 5 minutes (adaptive: 60s when usage is high)
+   * Update interval: 5 minutes (300000ms) for active profile; inactive profiles every 10 minutes (adaptive: 2min when usage is high)
+   *
+   * Note: The /api/oauth/usage endpoint is fragile and undocumented. 60s polling triggers 429s
+   * (see anthropics/claude-code issues #30930, #31021, #31055, #31637, #32503).
+   * 5-minute intervals align with practical safe limits for this endpoint.
    */
   start(): void {
     if (this.intervalId) {
@@ -302,9 +306,9 @@ export class UsageMonitor extends EventEmitter {
 
     const profileManager = getClaudeProfileManager();
     const settings = profileManager.getAutoSwitchSettings();
-    const interval = settings.usageCheckInterval || 60000; // 60 seconds for active profile polling
+    const interval = settings.usageCheckInterval || 300000; // 5 minutes for active profile polling (endpoint is fragile)
 
-    this.debugLog('[UsageMonitor] Starting with interval: ' + interval + ' ms (60-second updates for active profile usage stats)');
+    this.debugLog('[UsageMonitor] Starting with interval: ' + interval + ' ms (5-minute updates for active profile usage stats)');
 
     // Check immediately
     this.checkUsageAndSwap();
@@ -486,13 +490,14 @@ export class UsageMonitor extends EventEmitter {
     const profileResults: (ProfileUsageSummary | null)[] = new Array(settings.profiles.length).fill(null);
 
     // Adaptive cache TTL: when active profile usage is high, refresh inactive profiles more
-    // frequently (every 60s instead of 5min) because we may need to swap soon
+    // frequently (every 2min instead of 10min) because we may need to swap soon.
+    // Note: even in swap-ready mode, we avoid <2min to respect the fragile endpoint.
     const activeUsageHigh = this.currentUsage
       ? (this.currentUsage.sessionPercent > 80 || this.currentUsage.weeklyPercent > 90)
       : false;
     const effectiveCacheTtl = activeUsageHigh
-      ? 60 * 1000 // 60s when usage is high (swap-ready mode)
-      : UsageMonitor.PROFILE_USAGE_CACHE_TTL_MS; // 5 min normally
+      ? 2 * 60 * 1000 // 2min when usage is high (swap-ready mode)
+      : UsageMonitor.PROFILE_USAGE_CACHE_TTL_MS; // 10 min normally
 
     for (let i = 0; i < settings.profiles.length; i++) {
       const profile = settings.profiles[i];
@@ -1404,7 +1409,23 @@ export class UsageMonitor extends EventEmitter {
         this.traceLog('[UsageMonitor:TRACE] Skipping proactive swap for API profile (only supported for OAuth profiles)');
       }
     } catch (error) {
-      // Step 5: Handle auth failures
+      // Step 5a: Handle usage API 429 — trigger proactive swap
+      // A 429 from the usage endpoint means the account is at/near its rate limit.
+      // Instead of sitting idle for 10 minutes, proactively swap to an available account.
+      if (isHttpError(error) && (error as any).isUsageApi429 && profileId && !isAPIProfile) {
+        const profileManager = getClaudeProfileManager();
+        const settings = profileManager.getAutoSwitchSettings();
+
+        if (settings.enabled && settings.proactiveSwapEnabled) {
+          console.log('[UsageMonitor] Usage API returned 429 — treating as threshold exceeded, triggering proactive swap for profile:', profileId);
+          await this.performProactiveSwap(profileId, 'session');
+          return;
+        }
+        console.log('[UsageMonitor] Usage API returned 429 but proactive swap is disabled — backing off silently');
+        return;
+      }
+
+      // Step 5b: Handle auth failures
       if (isHttpError(error) && (error.statusCode === 401 || error.statusCode === 403)) {
         if (profileId) {
           await this.handleAuthFailure(profileId, isAPIProfile);
@@ -2203,7 +2224,7 @@ export class UsageMonitor extends EventEmitter {
         if (response.status === 429) {
           const now = Date.now();
           const siblingIds = this.getProfileIdFamily(profileId);
-          console.warn('[UsageMonitor] Rate limited (429) by provider, backing off for 10 minutes:', {
+          console.warn('[UsageMonitor] Rate limited (429) by provider, backing off for 15 minutes:', {
             provider,
             endpoint: usageEndpoint,
             cooldownMs: UsageMonitor.RATE_LIMIT_COOLDOWN_MS,
@@ -2212,7 +2233,13 @@ export class UsageMonitor extends EventEmitter {
           for (const id of siblingIds) {
             this.rateLimitedProfiles.set(id, now);
           }
-          return null;
+          // Signal to checkUsageAndSwap that the usage API was 429'd.
+          // A 429 on the usage endpoint is strong evidence the account is at/near
+          // its rate limit — we should proactively swap rather than sit idle for 10 min.
+          const error = new Error('Usage API rate limited (429)');
+          (error as any).statusCode = 429;
+          (error as any).isUsageApi429 = true;
+          throw error;
         }
 
         // Check for auth failures via status code (works for all providers)
@@ -2351,6 +2378,11 @@ export class UsageMonitor extends EventEmitter {
       // Re-throw auth failures to be handled by checkUsageAndSwap
       // This includes both status code auth failures (401/403) and body-detected failures
       if (error?.message?.includes('Auth Failure') || error?.statusCode === 401 || error?.statusCode === 403) {
+        throw error;
+      }
+
+      // Re-throw usage API 429 so checkUsageAndSwap can trigger proactive swap
+      if (error?.isUsageApi429) {
         throw error;
       }
 
@@ -2653,6 +2685,60 @@ export class UsageMonitor extends EventEmitter {
     const profileManager = getClaudeProfileManager();
     const excludeIds = new Set([currentProfileId, ...additionalExclusions]);
 
+    // Also exclude the currently active profile — the swap target must differ from
+    // what the app is already running on, not just from what triggered the swap.
+    const activeProfileId = profileManager.getActiveProfile()?.id;
+    if (activeProfileId) {
+      excludeIds.add(activeProfileId);
+    }
+
+    // Also exclude the linked claudeProfileId when currentProfileId is a provider account ID.
+    // Provider accounts (pa_*) and OAuth profiles (msup, etc.) use different ID formats
+    // but refer to the same underlying account. Without this, the same account would be
+    // picked as the swap target — resulting in a no-op swap.
+    try {
+      const settings = await readSettingsFileAsync();
+      const providerAccounts = (settings?.providerAccounts as ProviderAccount[] | undefined) ?? [];
+      const currentAccount = providerAccounts.find(a => a.id === currentProfileId);
+      if (currentAccount?.claudeProfileId) {
+        excludeIds.add(currentAccount.claudeProfileId);
+      }
+      // Also handle the reverse: if currentProfileId is a claudeProfileId, exclude matching provider accounts
+      for (const account of providerAccounts) {
+        if (account.claudeProfileId === currentProfileId) {
+          excludeIds.add(account.id);
+        }
+      }
+
+      // Exclude all provider accounts that share the same configDir as the current one.
+      // Multiple profiles on the same Anthropic account share the same rate limit —
+      // swapping between them is pointless.
+      const resolvedAccount = currentAccount ?? providerAccounts.find(a => a.claudeProfileId === currentProfileId);
+      if (resolvedAccount) {
+        const currentConfigDir = resolvedAccount.claudeProfileId
+          ? profileManager.getProfile(resolvedAccount.claudeProfileId)?.configDir
+          : undefined;
+        if (currentConfigDir) {
+          const allOAuthProfiles = profileManager.getProfilesSortedByAvailability();
+          for (const profile of allOAuthProfiles) {
+            if (profile.configDir === currentConfigDir && !excludeIds.has(profile.id)) {
+              excludeIds.add(profile.id);
+            }
+          }
+          // Also exclude provider accounts linked to those same profiles
+          for (const account of providerAccounts) {
+            if (account.claudeProfileId && excludeIds.has(account.claudeProfileId)) {
+              excludeIds.add(account.id);
+            }
+          }
+        }
+      }
+    } catch {
+      // Non-critical — proceed with partial exclusion set
+    }
+
+    console.log('[UsageMonitor] PROACTIVE-SWAP: Exclude set:', Array.from(excludeIds));
+
     // Get priority order for unified account system
     const priorityOrder = profileManager.getAccountPriorityOrder();
 
@@ -2667,20 +2753,38 @@ export class UsageMonitor extends EventEmitter {
 
     const unifiedAccounts: UnifiedSwapTarget[] = [];
 
-    // Add OAuth profiles (sorted by availability)
+    // Add OAuth profiles (sorted by availability), filtering out those above threshold
+    const swapSettings = profileManager.getAutoSwitchSettings();
+    const sessionThreshold = swapSettings.sessionThreshold ?? 95;
+    const weeklyThreshold = swapSettings.weeklyThreshold ?? 99;
     const oauthProfiles = profileManager.getProfilesSortedByAvailability();
     for (const profile of oauthProfiles) {
-      if (!excludeIds.has(profile.id)) {
-        const unifiedId = `oauth-${profile.id}`;
-        const priorityIndex = priorityOrder.indexOf(unifiedId);
-        unifiedAccounts.push({
-          id: profile.id,
-          unifiedId,
-          name: profile.name,
-          type: 'oauth',
-          priorityIndex: priorityIndex === -1 ? Infinity : priorityIndex
-        });
+      if (excludeIds.has(profile.id)) continue;
+
+      // Skip profiles that are themselves above the swap threshold
+      const sessionPct = profile.usage?.sessionUsagePercent ?? 0;
+      const weeklyPct = profile.usage?.weeklyUsagePercent ?? 0;
+      if (sessionPct >= sessionThreshold || weeklyPct >= weeklyThreshold) {
+        console.log('[UsageMonitor] PROACTIVE-SWAP: Skipping', profile.name, '— above threshold (session:', sessionPct + '%, weekly:', weeklyPct + '%)');
+        continue;
       }
+
+      // Skip rate-limited profiles
+      const rateLimitStatus = isProfileRateLimited(profile);
+      if (rateLimitStatus.limited) {
+        console.log('[UsageMonitor] PROACTIVE-SWAP: Skipping', profile.name, '— rate limited (type:', rateLimitStatus.type + ')');
+        continue;
+      }
+
+      const unifiedId = `oauth-${profile.id}`;
+      const priorityIndex = priorityOrder.indexOf(unifiedId);
+      unifiedAccounts.push({
+        id: profile.id,
+        unifiedId,
+        name: profile.name,
+        type: 'oauth',
+        priorityIndex: priorityIndex === -1 ? Infinity : priorityIndex
+      });
     }
 
     // Add API profiles (always considered available since they have unlimited usage)
@@ -2759,6 +2863,30 @@ export class UsageMonitor extends EventEmitter {
       }
     }
 
+    // Update globalPriorityOrder so the UI reflects the new active account.
+    // The UI's "Active Account" is determined by the first entry in globalPriorityOrder.
+    try {
+      const currentSettings = await readSettingsFileAsync();
+      if (currentSettings) {
+        const providerAccounts = (currentSettings.providerAccounts as ProviderAccount[] | undefined) ?? [];
+        const queue = (currentSettings.globalPriorityOrder as string[] | undefined) ?? [];
+
+        // Find the provider account linked to the target OAuth profile
+        const targetProviderAccount = providerAccounts.find(a => a.claudeProfileId === rawProfileId);
+        if (targetProviderAccount && queue.includes(targetProviderAccount.id)) {
+          // Move target to front of queue
+          const newQueue = [targetProviderAccount.id, ...queue.filter(id => id !== targetProviderAccount.id)];
+          currentSettings.globalPriorityOrder = newQueue;
+          await writeSettingsFile(currentSettings);
+          console.log('[UsageMonitor] PROACTIVE-SWAP: Updated globalPriorityOrder — new active:', targetProviderAccount.name, '(' + targetProviderAccount.id + ')');
+        } else {
+          console.log('[UsageMonitor] PROACTIVE-SWAP: Could not find provider account for OAuth profile:', rawProfileId);
+        }
+      }
+    } catch (error) {
+      console.error('[UsageMonitor] PROACTIVE-SWAP: Failed to update globalPriorityOrder:', error);
+    }
+
     // Get the "from" profile name
     let fromProfileName: string | undefined;
     const fromOAuthProfile = profileManager.getProfile(currentProfileId);
@@ -2785,10 +2913,11 @@ export class UsageMonitor extends EventEmitter {
       timestamp: new Date()
     });
 
-    // Notify UI
+    // Notify UI — shape must match what ProactiveSwapListener expects:
+    // data.fromProfile.name and data.toProfile.name
     this.emit('show-swap-notification', {
-      fromProfile: fromProfileName,
-      toProfile: bestAccount.name,
+      fromProfile: { id: currentProfileId, name: fromProfileName ?? currentProfileId },
+      toProfile: { id: bestAccount.id, name: bestAccount.name },
       reason: 'proactive',
       limitType
     });

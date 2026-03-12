@@ -261,6 +261,49 @@ export class AgentProcessManager {
     allOutput: string,
     processType: ProcessType
   ): boolean {
+    const source = processType === 'spec-creation' ? 'roadmap' : 'task';
+
+    // Fast-path: check for structured outcome sentinels emitted by WorkerBridge.
+    // These are prefixed with `__WORKER_OUTCOME__:<outcome>` so we can detect
+    // rate limits and auth failures without relying on text pattern matching.
+    if (allOutput.includes('__WORKER_OUTCOME__:rate_limited')) {
+      // Build a minimal detection result that matches RateLimitDetectionResult so
+      // we can reuse the existing auto-swap and notification flow.
+      const syntheticRateLimitDetection = {
+        isRateLimited: true,
+        resetTime: undefined as string | undefined,
+        limitType: undefined as 'session' | 'weekly' | undefined,
+        profileId: undefined as string | undefined,
+        suggestedProfile: undefined as { id: string; name: string } | undefined,
+      };
+      const wasHandled = this.handleRateLimitWithAutoSwap(taskId, syntheticRateLimitDetection, processType);
+      if (wasHandled) return true;
+
+      const rateLimitInfo = createSDKRateLimitInfo(source, syntheticRateLimitDetection, { taskId });
+      this.emitter.emit('sdk-rate-limit', rateLimitInfo);
+      return true;
+    }
+
+    if (allOutput.includes('__WORKER_OUTCOME__:auth_failure')) {
+      const syntheticAuthFailureDetection = {
+        isAuthFailure: true,
+        profileId: undefined as string | undefined,
+        failureType: 'unknown' as const,
+        message: 'Authentication failed (worker outcome)',
+        originalError: undefined as string | undefined,
+      };
+      const wasHandled = this.handleAuthFailureWithAutoSwap(taskId, syntheticAuthFailureDetection);
+      if (!wasHandled) {
+        this.emitter.emit('auth-failure', taskId, {
+          profileId: syntheticAuthFailureDetection.profileId,
+          failureType: syntheticAuthFailureDetection.failureType,
+          message: syntheticAuthFailureDetection.message,
+          originalError: syntheticAuthFailureDetection.originalError,
+        });
+      }
+      return true;
+    }
+
     console.log('[AgentProcess] Checking for rate limit in output (last 500 chars):', allOutput.slice(-500));
 
     const rateLimitDetection = detectRateLimit(allOutput);
@@ -280,9 +323,7 @@ export class AgentProcessManager {
       );
       if (wasHandled) return true;
 
-      const source = processType === 'spec-creation' ? 'roadmap' : 'task';
       const rateLimitInfo = createSDKRateLimitInfo(source, rateLimitDetection, { taskId });
-      console.log('[AgentProcess] Emitting sdk-rate-limit event (manual):', rateLimitInfo);
       this.emitter.emit('sdk-rate-limit', rateLimitInfo);
       return true;
     }
@@ -873,9 +914,13 @@ export class AgentProcessManager {
     });
 
     let workerErrorOutput = '';
+    const MAX_ERROR_OUTPUT_LENGTH = 10_000;
 
     bridge.on('error', (tId: string, error: string, pId?: string) => {
       workerErrorOutput += error + '\n';
+      if (workerErrorOutput.length > MAX_ERROR_OUTPUT_LENGTH) {
+        workerErrorOutput = workerErrorOutput.slice(-MAX_ERROR_OUTPUT_LENGTH);
+      }
       this.emitter.emit('error', tId, error, pId);
     });
 
@@ -935,7 +980,7 @@ export class AgentProcessManager {
 
     // Emit initial progress
     this.emitter.emit('execution-progress', taskId, {
-      phase: processType === 'spec-creation' ? 'planning' : 'planning',
+      phase: 'planning',
       phaseProgress: 0,
       overallProgress: 0,
       message: 'Starting AI agent session...',

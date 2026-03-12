@@ -14,6 +14,7 @@ import { z } from 'zod';
 
 import { createSimpleClient } from '../../client/factory';
 import type { ModelShorthand, ThinkingLevel } from '../../config/types';
+import { withRateLimitRetry } from '../../session/rate-limit-retry';
 import { parseLLMJson } from '../../schema/structured-output';
 import {
   ScanResultSchema,
@@ -518,24 +519,24 @@ ${diff}
   });
 
   if (reviewPass === ReviewPass.QUICK_SCAN) {
-    const result = await generateText({
+    const result = await withRateLimitRetry(() => generateText({
       model: client.model,
       system: client.systemPrompt,
       prompt: fullPrompt,
       output: Output.object({ schema: ScanResultOutputSchema }),
-    });
+    }));
     if (result.output) {
       return result.output as ScanResult;
     }
     return parseScanResult(result.text);
   }
 
-  const result = await generateText({
+  const result = await withRateLimitRetry(() => generateText({
     model: client.model,
     system: client.systemPrompt,
     prompt: fullPrompt,
     output: Output.object({ schema: ReviewFindingsOutputSchema }),
-  });
+  }));
   if (result.output) {
     return result.output.findings as PRReviewFinding[];
   }
@@ -560,12 +561,12 @@ async function runStructuralPass(
   });
 
   try {
-    const result = await generateText({
+    const result = await withRateLimitRetry(() => generateText({
       model: client.model,
       system: client.systemPrompt,
       prompt: fullPrompt,
       output: Output.object({ schema: StructuralIssuesOutputSchema }),
-    });
+    }));
     if (result.output) {
       return result.output.issues as StructuralIssue[];
     }
@@ -596,12 +597,12 @@ async function runAITriagePass(
   });
 
   try {
-    const result = await generateText({
+    const result = await withRateLimitRetry(() => generateText({
       model: client.model,
       system: client.systemPrompt,
       prompt: fullPrompt,
       output: Output.object({ schema: AICommentTriagesOutputSchema }),
-    });
+    }));
     if (result.output) {
       return result.output.triages as AICommentTriage[];
     }

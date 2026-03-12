@@ -15,6 +15,7 @@ import { generateText } from 'ai';
 
 import { createSimpleClient } from '../client/factory';
 import type { ModelShorthand, ThinkingLevel } from '../config/types';
+import { withRateLimitRetry } from '../session/rate-limit-retry';
 
 // =============================================================================
 // Types
@@ -137,11 +138,11 @@ export async function generateChangelog(
       thinkingLevel,
     });
 
-    const result = await generateText({
+    const result = await withRateLimitRetry(() => generateText({
       model: client.model,
       system: client.systemPrompt,
       prompt,
-    });
+    }));
 
     if (result.text.trim()) {
       return { success: true, text: result.text.trim() };
