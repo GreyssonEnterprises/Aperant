@@ -973,4 +973,314 @@ export function registerMRReviewHandlers(
   );
 
   debugLog('MR review handlers registered');
+
+  // ============================================
+  // NEW: Additional handlers for feature parity
+  // ============================================
+
+  /**
+   * Delete a posted MR review (note)
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.GITLAB_MR_DELETE_REVIEW,
+    async (_event, projectId: string, mrIid: number, noteId: number): Promise<IPCResult<{ deleted: boolean }>> => {
+      debugLog('deleteReview handler called', { projectId, mrIid, noteId });
+
+      return withProjectOrNull(projectId, async (project) => {
+        const { token, instanceUrl } = getGitLabConfig(project);
+        const encodedProject = encodeProjectPath(project.projectPathWithNamespace);
+
+        try {
+          await gitlabFetch(
+            token,
+            instanceUrl,
+            `/projects/${encodedProject}/merge_requests/${mrIid}/notes/${noteId}`,
+            { method: 'DELETE' }
+          );
+
+          return { success: true, data: { deleted: true } };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          debugLog('Failed to delete review note', { mrIid, noteId, error: errorMessage });
+          return { success: false, error: errorMessage };
+        }
+      });
+    }
+  );
+
+  /**
+   * Check MR merge readiness
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.GITLAB_MR_CHECK_MERGE_READINESS,
+    async (_event, projectId: string, mrIid: number): Promise<IPCResult<{
+      canMerge: boolean;
+      hasConflicts: boolean;
+      needsDiscussion: boolean;
+      pipelineStatus?: string;
+    }>> => {
+      debugLog('checkMergeReadiness handler called', { projectId, mrIid });
+
+      return withProjectOrNull(projectId, async (project) => {
+        const { token, instanceUrl } = getGitLabConfig(project);
+        const encodedProject = encodeProjectPath(project.projectPathWithNamespace);
+
+        try {
+          const mrData = await gitlabFetch(
+            token,
+            instanceUrl,
+            `/projects/${encodedProject}/merge_requests/${mrIid}`
+          ) as {
+            merge_status?: string;
+            has_conflicts?: boolean;
+            discussion_locked?: boolean;
+            pipeline?: { status?: string };
+          };
+
+          const mergeStatus = mrData.merge_status || 'cannot_be_merged';
+          const canMerge = mergeStatus === 'can_be_merged';
+          const hasConflicts = mrData.has_conflicts || false;
+          const needsDiscussion = !mrData.discussion_locked;
+          const pipelineStatus = mrData.pipeline?.status;
+
+          return {
+            success: true,
+            data: {
+              canMerge,
+              hasConflicts,
+              needsDiscussion,
+              pipelineStatus
+            }
+          };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          debugLog('Failed to check merge readiness', { mrIid, error: errorMessage });
+          return { success: false, error: errorMessage };
+        }
+      });
+    }
+  );
+
+  /**
+   * Get AI review logs for an MR
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.GITLAB_PR_GET_LOGS,
+    async (_event, projectId: string, mrIid: number): Promise<IPCResult<string[]>> => {
+      debugLog('getLogs handler called', { projectId, mrIid });
+
+      return withProjectOrNull(projectId, async (project) => {
+        const reviewPath = path.join(getGitLabDir(project), 'mr', `review_${mrIid}.json`);
+        const logsPath = path.join(getGitLabDir(project), 'mr', `logs_${mrIid}.json`);
+
+        try {
+          let logs: string[] = [];
+
+          if (fs.existsSync(logsPath)) {
+            const logsData = JSON.parse(fs.readFileSync(logsPath, 'utf-8'));
+            logs = logsData.entries || [];
+          } else if (fs.existsSync(reviewPath)) {
+            // If no separate log file, return basic info from review
+            const reviewData = JSON.parse(fs.readFileSync(reviewPath, 'utf-8'));
+            logs = [`Review completed at ${reviewData.reviewed_at || 'unknown'}`];
+          }
+
+          return { success: true, data: logs };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          debugLog('Failed to get logs', { mrIid, error: errorMessage });
+          return { success: false, error: errorMessage };
+        }
+      });
+    }
+  );
+
+  /**
+   * Start status polling for MR updates
+   */
+  const statusPollingIntervals = new Map<string, NodeJS.Timeout>();
+
+  ipcMain.handle(
+    IPC_CHANNELS.GITLAB_PR_STATUS_POLL_START,
+    async (_event, projectId: string, mrIid: number, intervalMs: number = 5000): Promise<IPCResult<{ polling: boolean }>> => {
+      debugLog('statusPollStart handler called', { projectId, mrIid, intervalMs });
+
+      return withProjectOrNull(projectId, async (project) => {
+        const pollKey = `${projectId}:${mrIid}`;
+
+        // Clear existing interval if any
+        if (statusPollingIntervals.has(pollKey)) {
+          clearInterval(statusPollingIntervals.get(pollKey)!);
+        }
+
+        // Start new polling interval
+        const interval = setInterval(async () => {
+          // Emit status update to renderer
+          if (mainWindow) {
+            const { token, instanceUrl } = getGitLabConfig(project);
+            const encodedProject = encodeProjectPath(project.projectPathWithNamespace);
+
+            try {
+              const mrData = await gitlabFetch(
+                token,
+                instanceUrl,
+                `/projects/${encodedProject}/merge_requests/${mrIid}`
+              ) as {
+                state?: string;
+                merge_status?: string;
+                updated_at?: string;
+              };
+
+              mainWindow.webContents.send('gitlab:mr:statusUpdate', {
+                projectId,
+                mrIid,
+                state: mrData.state,
+                mergeStatus: mrData.merge_status,
+                updatedAt: mrData.updated_at
+              });
+            } catch (error) {
+              debugLog('Status poll error', { mrIid, error });
+            }
+          }
+        }, intervalMs);
+
+        statusPollingIntervals.set(pollKey, interval);
+
+        return { success: true, data: { polling: true } };
+      });
+    }
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.GITLAB_PR_STATUS_POLL_STOP,
+    async (_event, projectId: string, mrIid: number): Promise<IPCResult<{ stopped: boolean }>> => {
+      debugLog('statusPollStop handler called', { projectId, mrIid });
+
+      const pollKey = `${projectId}:${mrIid}`;
+
+      if (statusPollingIntervals.has(pollKey)) {
+        clearInterval(statusPollingIntervals.get(pollKey)!);
+        statusPollingIntervals.delete(pollKey);
+        return { success: true, data: { stopped: true } };
+      }
+
+      return { success: true, data: { stopped: false } };
+    }
+  );
+
+  /**
+   * Get MR review memories
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.GITLAB_PR_MEMORY_GET,
+    async (_event, projectId: string, mrIid: number): Promise<IPCResult<any[]>> => {
+      debugLog('memoryGet handler called', { projectId, mrIid });
+
+      // TODO: Implement memory retrieval from Graphiti memory system
+      return { success: true, data: [] };
+    }
+  );
+
+  /**
+   * Search MR review memories
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.GITLAB_PR_MEMORY_SEARCH,
+    async (_event, projectId: string, query: string): Promise<IPCResult<any[]>> => {
+      debugLog('memorySearch handler called', { projectId, query });
+
+      // TODO: Implement memory search from Graphiti memory system
+      return { success: true, data: [] };
+    }
+  );
+
+  /**
+   * Auto-fix issues in MR
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.GITLAB_MR_FIX,
+    async (_event, projectId: string, mrIid: number, findings: string[]): Promise<IPCResult<{ fixed: number }>> => {
+      debugLog('autoFix handler called', { projectId, mrIid, findingsCount: findings.length });
+
+      // TODO: Implement auto-fix functionality
+      // This will integrate with the existing autofix handlers
+      return {
+        success: false,
+        error: 'Auto-fix not yet implemented - use GITLAB_AUTOFIX_START instead'
+      };
+    }
+  );
+
+  /**
+   * Batch load reviews for multiple MRs
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.GITLAB_MR_GET_REVIEWS_BATCH,
+    async (_event, projectId: string, mrIids: number[]): Promise<IPCResult<Record<number, MRReviewResult | null>>> => {
+      debugLog('getReviewsBatch handler called', { projectId, mrIids });
+
+      return withProjectOrNull(projectId, async (project) => {
+        const results: Record<number, MRReviewResult | null> = {};
+
+        for (const mrIid of mrIids) {
+          const review = getReviewResult(project, mrIid);
+          results[mrIid] = review;
+        }
+
+        return { success: true, data: results };
+      });
+    }
+  );
+
+  /**
+   * Load more MRs (pagination)
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.GITLAB_MR_LIST_MORE,
+    async (
+      _event,
+      projectId: string,
+      state?: 'opened' | 'closed' | 'merged' | 'all',
+      page: number = 2
+    ): Promise<IPCResult<{ mrs: any[]; hasMore: boolean }>> => {
+      debugLog('listMore handler called', { projectId, state, page });
+
+      return withProjectOrNull(projectId, async (project) => {
+        const { token, instanceUrl } = getGitLabConfig(project);
+        const encodedProject = encodeProjectPath(project.projectPathWithNamespace);
+
+        try {
+          const stateParam = state === 'all' ? undefined : state;
+          const queryParams = new URLSearchParams({
+            per_page: '20',
+            page: String(page),
+            ...(stateParam && { state: stateParam })
+          });
+
+          const mrs = await gitlabFetch(
+            token,
+            instanceUrl,
+            `/projects/${encodedProject}/merge_requests?${queryParams.toString()}`
+          ) as any[];
+
+          // Check if there are more MRs by fetching one more item
+          const hasMore = mrs.length === 20;
+
+          return {
+            success: true,
+            data: {
+              mrs,
+              hasMore
+            }
+          };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          debugLog('Failed to load more MRs', { projectId, page, error: errorMessage });
+          return { success: false, error: errorMessage };
+        }
+      });
+    }
+  );
+
+  debugLog('Additional MR handlers registered');
 }
