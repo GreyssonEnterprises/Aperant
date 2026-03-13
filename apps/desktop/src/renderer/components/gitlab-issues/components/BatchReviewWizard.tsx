@@ -37,30 +37,9 @@ import {
 } from '@/components/ui/collapsible';
 import type {
   GitLabAnalyzePreviewResult,
+  GitLabAnalyzePreviewProgress,
+  GitLabProposedBatch,
 } from '@shared/types';
-
-// GitLabAnalyzePreviewProgress type definition
-export interface GitLabAnalyzePreviewProgress {
-  message: string;
-  progress: number;
-}
-
-// Type alias for ProposedBatch to match the inline type in GitLabAnalyzePreviewResult
-export interface GitLabProposedBatch {
-  primaryIssue: number;
-  issues: Array<{
-    iid: number;
-    title: string;
-    labels: string[];
-    similarityToPrimary: number;
-  }>;
-  issueCount: number;
-  commonThemes: string[];
-  validated: boolean;
-  confidence: number;
-  reasoning: string;
-  theme: string;
-}
 
 interface GitLabBatchReviewWizardProps {
   isOpen: boolean;

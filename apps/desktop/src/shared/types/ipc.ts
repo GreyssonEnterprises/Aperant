@@ -185,6 +185,11 @@ export interface TabState {
 
 // Legacy: Keep the old interface for reference, but use the imported type above
 // This will be removed once all references are updated
+/**
+ * @deprecated This interface is kept for migration reference only.
+ * Use the `ElectronAPI` type alias instead.
+ * TODO: Remove once all references are updated.
+ */
 export interface ElectronAPILegacy {
   // Project operations
   addProject: (projectPath: string) => Promise<IPCResult<Project>>;

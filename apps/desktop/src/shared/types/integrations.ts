@@ -375,6 +375,27 @@ export interface GitLabAutoFixProgress {
   message: string;
 }
 
+export interface GitLabAnalyzePreviewProgress {
+  message: string;
+  progress: number;
+}
+
+export interface GitLabProposedBatch {
+  primaryIssue: number;
+  issues: Array<{
+    iid: number;
+    title: string;
+    labels: string[];
+    similarityToPrimary: number;
+  }>;
+  issueCount: number;
+  commonThemes: string[];
+  validated: boolean;
+  confidence: number;
+  reasoning: string;
+  theme: string;
+}
+
 export interface GitLabAnalyzePreviewResult {
   success: boolean;
   totalIssues: number;

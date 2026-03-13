@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyFilter, getFilterPredicate } from '../filter-utils';
+import { applyFilter, getFilterPredicate, isValidFilterState } from '../filter-utils';
 import type { FilterState } from '../../types/base-types';
 
 describe('filter-utils', () => {
@@ -27,6 +27,18 @@ describe('filter-utils', () => {
     ];
     // Filter with 'opened' should match both 'open' and 'opened'
     const result = applyFilter(items, 'opened');
+    expect(result).toHaveLength(2);
+    expect(result.map((i: TestItem) => i.id)).toEqual([1, 2]);
+  });
+
+  it('should handle GitHub native open filter (regression)', () => {
+    const items: TestItem[] = [
+      { id: 1, state: 'open' },      // GitHub format
+      { id: 2, state: 'opened' },    // GitLab format
+      { id: 3, state: 'closed' }
+    ];
+    // Filter with 'open' (GitHub native) should also match both
+    const result = applyFilter(items, 'open');
     expect(result).toHaveLength(2);
     expect(result.map((i: TestItem) => i.id)).toEqual([1, 2]);
   });
@@ -67,5 +79,17 @@ describe('filter-utils', () => {
     const result = applyFilter(items, 'merged');
     expect(result).toHaveLength(1);
     expect(result[0].state).toBe('merged');
+  });
+
+  it('should validate filter states', () => {
+    // Both 'open' and 'opened' should be valid
+    expect(isValidFilterState('open')).toBe(true);
+    expect(isValidFilterState('opened')).toBe(true);
+    expect(isValidFilterState('closed')).toBe(true);
+    expect(isValidFilterState('merged')).toBe(true);
+    expect(isValidFilterState('all')).toBe(true);
+    // Invalid states
+    expect(isValidFilterState('invalid')).toBe(false);
+    expect(isValidFilterState('')).toBe(false);
   });
 });
