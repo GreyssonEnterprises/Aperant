@@ -89,6 +89,10 @@ describe('resolveModelId', () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
+    // Clear model override env vars to ensure clean test state
+    delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+    delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
+    delete process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL;
   });
 
   afterEach(() => {
