@@ -79,6 +79,30 @@ export interface GitLabAPI {
   cancelGitLabMRReview: (projectId: string, mrIid: number) => Promise<boolean>;
   checkGitLabMRNewCommits: (projectId: string, mrIid: number) => Promise<GitLabNewCommitsCheck>;
 
+  // NEW: Additional MR operations for feature parity
+  listMoreGitLabMRs: (
+    projectId: string,
+    state?: 'opened' | 'closed' | 'merged' | 'all',
+    page?: number
+  ) => Promise<IPCResult<{ mrs: any[]; hasMore: boolean }>>;
+  getGitLabMRReviewsBatch: (projectId: string, mrIids: number[]) => Promise<IPCResult<Record<number, any>>>;
+  deleteGitLabMRReview: (projectId: string, mrIid: number, noteId: number) => Promise<IPCResult<{ deleted: boolean }>>;
+  fixGitLabMR: (projectId: string, mrIid: number, findings: string[]) => Promise<IPCResult<{ fixed: number }>>;
+  startGitLabMRStatusPoll: (projectId: string, mrIid: number, intervalMs?: number) => Promise<IPCResult<{ polling: boolean }>>;
+  stopGitLabMRStatusPoll: (projectId: string, mrIid: number) => Promise<IPCResult<{ stopped: boolean }>>;
+  getGitLabMRLogs: (projectId: string, mrIid: number) => Promise<IPCResult<string[]>>;
+  getGitLabMRMemory: (projectId: string, mrIid: number) => Promise<IPCResult<any[]>>;
+  searchGitLabMRMemory: (projectId: string, query: string) => Promise<IPCResult<any[]>>;
+  checkGitLabMRMergeReadiness: (
+    projectId: string,
+    mrIid: number
+  ) => Promise<IPCResult<{
+    canMerge: boolean;
+    hasConflicts: boolean;
+    needsDiscussion: boolean;
+    pipelineStatus?: string;
+  }>>;
+
   // MR Review Event Listeners
   onGitLabMRReviewProgress: (
     callback: (projectId: string, progress: GitLabMRReviewProgress) => void
@@ -277,6 +301,56 @@ export const createGitLabAPI = (): GitLabAPI => ({
 
   checkGitLabMRNewCommits: (projectId: string, mrIid: number): Promise<GitLabNewCommitsCheck> =>
     invokeIpc(IPC_CHANNELS.GITLAB_MR_CHECK_NEW_COMMITS, projectId, mrIid),
+
+  // NEW: Additional MR operations for feature parity
+  listMoreGitLabMRs: (
+    projectId: string,
+    state?: 'opened' | 'closed' | 'merged' | 'all',
+    page?: number
+  ): Promise<IPCResult<{ mrs: any[]; hasMore: boolean }>> =>
+    invokeIpc(IPC_CHANNELS.GITLAB_MR_LIST_MORE, projectId, state, page),
+
+  getGitLabMRReviewsBatch: (
+    projectId: string,
+    mrIids: number[]
+  ): Promise<IPCResult<Record<number, any>>> =>
+    invokeIpc(IPC_CHANNELS.GITLAB_MR_GET_REVIEWS_BATCH, projectId, mrIids),
+
+  deleteGitLabMRReview: (projectId: string, mrIid: number, noteId: number): Promise<IPCResult<{ deleted: boolean }>> =>
+    invokeIpc(IPC_CHANNELS.GITLAB_MR_DELETE_REVIEW, projectId, mrIid, noteId),
+
+  fixGitLabMR: (projectId: string, mrIid: number, findings: string[]): Promise<IPCResult<{ fixed: number }>> =>
+    invokeIpc(IPC_CHANNELS.GITLAB_MR_FIX, projectId, mrIid, findings),
+
+  startGitLabMRStatusPoll: (
+    projectId: string,
+    mrIid: number,
+    intervalMs?: number
+  ): Promise<IPCResult<{ polling: boolean }>> =>
+    invokeIpc(IPC_CHANNELS.GITLAB_PR_STATUS_POLL_START, projectId, mrIid, intervalMs),
+
+  stopGitLabMRStatusPoll: (projectId: string, mrIid: number): Promise<IPCResult<{ stopped: boolean }>> =>
+    invokeIpc(IPC_CHANNELS.GITLAB_PR_STATUS_POLL_STOP, projectId, mrIid),
+
+  getGitLabMRLogs: (projectId: string, mrIid: number): Promise<IPCResult<string[]>> =>
+    invokeIpc(IPC_CHANNELS.GITLAB_PR_GET_LOGS, projectId, mrIid),
+
+  getGitLabMRMemory: (projectId: string, mrIid: number): Promise<IPCResult<any[]>> =>
+    invokeIpc(IPC_CHANNELS.GITLAB_PR_MEMORY_GET, projectId, mrIid),
+
+  searchGitLabMRMemory: (projectId: string, query: string): Promise<IPCResult<any[]>> =>
+    invokeIpc(IPC_CHANNELS.GITLAB_PR_MEMORY_SEARCH, projectId, query),
+
+  checkGitLabMRMergeReadiness: (
+    projectId: string,
+    mrIid: number
+  ): Promise<IPCResult<{
+    canMerge: boolean;
+    hasConflicts: boolean;
+    needsDiscussion: boolean;
+    pipelineStatus?: string;
+  }>> =>
+    invokeIpc(IPC_CHANNELS.GITLAB_MR_CHECK_MERGE_READINESS, projectId, mrIid),
 
   // MR Review Event Listeners
   onGitLabMRReviewProgress: (
