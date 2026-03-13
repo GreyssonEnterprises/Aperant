@@ -64,7 +64,7 @@ function isStructuredLogs(logs: unknown): logs is PRLogs {
 
 // Helper function to get phase labels with translation
 function getPhaseLabel(phase: GitLabMRLogPhase, t: (key: string) => string): string {
-  return t(`gitlab:mrReview.logs.${phase}Gathering`);
+  return t(`gitlab:mrFiltering.logs.${phase}Gathering`);
 }
 
 const PHASE_ICONS: Record<GitLabMRLogPhase, typeof FolderOpen> = {
@@ -211,7 +211,7 @@ export function MRLogs({ mrIid, logs, isLoading, isStreaming = false }: MRLogsPr
           // TODO: Remove when GITLAB_MR_GET_LOGS returns structured PRLogs
           <>
             <div className="text-sm text-muted-foreground mb-4">
-              {t('gitlab:mrReview.logs.mrLabel', { iid: mrIid })}
+              {t('gitlab:mrFiltering.logs.mrLabel', { iid: mrIid })}
             </div>
             <div className="space-y-1 text-xs font-mono text-muted-foreground">
               {logsAsArray.map((log, idx) => (
@@ -224,12 +224,12 @@ export function MRLogs({ mrIid, logs, isLoading, isStreaming = false }: MRLogsPr
             {/* Logs header */}
             <div className="flex items-center justify-between mb-4">
               <div className="text-sm text-muted-foreground flex items-center gap-2">
-                {t('gitlab:mrReview.logs.mrLabel', { iid: mrIid })}
-                {logs.is_followup && <Badge variant="outline" className="text-xs">{t('gitlab:mrReview.logs.followup')}</Badge>}
+                {t('gitlab:mrFiltering.logs.mrLabel', { iid: mrIid })}
+                {logs.is_followup && <Badge variant="outline" className="text-xs">{t('gitlab:mrFiltering.logs.followup')}</Badge>}
                 {isStreaming && (
                   <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-500 border-blue-500/30 flex items-center gap-1">
                     <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                    {t('gitlab:mrReview.logs.live')}
+                    {t('gitlab:mrFiltering.logs.live')}
                   </Badge>
                 )}
               </div>
@@ -262,14 +262,14 @@ export function MRLogs({ mrIid, logs, isLoading, isStreaming = false }: MRLogsPr
         ) : isStreaming ? (
           <div className="text-center text-sm text-muted-foreground py-8">
             <Loader2 className="mx-auto mb-2 h-8 w-8 animate-spin text-blue-500" />
-            <p>{t('gitlab:mrReview.logs.waitingForLogs')}</p>
-            <p className="text-xs mt-1">{t('gitlab:mrReview.logs.reviewStarting')}</p>
+            <p>{t('gitlab:mrFiltering.logs.waitingForLogs')}</p>
+            <p className="text-xs mt-1">{t('gitlab:mrFiltering.logs.reviewStarting')}</p>
           </div>
         ) : (
           <div className="text-center text-sm text-muted-foreground py-8">
             <Terminal className="mx-auto mb-2 h-8 w-8 opacity-50" />
-            <p>{t('gitlab:mrReview.logs.noLogsAvailable')}</p>
-            <p className="text-xs mt-1">{t('gitlab:mrReview.logs.runReviewGenerateLogs')}</p>
+            <p>{t('gitlab:mrFiltering.logs.noLogsAvailable')}</p>
+            <p className="text-xs mt-1">{t('gitlab:mrFiltering.logs.runReviewGenerateLogs')}</p>
           </div>
         )}
       </div>
@@ -299,7 +299,7 @@ function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isStreaming = 
       return (
         <Badge variant="outline" className="text-xs bg-info/10 text-info border-info/30 flex items-center gap-1">
           <Loader2 className="h-3 w-3 animate-spin" />
-          {isStreaming ? t('gitlab:mrReview.logs.streaming') : t('gitlab:mrReview.logs.running')}
+          {isStreaming ? t('gitlab:mrFiltering.logs.streaming') : t('gitlab:mrFiltering.logs.running')}
         </Badge>
       );
     }
@@ -307,7 +307,7 @@ function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isStreaming = 
     if (isStreaming && status === 'completed' && !hasEntries) {
       return (
         <Badge variant="secondary" className="text-xs text-muted-foreground">
-          {t('gitlab:mrReview.logs.pending')}
+          {t('gitlab:mrFiltering.logs.pending')}
         </Badge>
       );
     }
@@ -317,20 +317,20 @@ function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isStreaming = 
         return (
           <Badge variant="outline" className="text-xs bg-success/10 text-success border-success/30 flex items-center gap-1">
             <CheckCircle2 className="h-3 w-3" />
-            {t('gitlab:mrReview.logs.complete')}
+            {t('gitlab:mrFiltering.logs.complete')}
           </Badge>
         );
       case 'failed':
         return (
           <Badge variant="outline" className="text-xs bg-destructive/10 text-destructive border-destructive/30 flex items-center gap-1">
             <XCircle className="h-3 w-3" />
-            {t('gitlab:mrReview.logs.failed')}
+            {t('gitlab:mrFiltering.logs.failed')}
           </Badge>
         );
       default:
         return (
           <Badge variant="secondary" className="text-xs text-muted-foreground">
-            {t('gitlab:mrReview.logs.pending')}
+            {t('gitlab:mrFiltering.logs.pending')}
           </Badge>
         );
     }
@@ -359,7 +359,7 @@ function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isStreaming = 
             <span className="font-medium text-sm">{getPhaseLabel(phase, t)}</span>
             {hasEntries && (
               <span className="text-xs text-muted-foreground">
-                ({phaseLog?.entries.length} {t('gitlab:mrReview.logs.entries')})
+                ({phaseLog?.entries.length} {t('gitlab:mrFiltering.logs.entries')})
               </span>
             )}
           </div>
@@ -371,7 +371,7 @@ function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isStreaming = 
       <CollapsibleContent>
         <div className="mt-1 ml-6 border-l-2 border-border pl-4 py-2 space-y-2">
           {!hasEntries ? (
-            <p className="text-xs text-muted-foreground italic">{t('gitlab:mrReview.logs.noLogsYet')}</p>
+            <p className="text-xs text-muted-foreground italic">{t('gitlab:mrFiltering.logs.noLogsYet')}</p>
           ) : (
             <GroupedLogEntries
               entries={phaseLog?.entries || []}
@@ -446,15 +446,15 @@ function OrchestratorActivitySection({ entries, isExpanded, onToggle }: Orchestr
 
   const summaryParts: string[] = [];
   if (readCount > 0) {
-    summaryParts.push(t('gitlab:mrReview.logs.filesRead', { count: readCount }));
+    summaryParts.push(t('gitlab:mrFiltering.logs.filesRead', { count: readCount }));
   }
   if (searchCount > 0) {
-    summaryParts.push(t('gitlab:mrReview.logs.searches', { count: searchCount }));
+    summaryParts.push(t('gitlab:mrFiltering.logs.searches', { count: searchCount }));
   }
   if (otherCount > 0) {
-    summaryParts.push(t('gitlab:mrReview.logs.other', { count: otherCount }));
+    summaryParts.push(t('gitlab:mrFiltering.logs.other', { count: otherCount }));
   }
-  const summary = summaryParts.join(', ') || t('gitlab:mrReview.logs.operations', { count: entries.length });
+  const summary = summaryParts.join(', ') || t('gitlab:mrFiltering.logs.operations', { count: entries.length });
 
   return (
     <div className="rounded-md border border-border/50 bg-secondary/10 overflow-hidden">
@@ -473,7 +473,7 @@ function OrchestratorActivitySection({ entries, isExpanded, onToggle }: Orchestr
             <ChevronRight className="h-3 w-3 text-muted-foreground" />
           )}
           <Activity className="h-3 w-3 text-orange-400" />
-          <span className="text-xs text-muted-foreground">{t('common:mrReview.logs.agentActivity')}</span>
+          <span className="text-xs text-muted-foreground">{t('gitlab:mrFiltering.logs.agentActivity')}</span>
         </div>
         <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-orange-500/10 text-orange-400 border-orange-500/30">
           {summary}
@@ -581,12 +581,12 @@ function AgentLogGroup({ group, isExpanded, onToggle }: AgentLogGroupProps) {
               {isExpanded ? (
                 <>
                   <ChevronDown className="h-3 w-3" />
-                  <span>{t('common:mrReview.logs.hideMore', { count: otherEntries.length })}</span>
+                  <span>{t('gitlab:mrFiltering.logs.hideMore', { count: otherEntries.length })}</span>
                 </>
               ) : (
                 <>
                   <ChevronRight className="h-3 w-3" />
-                  <span>{t('common:mrReview.logs.showMore', { count: otherEntries.length })}</span>
+                  <span>{t('gitlab:mrFiltering.logs.showMore', { count: otherEntries.length })}</span>
                 </>
               )}
             </button>
@@ -651,12 +651,12 @@ function LogEntry({ entry }: LogEntryProps) {
               {isExpanded ? (
                 <>
                   <ChevronDown className="h-2.5 w-2.5" />
-                  <span>{t('gitlab:mrReview.logs.less')}</span>
+                  <span>{t('gitlab:mrFiltering.logs.less')}</span>
                 </>
               ) : (
                 <>
                   <ChevronRight className="h-2.5 w-2.5" />
-                  <span>{t('gitlab:mrReview.logs.more')}</span>
+                  <span>{t('gitlab:mrFiltering.logs.more')}</span>
                 </>
               )}
             </button>
@@ -715,12 +715,12 @@ function LogEntry({ entry }: LogEntryProps) {
             {isExpanded ? (
               <>
                 <ChevronDown className="h-2.5 w-2.5" />
-                <span>{t('gitlab:mrReview.logs.less')}</span>
+                <span>{t('gitlab:mrFiltering.logs.less')}</span>
               </>
             ) : (
               <>
                 <ChevronRight className="h-2.5 w-2.5" />
-                <span>{t('gitlab:mrReview.logs.more')}</span>
+                <span>{t('gitlab:mrFiltering.logs.more')}</span>
               </>
             )}
           </button>
