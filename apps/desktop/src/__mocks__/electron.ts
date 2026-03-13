@@ -7,12 +7,14 @@ import { EventEmitter } from 'events';
 // Mock app
 export const app = {
   getPath: vi.fn((name: string) => {
+    const os = require('os');
+    const path = require('path');
     const paths: Record<string, string> = {
-      userData: '/tmp/test-app-data',
-      home: '/tmp/test-home',
-      temp: '/tmp'
+      userData: path.join(os.homedir(), '.aperant-test-data'),
+      home: os.homedir(),
+      temp: os.tmpdir()
     };
-    return paths[name] || '/tmp';
+    return paths[name] || path.join(os.homedir(), '.aperant-test');
   }),
   getAppPath: vi.fn(() => '/tmp/test-app'),
   getVersion: vi.fn(() => '0.1.0'),

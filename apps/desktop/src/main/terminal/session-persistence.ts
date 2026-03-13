@@ -23,8 +23,10 @@ function getUserDataPath(): string {
   } catch {
     // Ignore errors in test environment
   }
-  // Fallback for test environment
-  return '/tmp/test-app-data';
+  // Fallback for test environment - use home directory instead of /tmp for security
+  const os = require('os');
+  const path = require('path');
+  return path.join(os.homedir(), '.aperant-test-data');
 }
 
 const SESSIONS_FILE = path.join(getUserDataPath(), 'terminal-sessions.json');
