@@ -82,7 +82,7 @@ export const terminalMock = {
     }
   }),
 
-  saveTerminalBuffer: async () => ({ success: true }),
+  saveTerminalBuffer: async (_terminalId: string, _serializedBuffer: string) => ({ success: true }),
 
   checkTerminalPtyAlive: async () => ({
     success: true,

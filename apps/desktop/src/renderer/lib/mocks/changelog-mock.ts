@@ -134,8 +134,9 @@ export const changelogMock = {
     }
   }),
 
-  createRelease: () => {
+  createRelease: async () => {
     console.warn('[Browser Mock] createRelease called');
+    return { success: true, data: { url: '', tagName: '' } };
   },
 
   onReleaseProgress: () => () => {},

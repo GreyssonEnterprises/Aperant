@@ -32,8 +32,7 @@ const isElectron = typeof window !== 'undefined' && window.electronAPI !== undef
  * need to implement every single API method. The type assertion is necessary
  * because the mock is intentionally incomplete.
  */
-// @ts-expect-error - Browser mock is intentionally incomplete for UI development
-const browserMockAPI: ElectronAPI = {
+const browserMockAPI = {
   // Project Operations
   ...projectMock,
 
@@ -461,7 +460,7 @@ const browserMockAPI: ElectronAPI = {
   copyDebugInfo: async () => ({ success: false, error: 'Not available in browser mode' }),
   getRecentErrors: async () => [],
   listLogFiles: async () => []
-};
+} satisfies Partial<ElectronAPI>;
 
 /**
  * Initialize browser mock if not running in Electron
@@ -471,7 +470,8 @@ export function initBrowserMock(): void {
     console.warn('%c[Browser Mock] Initializing mock electronAPI for browser preview', 'color: #f0ad4e; font-weight: bold;');
     // Type assertion: browser mock is used for UI development in browser
     // and doesn't need to implement every single API method
-    (window as Window & { electronAPI: ElectronAPI }).electronAPI = browserMockAPI as ElectronAPI;
+    // Cast through unknown since we're using Partial<ElectronAPI> for type safety
+    (window as Window & { electronAPI: ElectronAPI }).electronAPI = browserMockAPI as unknown as ElectronAPI;
   }
 }
 
