@@ -591,10 +591,10 @@ export const createGitHubAPI = (): GitHubAPI => ({
 
   // Release operations (changelog-based)
   getReleaseableVersions: (projectId: string): Promise<IPCResult<unknown>> =>
-    invokeIpc('release:getVersions', projectId),
+    invokeIpc(IPC_CHANNELS.RELEASE_GET_VERSIONS, projectId),
 
   runReleasePreflightCheck: (projectId: string, version: string): Promise<IPCResult<unknown>> =>
-    invokeIpc('release:preflightCheck', projectId, version),
+    invokeIpc(IPC_CHANNELS.RELEASE_PREFLIGHT, projectId, version),
 
   createRelease: (options: {
     projectId: string;
@@ -603,7 +603,7 @@ export const createGitHubAPI = (): GitHubAPI => ({
     draft?: boolean;
     prerelease?: boolean;
   }): Promise<IPCResult<unknown>> =>
-    invokeIpc('release:create', options),
+    invokeIpc(IPC_CHANNELS.RELEASE_CREATE, options),
 
   // OAuth operations (gh CLI)
   checkGitHubCli: (): Promise<IPCResult<{ installed: boolean; version?: string }>> =>

@@ -47,24 +47,20 @@ interface MRLogsProps {
   isStreaming?: boolean;
 }
 
-// Type guard to check if logs is the expected PRLogs structure or a plain string array
-function isStructuredLogs(logs: unknown): logs is PRLogs {
-  return (
-    typeof logs === 'object' &&
-    logs !== null &&
-    'is_followup' in logs &&
-    'updated_at' in logs &&
-    'phases' in logs
-  );
-}
-
 // TODO: The GITLAB_MR_GET_LOGS IPC handler returns string[] but this component expects PRLogs.
 // Add a transformation to convert string[] to PRLogs structure in the handler or a data layer.
 // For now, handle both formats defensively.
 
+// Phase label translation key mapping
+const PHASE_LABEL_KEYS: Record<GitLabMRLogPhase, string> = {
+  context: 'gitlab:mrFiltering.logs.contextGathering',
+  analysis: 'gitlab:mrFiltering.logs.aiAnalysis',
+  synthesis: 'gitlab:mrFiltering.logs.synthesis',
+};
+
 // Helper function to get phase labels with translation
 function getPhaseLabel(phase: GitLabMRLogPhase, t: (key: string) => string): string {
-  return t(`gitlab:mrFiltering.logs.${phase}Gathering`);
+  return t(PHASE_LABEL_KEYS[phase]);
 }
 
 const PHASE_ICONS: Record<GitLabMRLogPhase, typeof FolderOpen> = {
@@ -170,9 +166,7 @@ export function MRLogs({ mrIid, logs, isLoading, isStreaming = false }: MRLogsPr
   const [expandedPhases, setExpandedPhases] = useState<Set<GitLabMRLogPhase>>(new Set(['analysis']));
   const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
 
-  // Handle both structured PRLogs and plain string[] formats
   // TODO: Remove this fallback when GITLAB_MR_GET_LOGS returns structured PRLogs
-  const isStructured = logs && isStructuredLogs(logs);
   const logsAsArray = Array.isArray(logs) ? logs : null;
 
   const togglePhase = (phase: GitLabMRLogPhase) => {

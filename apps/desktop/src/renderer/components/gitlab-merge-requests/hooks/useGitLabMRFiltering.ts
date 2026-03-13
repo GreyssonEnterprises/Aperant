@@ -7,6 +7,13 @@
  * NOTE: This hook and MRFilterBar are reserved for future filtering functionality.
  * They are not currently integrated into the GitLab MRs UI but are retained
  * for when filtering/search features are implemented.
+ *
+ * TODO: Integrate MRFilterBar into GitLabMergeRequests.tsx by:
+ * 1. Importing useGitLabMRFiltering hook
+ * 2. Importing MRFilterBar component from ./components/MRFilterBar
+ * 3. Adding filter state management to GitLabMergeRequests component
+ * 4. Passing filtered MRs to MergeRequestList instead of raw mrs
+ * 5. Adding UI toggle for filter bar visibility
  */
 
 import { useMemo, useState, useCallback } from 'react';

@@ -25,18 +25,18 @@ import {
   Clock,
   FileCode
 } from 'lucide-react';
-import { Input } from '../../ui/input';
-import { Badge } from '../../ui/badge';
-import { Button } from '../../ui/button';
-import { Separator } from '../../ui/separator';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
-} from '../../ui/dropdown-menu';
+} from '@/components/ui/dropdown-menu';
 import { useTranslation } from 'react-i18next';
 import type { GitLabMRFilterState, GitLabMRStatusFilter, GitLabMRSortOption } from '../hooks/useGitLabMRFiltering';
-import { cn } from '../../../lib/utils';
+import { cn } from '@/lib/utils';
 
 interface MRFilterBarProps {
   filters: GitLabMRFilterState;
