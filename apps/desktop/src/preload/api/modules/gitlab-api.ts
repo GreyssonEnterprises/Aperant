@@ -84,15 +84,15 @@ export interface GitLabAPI {
     projectId: string,
     state?: 'opened' | 'closed' | 'merged' | 'all',
     page?: number
-  ) => Promise<IPCResult<{ mrs: any[]; hasMore: boolean }>>;
-  getGitLabMRReviewsBatch: (projectId: string, mrIids: number[]) => Promise<IPCResult<Record<number, any>>>;
+  ) => Promise<IPCResult<{ mrs: GitLabMergeRequest[]; hasMore: boolean }>>;
+  getGitLabMRReviewsBatch: (projectId: string, mrIids: number[]) => Promise<IPCResult<Record<number, GitLabMRReviewResult | null>>>;
   deleteGitLabMRReview: (projectId: string, mrIid: number, noteId: number) => Promise<IPCResult<{ deleted: boolean }>>;
   fixGitLabMR: (projectId: string, mrIid: number, findings: string[]) => Promise<IPCResult<{ fixed: number }>>;
   startGitLabMRStatusPoll: (projectId: string, mrIid: number, intervalMs?: number) => Promise<IPCResult<{ polling: boolean }>>;
   stopGitLabMRStatusPoll: (projectId: string, mrIid: number) => Promise<IPCResult<{ stopped: boolean }>>;
   getGitLabMRLogs: (projectId: string, mrIid: number) => Promise<IPCResult<string[]>>;
-  getGitLabMRMemory: (projectId: string, mrIid: number) => Promise<IPCResult<any[]>>;
-  searchGitLabMRMemory: (projectId: string, query: string) => Promise<IPCResult<any[]>>;
+  getGitLabMRMemory: (projectId: string, mrIid: number) => Promise<IPCResult<unknown[]>>;
+  searchGitLabMRMemory: (projectId: string, query: string) => Promise<IPCResult<unknown[]>>;
   checkGitLabMRMergeReadiness: (
     projectId: string,
     mrIid: number
@@ -307,13 +307,13 @@ export const createGitLabAPI = (): GitLabAPI => ({
     projectId: string,
     state?: 'opened' | 'closed' | 'merged' | 'all',
     page?: number
-  ): Promise<IPCResult<{ mrs: any[]; hasMore: boolean }>> =>
+  ): Promise<IPCResult<{ mrs: GitLabMergeRequest[]; hasMore: boolean }>> =>
     invokeIpc(IPC_CHANNELS.GITLAB_MR_LIST_MORE, projectId, state, page),
 
   getGitLabMRReviewsBatch: (
     projectId: string,
     mrIids: number[]
-  ): Promise<IPCResult<Record<number, any>>> =>
+  ): Promise<IPCResult<Record<number, GitLabMRReviewResult | null>>> =>
     invokeIpc(IPC_CHANNELS.GITLAB_MR_GET_REVIEWS_BATCH, projectId, mrIids),
 
   deleteGitLabMRReview: (projectId: string, mrIid: number, noteId: number): Promise<IPCResult<{ deleted: boolean }>> =>
@@ -335,10 +335,10 @@ export const createGitLabAPI = (): GitLabAPI => ({
   getGitLabMRLogs: (projectId: string, mrIid: number): Promise<IPCResult<string[]>> =>
     invokeIpc(IPC_CHANNELS.GITLAB_MR_GET_LOGS, projectId, mrIid),
 
-  getGitLabMRMemory: (projectId: string, mrIid: number): Promise<IPCResult<any[]>> =>
+  getGitLabMRMemory: (projectId: string, mrIid: number): Promise<IPCResult<unknown[]>> =>
     invokeIpc(IPC_CHANNELS.GITLAB_MR_MEMORY_GET, projectId, mrIid),
 
-  searchGitLabMRMemory: (projectId: string, query: string): Promise<IPCResult<any[]>> =>
+  searchGitLabMRMemory: (projectId: string, query: string): Promise<IPCResult<unknown[]>> =>
     invokeIpc(IPC_CHANNELS.GITLAB_MR_MEMORY_SEARCH, projectId, query),
 
   checkGitLabMRMergeReadiness: (

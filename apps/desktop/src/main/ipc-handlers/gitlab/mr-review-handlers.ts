@@ -1021,6 +1021,24 @@ export function registerMRReviewHandlers(
             { method: 'DELETE' }
           );
 
+          // Clear the posted findings cache since the review note was deleted
+          const reviewPath = path.join(getGitLabDir(project), 'mr', `review_${mrIid}.json`);
+          const tempPath = `${reviewPath}.tmp.${randomUUID()}`;
+          try {
+            const data = JSON.parse(fs.readFileSync(reviewPath, 'utf-8'));
+            data.has_posted_findings = false;
+            data.posted_finding_ids = [];
+            // Write to temp file first, then rename atomically
+            fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
+            fs.renameSync(tempPath, reviewPath);
+            debugLog('Cleared posted findings cache after note deletion', { mrIid, noteId });
+          } catch (cacheError) {
+            // Clean up temp file if it exists
+            try { fs.unlinkSync(tempPath); } catch { /* ignore cleanup errors */ }
+            debugLog('Failed to clear posted findings cache', { error: cacheError instanceof Error ? cacheError.message : cacheError });
+            // Continue anyway - the deletion succeeded even if cache update failed
+          }
+
           return { success: true, data: { deleted: true } };
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1063,15 +1081,16 @@ export function registerMRReviewHandlers(
             `/projects/${encodedProject}/merge_requests/${mrIid}`
           ) as {
             merge_status?: string;
+            detailed_merge_status?: string;
             has_conflicts?: boolean;
-            discussion_locked?: boolean;
+            blocking_discussions_resolved?: boolean;
             pipeline?: { status?: string };
           };
 
-          const mergeStatus = mrData.merge_status || 'cannot_be_merged';
-          const canMerge = mergeStatus === 'can_be_merged';
+          const detailedStatus = mrData.detailed_merge_status || mrData.merge_status || 'cannot_be_merged';
+          const canMerge = detailedStatus === 'can_be_merged' || detailedStatus === 'mergeable';
           const hasConflicts = mrData.has_conflicts || false;
-          const needsDiscussion = !mrData.discussion_locked;
+          const needsDiscussion = detailedStatus === 'discussions_not_resolved' || mrData.blocking_discussions_resolved === false;
           const pipelineStatus = mrData.pipeline?.status;
 
           return {
@@ -1141,7 +1160,7 @@ export function registerMRReviewHandlers(
    */
   ipcMain.handle(
     IPC_CHANNELS.GITLAB_MR_STATUS_POLL_START,
-    async (_event, projectId: string, mrIid: number, intervalMs: number = 5000): Promise<IPCResult<{ polling: boolean }>> => {
+    async (event, projectId: string, mrIid: number, intervalMs: number = 5000): Promise<IPCResult<{ polling: boolean }>> => {
       debugLog('statusPollStart handler called', { projectId, mrIid, intervalMs });
 
       const result = await withProjectOrNull(projectId, async (project) => {
@@ -1150,6 +1169,12 @@ export function registerMRReviewHandlers(
         // Clear existing interval if any
         if (statusPollingIntervals.has(pollKey)) {
           clearInterval(statusPollingIntervals.get(pollKey)!);
+        }
+
+        // Get the window that initiated this polling - more robust than getAllWindows()[0]
+        const callingWindow = BrowserWindow.fromWebContents(event.sender);
+        if (!callingWindow) {
+          return { success: false, error: 'Could not identify calling window' };
         }
 
         // Start new polling interval
@@ -1165,8 +1190,7 @@ export function registerMRReviewHandlers(
 
           try {
             // Emit status update to renderer
-            const mainWindow = BrowserWindow.getAllWindows()[0];
-            if (mainWindow) {
+            if (callingWindow && !callingWindow.isDestroyed()) {
               const config = await getGitLabConfig(project);
               if (!config) return;
 
@@ -1183,7 +1207,7 @@ export function registerMRReviewHandlers(
                 updated_at?: string;
               };
 
-              mainWindow.webContents.send('gitlab:mr:statusUpdate', {
+              callingWindow.webContents.send('gitlab:mr:statusUpdate', {
                 projectId,
                 mrIid,
                 state: mrData.state,

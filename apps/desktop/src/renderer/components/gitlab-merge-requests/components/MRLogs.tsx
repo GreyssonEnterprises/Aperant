@@ -52,12 +52,6 @@ function getPhaseLabel(phase: GitLabMRLogPhase, t: (key: string) => string): str
   return t(`gitlab:mrReview.logs.${phase}Gathering`);
 }
 
-const PHASE_LABELS: Record<GitLabMRLogPhase, string> = {
-  context: 'Context Gathering',
-  analysis: 'AI Analysis',
-  synthesis: 'Synthesis'
-};
-
 const PHASE_ICONS: Record<GitLabMRLogPhase, typeof FolderOpen> = {
   context: FolderOpen,
   analysis: BrainCircuit,

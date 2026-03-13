@@ -99,8 +99,8 @@ export interface MRStatusIndicatorProps {
   checksStatus?: ChecksStatus | null;
   /** Review status */
   reviewsStatus?: ReviewsStatus | null;
-  /** Mergeable state */
-  mergeableState?: MergeableState | null;
+  /** Raw GitLab merge status string (e.g., 'can_be_merged', 'cannot_be_merged', 'checking') */
+  mergeStatus?: string | null;
   /** Additional CSS classes */
   className?: string;
   /** Whether to show a compact version (icons only) */
@@ -125,10 +125,17 @@ const mergeKeyMap: Record<string, string> = {
   checking: 'checking',
 };
 
+// Map GitLab merge status to MergeableState for the icon
+const gitlabToMergeableState: Record<string, MergeableState> = {
+  can_be_merged: 'clean',
+  cannot_be_merged: 'dirty',
+  checking: 'blocked',
+};
+
 export function MRStatusIndicator({
   checksStatus,
   reviewsStatus,
-  mergeableState,
+  mergeStatus,
   className,
   compact = false,
   showMergeStatus = true,
@@ -136,11 +143,12 @@ export function MRStatusIndicator({
   const { t } = useTranslation('common');
 
   // Don't render if no status data is available
-  if (!checksStatus && !reviewsStatus && !mergeableState) {
+  if (!checksStatus && !reviewsStatus && !mergeStatus) {
     return null;
   }
 
-  const mergeKey = mergeableState ? mergeKeyMap[mergeableState] : null;
+  const mergeKey = mergeStatus ? mergeKeyMap[mergeStatus] : null;
+  const mergeableState = mergeStatus ? gitlabToMergeableState[mergeStatus] : null;
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
