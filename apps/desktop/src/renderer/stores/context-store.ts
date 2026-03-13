@@ -117,14 +117,17 @@ export async function loadProjectContext(projectId: string): Promise<void> {
       if (data.projectIndex && typeof data.projectIndex === 'object') {
         store.setProjectIndex(data.projectIndex as ProjectIndex);
       }
-      if (data.memoryStatus) {
+      if (data.memoryStatus && typeof data.memoryStatus === 'object') {
         store.setMemoryStatus(data.memoryStatus as MemorySystemStatus);
       }
-      if (data.memoryState) {
+      if (data.memoryState && typeof data.memoryState === 'object') {
         store.setMemoryState(data.memoryState as MemorySystemState);
       }
       if (Array.isArray(data.recentMemories)) {
         store.setRecentMemories(data.recentMemories as RendererMemory[]);
+      } else if (result.success) {
+        // Unexpected data shape - clear to avoid stale data
+        store.setRecentMemories([]);
       }
     } else {
       store.setIndexError(result.error || 'Failed to load project context');

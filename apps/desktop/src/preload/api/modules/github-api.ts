@@ -612,7 +612,14 @@ export const createGitHubAPI = (): GitHubAPI => ({
   checkGitHubAuth: (): Promise<IPCResult<{ authenticated: boolean; username?: string }>> =>
     invokeIpc(IPC_CHANNELS.GITHUB_CHECK_AUTH),
 
-  startGitHubAuth: (): Promise<IPCResult<{ success: boolean; message?: string }>> =>
+  startGitHubAuth: (): Promise<IPCResult<{
+    success: boolean;
+    message?: string;
+    deviceCode?: string;
+    authUrl?: string;
+    browserOpened?: boolean;
+    fallbackUrl?: string;
+  }>> =>
     invokeIpc(IPC_CHANNELS.GITHUB_START_AUTH),
 
   getGitHubToken: (): Promise<IPCResult<{ token: string }>> =>
