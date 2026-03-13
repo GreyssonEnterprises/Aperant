@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { join } from 'node:path';
 import { generateCommitMessage, type CommitMessageConfig } from '../commit-message';
 
 // Mock all dependencies
@@ -173,8 +174,8 @@ describe('Commit Message Runner', () => {
 
       await generateCommitMessage(config);
 
-      expect(existsCalls).toContain('/test/project/.auto-claude/specs/001-add-feature');
-      expect(existsCalls).toContain('/test/project/auto-claude/specs/001-add-feature');
+      expect(existsCalls).toContain(join('/test/project', '.auto-claude', 'specs', '001-add-feature'));
+      expect(existsCalls).toContain(join('/test/project', 'auto-claude', 'specs', '001-add-feature'));
     });
   });
 

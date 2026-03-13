@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { join } from 'node:path';
 import {
   runInsightsQuery,
   type InsightsConfig,
@@ -257,9 +258,10 @@ describe('Insights Runner', () => {
 
     it('should list existing tasks if specs directory exists', async () => {
       // Mock existsSync to return true only for the specs directory
+      const specsPath = join('.auto-claude', 'specs');
       vi.mocked(existsSync).mockImplementation((path) => {
         const pathStr = String(path);
-        return pathStr.includes('.auto-claude/specs');
+        return pathStr.includes(specsPath) || pathStr.includes('.auto-claude/specs');
       });
       // Mock readdirSync to return Dirent-like objects
       const mockDirents = [

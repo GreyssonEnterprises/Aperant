@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { join } from 'node:path';
 import { runIdeation, IDEATION_TYPES, IDEATION_TYPE_LABELS, type IdeationConfig, type IdeationResult } from '../ideation';
 import type { ModelShorthand, ThinkingLevel } from '../../config/types';
 
@@ -215,7 +216,7 @@ describe('Ideation Runner', () => {
       await runIdeation(config);
 
       expect(vi.mocked(readFileSync)).toHaveBeenCalledWith(
-        '/test/prompts/ideation_documentation.md',
+        join('/test/prompts', 'ideation_documentation.md'),
         'utf-8'
       );
     });
