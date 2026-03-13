@@ -57,9 +57,15 @@ export async function checkGitLabConnection(projectId: string): Promise<GitLabSy
 
   try {
     const result = await window.electronAPI.checkGitLabConnection(projectId);
-    if (result.success && result.data) {
+    // Only set sync status if actually connected (connected === true)
+    if (result.success && result.data && result.data.connected === true) {
       store.setSyncStatus(result.data);
       return result.data;
+    } else if (result.success && result.data && result.data.connected === false) {
+      // Connection failed but request succeeded - treat as error
+      store.clearSyncStatus();
+      store.setConnectionError(result.data.error || 'Failed to check GitLab connection');
+      return null;
     } else {
       store.clearSyncStatus();
       store.setConnectionError(result.error || 'Failed to check GitLab connection');

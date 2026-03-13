@@ -106,6 +106,22 @@ describe('sync-status-store', () => {
       expect(useSyncStatusStore.getState().connectionError).toBe('Authentication failed');
     });
 
+    it('should set error when connected is false', async () => {
+      mockElectronAPI.checkGitLabConnection.mockResolvedValue({
+        success: true,
+        data: {
+          connected: false,
+          error: 'Project not found'
+        }
+      });
+
+      const result = await checkGitLabConnection('project-123');
+
+      expect(result).toBe(null);
+      expect(useSyncStatusStore.getState().syncStatus).toBe(null);
+      expect(useSyncStatusStore.getState().connectionError).toBe('Project not found');
+    });
+
     it('should set error on exception', async () => {
       mockElectronAPI.checkGitLabConnection.mockRejectedValue(new Error('Network error'));
 

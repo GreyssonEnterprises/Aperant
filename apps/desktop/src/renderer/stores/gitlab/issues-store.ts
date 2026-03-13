@@ -119,8 +119,8 @@ export async function loadGitLabIssues(
   try {
     const result = await window.electronAPI.getGitLabIssues(projectId, state);
 
-    // Guard against stale responses
-    if (store.currentRequestToken !== requestId) {
+    // Guard against stale responses - read live state, not captured store reference
+    if (useIssuesStore.getState().currentRequestToken !== requestId) {
       return; // A newer request has superseded this one
     }
 
@@ -130,14 +130,14 @@ export async function loadGitLabIssues(
       store.setError(result.error || 'Failed to load GitLab issues');
     }
   } catch (error) {
-    // Guard against stale responses in error case
-    if (store.currentRequestToken !== requestId) {
+    // Guard against stale responses in error case - read live state
+    if (useIssuesStore.getState().currentRequestToken !== requestId) {
       return;
     }
     store.setError(error instanceof Error ? error.message : 'Unknown error');
   } finally {
-    // Only clear loading state if this is still the current request
-    if (store.currentRequestToken === requestId) {
+    // Only clear loading state if this is still the current request - read live state
+    if (useIssuesStore.getState().currentRequestToken === requestId) {
       store.setLoading(false);
     }
   }

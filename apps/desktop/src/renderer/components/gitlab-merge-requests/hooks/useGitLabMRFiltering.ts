@@ -3,6 +3,10 @@
  *
  * Stub hook - implements the same pattern as usePRFiltering
  * adapted for GitLab merge requests.
+ *
+ * NOTE: This hook and MRFilterBar are reserved for future filtering functionality.
+ * They are not currently integrated into the GitLab MRs UI but are retained
+ * for when filtering/search features are implemented.
  */
 
 import { useMemo, useState, useCallback } from 'react';
@@ -11,7 +15,7 @@ import type {
   GitLabMRReviewResult,
   GitLabMRReviewProgress,
   GitLabNewCommitsCheck
-} from '../../../../shared/types';
+} from '@shared/types';
 
 export type GitLabMRStatusFilter =
   | 'all'

@@ -1,7 +1,7 @@
 import { CheckCircle2, Circle, XCircle, Loader2, AlertTriangle, GitMerge, HelpCircle } from 'lucide-react';
-import { Badge } from '../../ui/badge';
-import { cn } from '../../../lib/utils';
-import type { ChecksStatus, ReviewsStatus, MergeableState } from '../../../../shared/types/pr-status';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+import type { ChecksStatus, ReviewsStatus, MergeableState } from '@shared/types/pr-status';
 import { useTranslation } from 'react-i18next';
 
 /**

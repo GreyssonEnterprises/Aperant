@@ -24,15 +24,15 @@ import {
   Clock,
   Activity
 } from 'lucide-react';
-import { Badge } from '../../ui/badge';
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '../../ui/collapsible';
-import { cn } from '../../../lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
+import { cn } from '@/lib/utils';
 import type {
   PRLogs,
   PRLogPhase,
   PRPhaseLog,
   PRLogEntry
-} from '../../../../preload/api/modules/github-api';
+} from '@preload/api/modules/github-api';
 
 // Type aliases for GitLab compatibility
 type GitLabMRLogs = PRLogs;

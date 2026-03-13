@@ -33,6 +33,14 @@ export function parseGitLabError(error: unknown): ParsedGitLabError {
     return parseGitLabErrorMessage(error);
   }
 
+  // Handle Error-like objects with a message property
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message: string }).message;
+    if (typeof message === 'string') {
+      return parseGitLabErrorMessage(message);
+    }
+  }
+
   return {
     code: GitLabErrorCode.UNKNOWN,
     recoverable: false
@@ -45,8 +53,31 @@ export function parseGitLabError(error: unknown): ParsedGitLabError {
 function parseGitLabErrorMessage(message: string): ParsedGitLabError {
   const lowerMessage = message.toLowerCase();
 
+  // Check for explicit HTTP status code in response (if available)
+  // Try to extract status from common patterns like "Status: 401" or HTTP error responses
+  const statusMatch = message.match(/\bstatus:\s*(\d{3})\b/i) ||
+                       message.match(/\bhttp\s+(\d{3})\b/i) ||
+                       lowerMessage.match(/\b"status":\s*(\d{3})\b/);
+
+  if (statusMatch) {
+    const statusCode = parseInt(statusMatch[1], 10);
+    switch (statusCode) {
+      case 401:
+        return { code: GitLabErrorCode.AUTHENTICATION_FAILED, recoverable: true };
+      case 403:
+        return { code: GitLabErrorCode.INSUFFICIENT_PERMISSIONS, recoverable: true };
+      case 404:
+        return { code: GitLabErrorCode.PROJECT_NOT_FOUND, recoverable: true };
+      case 409:
+        return { code: GitLabErrorCode.CONFLICT, recoverable: false };
+      case 429:
+        return { code: GitLabErrorCode.RATE_LIMITED, recoverable: true };
+    }
+  }
+
+  // Fallback to message content analysis with word-boundary regex to avoid false matches
   // Authentication errors
-  if (lowerMessage.includes('401') || lowerMessage.includes('unauthorized') || lowerMessage.includes('invalid token')) {
+  if (/\b401\b/.test(message) || lowerMessage.includes('unauthorized') || lowerMessage.includes('invalid token')) {
     return {
       code: GitLabErrorCode.AUTHENTICATION_FAILED,
       recoverable: true
@@ -54,7 +85,7 @@ function parseGitLabErrorMessage(message: string): ParsedGitLabError {
   }
 
   // Rate limiting (429)
-  if (lowerMessage.includes('429') || lowerMessage.includes('rate limit') || lowerMessage.includes('too many requests')) {
+  if (/\b429\b/.test(message) || lowerMessage.includes('rate limit') || lowerMessage.includes('too many requests')) {
     return {
       code: GitLabErrorCode.RATE_LIMITED,
       recoverable: true
@@ -70,7 +101,7 @@ function parseGitLabErrorMessage(message: string): ParsedGitLabError {
   }
 
   // Project not found (404)
-  if (lowerMessage.includes('404') || lowerMessage.includes('not found')) {
+  if (/\b404\b/.test(message) || lowerMessage.includes('not found')) {
     return {
       code: GitLabErrorCode.PROJECT_NOT_FOUND,
       recoverable: true
@@ -78,7 +109,7 @@ function parseGitLabErrorMessage(message: string): ParsedGitLabError {
   }
 
   // Permission denied (403)
-  if (lowerMessage.includes('403') || lowerMessage.includes('forbidden') || lowerMessage.includes('permission denied')) {
+  if (/\b403\b/.test(message) || lowerMessage.includes('forbidden') || lowerMessage.includes('permission denied')) {
     return {
       code: GitLabErrorCode.INSUFFICIENT_PERMISSIONS,
       recoverable: true
@@ -86,7 +117,7 @@ function parseGitLabErrorMessage(message: string): ParsedGitLabError {
   }
 
   // Conflict (409)
-  if (lowerMessage.includes('409') || lowerMessage.includes('conflict')) {
+  if (/\b409\b/.test(message) || lowerMessage.includes('conflict')) {
     return {
       code: GitLabErrorCode.CONFLICT,
       recoverable: false

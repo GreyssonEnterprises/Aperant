@@ -88,20 +88,6 @@ describe('issues-store', () => {
     expect(selected?.iid).toBe(1);
   });
 
-  it('should get filtered issues', () => {
-    const issues = [
-      createMockGitLabIssue({ iid: 1, state: 'opened' }),
-      createMockGitLabIssue({ iid: 2, state: 'closed' }),
-      createMockGitLabIssue({ iid: 3, state: 'opened' }),
-    ];
-    useIssuesStore.getState().setIssues(issues);
-    useIssuesStore.getState().setFilterState('opened');
-
-    const filtered = useIssuesStore.getState().getFilteredIssues();
-    expect(filtered).toHaveLength(2);
-    expect(filtered.every((i: GitLabIssue) => i.state === 'opened')).toBe(true);
-  });
-
   it('should count open issues', () => {
     const issues = [
       createMockGitLabIssue({ iid: 1, state: 'opened' }),

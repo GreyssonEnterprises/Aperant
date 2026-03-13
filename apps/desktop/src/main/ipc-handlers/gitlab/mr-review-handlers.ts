@@ -17,7 +17,7 @@ import { randomUUID } from 'crypto';
 import { IPC_CHANNELS, MODEL_ID_MAP, DEFAULT_FEATURE_MODELS, DEFAULT_FEATURE_THINKING } from '../../../shared/constants';
 import { getGitLabConfig, gitlabFetch, encodeProjectPath } from './utils';
 import { readSettingsFile } from '../../settings-utils';
-import type { Project, AppSettings, IPCResult } from '../../../shared/types';
+import type { Project, AppSettings, IPCResult, GitLabMergeRequest } from '../../../shared/types';
 import type {
   MRReviewResult,
   MRReviewProgress,
@@ -25,6 +25,7 @@ import type {
 } from './types';
 import { createContextLogger } from '../github/utils/logger';
 import { withProjectOrNull } from '../github/utils/project-middleware';
+import { projectStore } from '../../project-store';
 import { createIPCCommunicators } from '../github/utils/ipc-communicator';
 import {
   MRReviewEngine,
@@ -1118,6 +1119,7 @@ export function registerMRReviewHandlers(
 
   /**
    * Get AI review logs for an MR
+   * TODO: Return structured PRLogs type instead of string[] to match MRLogs component expectations
    */
   ipcMain.handle(
     IPC_CHANNELS.GITLAB_MR_GET_LOGS,
@@ -1163,7 +1165,7 @@ export function registerMRReviewHandlers(
     async (event, projectId: string, mrIid: number, intervalMs: number = 5000): Promise<IPCResult<{ polling: boolean }>> => {
       debugLog('statusPollStart handler called', { projectId, mrIid, intervalMs });
 
-      const result = await withProjectOrNull(projectId, async (project) => {
+      const result = await withProjectOrNull(projectId, async (_project) => {
         const pollKey = `${projectId}:${mrIid}`;
 
         // Clear existing interval if any
@@ -1191,7 +1193,14 @@ export function registerMRReviewHandlers(
           try {
             // Emit status update to renderer
             if (callingWindow && !callingWindow.isDestroyed()) {
-              const config = await getGitLabConfig(project);
+              // Fetch current project to avoid stale config from closure
+              const currentProject = projectStore.getProject(projectId);
+              if (!currentProject) {
+                debugLog('Project not found during poll', { projectId });
+                return;
+              }
+
+              const config = await getGitLabConfig(currentProject);
               if (!config) return;
 
               const { token, instanceUrl } = config;
@@ -1339,7 +1348,7 @@ export function registerMRReviewHandlers(
       projectId: string,
       state?: 'opened' | 'closed' | 'merged' | 'all',
       page: number = 2
-    ): Promise<IPCResult<{ mrs: any[]; hasMore: boolean }>> => {
+    ): Promise<IPCResult<{ mrs: GitLabMergeRequest[]; hasMore: boolean }>> => {
       debugLog('listMore handler called', { projectId, state, page });
 
       const result = await withProjectOrNull(projectId, async (project) => {
