@@ -61,10 +61,12 @@ export async function checkGitLabConnection(projectId: string): Promise<GitLabSy
       store.setSyncStatus(result.data);
       return result.data;
     } else {
+      store.clearSyncStatus();
       store.setConnectionError(result.error || 'Failed to check GitLab connection');
       return null;
     }
   } catch (error) {
+    store.clearSyncStatus();
     store.setConnectionError(error instanceof Error ? error.message : 'Unknown error');
     return null;
   }

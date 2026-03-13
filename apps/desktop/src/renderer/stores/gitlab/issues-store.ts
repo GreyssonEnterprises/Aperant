@@ -22,6 +22,7 @@ interface IssuesState {
   error: string | null;
   selectedIssueIid: number | null;
   filterState: IssueFilterState;
+  currentRequestToken: string | null;
 
   // Actions
   setIssues: (issues: GitLabIssue[]) => void;
@@ -32,6 +33,7 @@ interface IssuesState {
   selectIssue: (issueIid: number | null) => void;
   setFilterState: (state: IssueFilterState) => void;
   clearIssues: () => void;
+  setCurrentRequestToken: (token: string | null) => void;
 
   // Selectors
   getSelectedIssue: () => GitLabIssue | null;
@@ -46,6 +48,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   error: null,
   selectedIssueIid: null,
   filterState: 'opened',
+  currentRequestToken: null,
 
   // Actions
   setIssues: (issues) => set({ issues, error: null }),
@@ -71,8 +74,11 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   clearIssues: () => set({
     issues: [],
     selectedIssueIid: null,
-    error: null
+    error: null,
+    currentRequestToken: null
   }),
+
+  setCurrentRequestToken: (currentRequestToken) => set({ currentRequestToken }),
 
   // Selectors
   getSelectedIssue: () => {
@@ -99,7 +105,9 @@ export async function loadGitLabIssues(
   projectId: string,
   state?: IssueFilterState
 ): Promise<void> {
+  const requestId = Math.random().toString(36);
   const store = useIssuesStore.getState();
+  store.setCurrentRequestToken(requestId);
   store.setLoading(true);
   store.setError(null);
 
@@ -110,15 +118,28 @@ export async function loadGitLabIssues(
 
   try {
     const result = await window.electronAPI.getGitLabIssues(projectId, state);
+
+    // Guard against stale responses
+    if (store.currentRequestToken !== requestId) {
+      return; // A newer request has superseded this one
+    }
+
     if (result.success && result.data) {
       store.setIssues(result.data);
     } else {
       store.setError(result.error || 'Failed to load GitLab issues');
     }
   } catch (error) {
+    // Guard against stale responses in error case
+    if (store.currentRequestToken !== requestId) {
+      return;
+    }
     store.setError(error instanceof Error ? error.message : 'Unknown error');
   } finally {
-    store.setLoading(false);
+    // Only clear loading state if this is still the current request
+    if (store.currentRequestToken === requestId) {
+      store.setLoading(false);
+    }
   }
 }
 
