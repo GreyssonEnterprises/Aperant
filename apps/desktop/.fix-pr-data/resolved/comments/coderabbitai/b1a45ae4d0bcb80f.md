@@ -1,0 +1,198 @@
+# Comment: b1a45ae4d0bcb80f
+
+**Source:** coderabbitai
+**Type:** comment
+**File:** `apps/desktop/src/preload/api/project-api.ts`
+**Original ID:** 2930418407
+**Created:** None
+**Severity:** CRITICAL
+**Status:** RESOLVED
+
+---
+
+## Original Content
+
+_⚠️ Potential issue_ | _🔴 Critical_
+
+<details>
+<summary>🧩 Analysis chain</summary>
+
+🏁 Script executed:
+
+```shell
+#!/bin/bash
+# Verify whether infrastructure channels are declared and handled.
+rg -n -C2 "INFRASTRUCTURE_GET_STATUS|INFRASTRUCTURE_LIST_DATABASES|INFRASTRUCTURE_TEST_CONNECTION|infrastructure:getStatus|infrastructure:listDatabases|infrastructure:testConnection" apps/desktop/src/shared/constants/ipc.ts
+rg -n -C3 "ipcMain\\.handle\\(.*infrastructure:getStatus|ipcMain\\.handle\\(.*infrastructure:listDatabases|ipcMain\\.handle\\(.*infrastructure:testConnection|INFRASTRUCTURE_GET_STATUS|INFRASTRUCTURE_LIST_DATABASES|INFRASTRUCTURE_TEST_CONNECTION" apps/desktop/src/main/ipc-handlers/memory-handlers.ts
+rg -n -C2 "getMemoryInfrastructureStatus|listMemoryDatabases|testMemoryConnection" apps/desktop/src/preload/api/project-api.ts
+```
+
+Repository: AndyMik90/Aperant
+
+Length of output: 911
+
+---
+
+🏁 Script executed:
+
+```shell
+#!/bin/bash
+
+# Check if memory-handlers.ts exists and examine its content
+echo "=== Checking memory-handlers.ts existence ==="
+if [ -f "apps/desktop/src/main/ipc-handlers/memory-handlers.ts" ]; then
+  echo "File exists. Size:"
+  wc -l apps/desktop/src/main/ipc-handlers/memory-handlers.ts
+  echo ""
+  echo "=== Full content of memory-handlers.ts ==="
+  cat apps/desktop/src/main/ipc-handlers/memory-handlers.ts
+else
+  echo "File does not exist."
+fi
+
+echo ""
+echo "=== Searching for 'infrastructure' handlers in all IPC handlers ==="
+rg -n "infrastructure|INFRASTRUCTURE" apps/desktop/src/main/ipc-handlers/
+
+echo ""
+echo "=== Checking what handler files exist in ipc-handlers ==="
+ls -la apps/desktop/src/main/ipc-handlers/
+```
+
+Repository: AndyMik90/Aperant
+
+Length of output: 24111
+
+---
+
+🏁 Script executed:
+
+```shell
+#!/bin/bash
+
+echo "=== Checking IPC_CHANNELS constants definition ==="
+cat -n apps/desktop/src/shared/constants/ipc.ts | head -100
+
+echo ""
+echo "=== Checking if infrastructure channels are mentioned anywhere in ipc.ts ==="
+rg -n "infrastructure|INFRASTRUCTURE" apps/desktop/src/shared/constants/ipc.ts
+
+echo ""
+echo "=== Checking index.ts to see how handlers are registered ==="
+cat -n apps/desktop/src/main/ipc-handlers/index.ts
+```
+
+Repository: AndyMik90/Aperant
+
+Length of output: 11986
+
+---
+
+🏁 Script executed:
+
+```shell
+#!/bin/bash
+
+# Final verification: confirm these methods are called from renderer and would fail
+echo "=== Checking if preload methods are actually exported/typed ==="
+rg -B5 -A2 "getMemoryInfrastructureStatus.*dbPath" apps/desktop/src/preload/api/project-api.ts
+
+echo ""
+echo "=== Check if these methods are used in renderer code ==="
+rg -n "getMemoryInfrastructureStatus|listMemoryDatabases|testMemoryConnection" apps/desktop/src --type ts --type tsx
+```
+
+Repository: AndyMik90/Aperant
+
+Length of output: 1120
+
+---
+
+🏁 Script executed:
+
+```shell
+#!/bin/bash
+
+# Check if these methods are actually used in renderer code
+echo "=== Searching for usage of infrastructure methods in renderer ==="
+rg -n "getMemoryInfrastructureStatus|listMemoryDatabases|testMemoryConnection" apps/desktop/src/renderer apps/desktop/src/components apps/desktop/src/hooks 2>/dev/null || echo "No matches found in renderer"
+
+echo ""
+echo "=== Check if there's any test for these preload methods ==="
+find apps/desktop -name "*.test.ts" -o -name "*.test.tsx" | xargs grep -l "getMemoryInfrastructureStatus\|listMemoryDatabases\|testMemoryConnection" 2>/dev/null || echo "No test files found"
+
+echo ""
+echo "=== Verify the exact location in preload file ==="
+sed -n '290,305p' apps/desktop/src/preload/api/project-api.ts
+```
+
+Repository: AndyMik90/Aperant
+
+Length of output: 1752
+
+---
+
+
+
+</details>
+
+**Memory infrastructure IPC calls are wired to unregistered channels (will fail during onboarding).**
+
+Lines 296, 299, and 302 invoke hardcoded `infrastructure:*` channels that have no corresponding `ipcMain.handle()` registration in `memory-handlers.ts` and no constants in `IPC_CHANNELS`. This causes runtime failures when the onboarding flow (GraphitiStep.tsx) attempts to test memory connection. The channels must be defined as constants and their handlers implemented in the main process before the preload methods can work.
+
+<details>
+<summary>Fix approach</summary>
+
+1. Add constants to `apps/desktop/src/shared/constants/ipc.ts`:
+   ```
+   INFRASTRUCTURE_GET_STATUS: 'infrastructure:getStatus',
+   INFRASTRUCTURE_LIST_DATABASES: 'infrastructure:listDatabases',
+   INFRASTRUCTURE_TEST_CONNECTION: 'infrastructure:testConnection',
+   ```
+
+2. Implement handlers in `apps/desktop/src/main/ipc-handlers/memory-handlers.ts` (in `registerMemoryHandlers()`)
+
+3. Update preload to use constants:
+   ```diff
+   getMemoryInfrastructureStatus: (dbPath?: string) =>
+   -  ipcRenderer.invoke('infrastructure:getStatus', dbPath),
+   +  ipcRenderer.invoke(IPC_CHANNELS.INFRASTRUCTURE_GET_STATUS, dbPath),
+   ```
+</details>
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against the current code and only fix it if needed.
+
+In `@apps/desktop/src/preload/api/project-api.ts` around lines 295 - 302, The
+preload methods getMemoryInfrastructureStatus, listMemoryDatabases, and
+testMemoryConnection are invoking hardcoded 'infrastructure:*' IPC channels that
+aren't registered, causing runtime failures; add corresponding constants (e.g.,
+INFRASTRUCTURE_GET_STATUS, INFRASTRUCTURE_LIST_DATABASES,
+INFRASTRUCTURE_TEST_CONNECTION) to the IPC_CHANNELS file and implement matching
+ipcMain.handle handlers inside registerMemoryHandlers in memory-handlers.ts
+(implement logic to return status, list DBs, and test connection), then update
+the preload methods to invoke the new IPC_CHANNELS constants instead of
+hardcoded strings.
+```
+
+</details>
+
+<!-- fingerprinting:phantom:poseidon:hawk -->
+
+<!-- This is an auto-generated comment by CodeRabbit -->
+
+✅ Addressed in commits 37ac248 to f572dc1
+
+---
+
+## Implementation Notes
+
+*Status: RESOLVED*
+
+**Resolution:** Body contains resolution marker
+
+**Resolved At:** 2026-03-13T22:11:40.807218
+
