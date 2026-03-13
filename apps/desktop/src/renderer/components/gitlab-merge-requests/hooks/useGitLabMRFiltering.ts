@@ -67,7 +67,7 @@ function getMRComputedStatus(
 
   // Check for ready for follow-up first (highest priority after posting)
   // Must have new commits that happened AFTER findings were posted
-  if (hasPosted && hasNewCommits && hasCommitsAfterPosting) {
+  if (hasPosted && hasCommitsAfterPosting) {
     return 'ready_for_followup';
   }
 

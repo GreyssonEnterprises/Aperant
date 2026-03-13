@@ -47,6 +47,27 @@ const REBASE_POLL_INTERVAL_MS = 1000;
 const REBASE_TIMEOUT_MS = parseInt(process.env.GITLAB_REBASE_TIMEOUT_MS || '60000', 10);
 
 /**
+ * Registry of status polling intervals for MR updates
+ * Key format: `${projectId}:${mrIid}`
+ */
+const statusPollingIntervals = new Map<string, NodeJS.Timeout>();
+const pollingInProgress = new Set<string>();
+
+/**
+ * Clear all polling intervals for a specific project
+ * Called when a project is deleted to prevent memory leaks
+ */
+function clearPollingForProject(projectId: string): void {
+  const keysToDelete = Array.from(statusPollingIntervals.keys())
+    .filter(key => key.startsWith(`${projectId}:`));
+  keysToDelete.forEach(key => {
+    clearInterval(statusPollingIntervals.get(key)!);
+    statusPollingIntervals.delete(key);
+    pollingInProgress.delete(key);
+  });
+}
+
+/**
  * Get the registry key for an MR review
  */
 function getReviewKey(projectId: string, mrIid: number): string {
@@ -1080,7 +1101,7 @@ export function registerMRReviewHandlers(
    * Get AI review logs for an MR
    */
   ipcMain.handle(
-    IPC_CHANNELS.GITLAB_PR_GET_LOGS,
+    IPC_CHANNELS.GITLAB_MR_GET_LOGS,
     async (_event, projectId: string, mrIid: number): Promise<IPCResult<string[]>> => {
       debugLog('getLogs handler called', { projectId, mrIid });
 
@@ -1118,10 +1139,8 @@ export function registerMRReviewHandlers(
   /**
    * Start status polling for MR updates
    */
-  const statusPollingIntervals = new Map<string, NodeJS.Timeout>();
-
   ipcMain.handle(
-    IPC_CHANNELS.GITLAB_PR_STATUS_POLL_START,
+    IPC_CHANNELS.GITLAB_MR_STATUS_POLL_START,
     async (_event, projectId: string, mrIid: number, intervalMs: number = 5000): Promise<IPCResult<{ polling: boolean }>> => {
       debugLog('statusPollStart handler called', { projectId, mrIid, intervalMs });
 
@@ -1135,16 +1154,25 @@ export function registerMRReviewHandlers(
 
         // Start new polling interval
         const interval = setInterval(async () => {
-          // Emit status update to renderer
-          const mainWindow = BrowserWindow.getAllWindows()[0];
-          if (mainWindow) {
-            const config = await getGitLabConfig(project);
-            if (!config) return;
+          const pollKey = `${projectId}:${mrIid}`;
 
-            const { token, instanceUrl } = config;
-            const encodedProject = encodeProjectPath(config.project);
+          // Prevent concurrent polls
+          if (pollingInProgress.has(pollKey)) {
+            return;
+          }
 
-            try {
+          pollingInProgress.add(pollKey);
+
+          try {
+            // Emit status update to renderer
+            const mainWindow = BrowserWindow.getAllWindows()[0];
+            if (mainWindow) {
+              const config = await getGitLabConfig(project);
+              if (!config) return;
+
+              const { token, instanceUrl } = config;
+              const encodedProject = encodeProjectPath(config.project);
+
               const mrData = await gitlabFetch(
                 token,
                 instanceUrl,
@@ -1162,9 +1190,11 @@ export function registerMRReviewHandlers(
                 mergeStatus: mrData.merge_status,
                 updatedAt: mrData.updated_at
               });
-            } catch (error) {
-              debugLog('Status poll error', { mrIid, error });
             }
+          } catch (error) {
+            debugLog('Status poll error', { mrIid, error });
+          } finally {
+            pollingInProgress.delete(pollKey);
           }
         }, intervalMs);
 
@@ -1181,7 +1211,7 @@ export function registerMRReviewHandlers(
   );
 
   ipcMain.handle(
-    IPC_CHANNELS.GITLAB_PR_STATUS_POLL_STOP,
+    IPC_CHANNELS.GITLAB_MR_STATUS_POLL_STOP,
     async (_event, projectId: string, mrIid: number): Promise<IPCResult<{ stopped: boolean }>> => {
       debugLog('statusPollStop handler called', { projectId, mrIid });
 
@@ -1190,6 +1220,7 @@ export function registerMRReviewHandlers(
       if (statusPollingIntervals.has(pollKey)) {
         clearInterval(statusPollingIntervals.get(pollKey)!);
         statusPollingIntervals.delete(pollKey);
+        pollingInProgress.delete(pollKey);
         return { success: true, data: { stopped: true } };
       }
 
@@ -1201,7 +1232,7 @@ export function registerMRReviewHandlers(
    * Get MR review memories
    */
   ipcMain.handle(
-    IPC_CHANNELS.GITLAB_PR_MEMORY_GET,
+    IPC_CHANNELS.GITLAB_MR_MEMORY_GET,
     async (_event, projectId: string, mrIid: number): Promise<IPCResult<any[]>> => {
       debugLog('memoryGet handler called', { projectId, mrIid });
 
@@ -1214,7 +1245,7 @@ export function registerMRReviewHandlers(
    * Search MR review memories
    */
   ipcMain.handle(
-    IPC_CHANNELS.GITLAB_PR_MEMORY_SEARCH,
+    IPC_CHANNELS.GITLAB_MR_MEMORY_SEARCH,
     async (_event, projectId: string, query: string): Promise<IPCResult<any[]>> => {
       debugLog('memorySearch handler called', { projectId, query });
 
@@ -1328,3 +1359,5 @@ export function registerMRReviewHandlers(
 
   debugLog('Additional MR handlers registered');
 }
+
+export { clearPollingForProject };

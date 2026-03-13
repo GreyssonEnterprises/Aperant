@@ -2,11 +2,6 @@ import { CheckCircle2, Circle, XCircle, Loader2, AlertTriangle, GitMerge, HelpCi
 import { Badge } from '../../ui/badge';
 import { cn } from '../../../lib/utils';
 import type { ChecksStatus, ReviewsStatus, MergeableState } from '../../../../shared/types/pr-status';
-
-// Type aliases for GitLab compatibility - use the same types as GitHub
-type GitLabChecksStatus = ChecksStatus;
-type GitLabReviewsStatus = ReviewsStatus;
-type GitLabMergeableState = MergeableState;
 import { useTranslation } from 'react-i18next';
 
 /**
@@ -14,7 +9,7 @@ import { useTranslation } from 'react-i18next';
  * Displays an icon representing the CI checks status
  */
 interface CIStatusIconProps {
-  status: GitLabChecksStatus;
+  status: ChecksStatus;
   className?: string;
 }
 
@@ -28,7 +23,6 @@ function CIStatusIcon({ status, className }: CIStatusIconProps) {
       return <Loader2 className={cn(baseClasses, 'text-amber-400 animate-spin', className)} />;
     case 'failure':
       return <XCircle className={cn(baseClasses, 'text-red-400', className)} />;
-    case 'none':
     default:
       return <Circle className={cn(baseClasses, 'text-muted-foreground/50', className)} />;
   }
@@ -68,7 +62,6 @@ function ReviewStatusBadge({ status, className }: ReviewStatusBadgeProps) {
           {t('mrStatus.review.pending')}
         </Badge>
       );
-    case 'none':
     default:
       return null;
   }
@@ -93,7 +86,6 @@ function MergeReadinessIcon({ state, className }: MergeReadinessIconProps) {
       return <AlertTriangle className={cn(baseClasses, 'text-amber-400', className)} />;
     case 'blocked':
       return <HelpCircle className={cn(baseClasses, 'text-red-400', className)} />;
-    case 'unknown':
     default:
       return <HelpCircle className={cn(baseClasses, 'text-muted-foreground/50', className)} />;
   }
@@ -174,9 +166,9 @@ export function MRStatusIndicator({
       )}
 
       {/* Merge Readiness */}
-      {showMergeStatus && mergeKey && (
+      {showMergeStatus && mergeKey && mergeableState && (
         <div className="flex items-center gap-1" title={t(`mrStatus.merge.${mergeKey}`)}>
-          <MergeReadinessIcon state={mergeableState!} />
+          <MergeReadinessIcon state={mergeableState} />
           {!compact && (
             <span className="text-xs text-muted-foreground">
               {t(`mrStatus.merge.${mergeKey}`)}

@@ -327,19 +327,19 @@ export const createGitLabAPI = (): GitLabAPI => ({
     mrIid: number,
     intervalMs?: number
   ): Promise<IPCResult<{ polling: boolean }>> =>
-    invokeIpc(IPC_CHANNELS.GITLAB_PR_STATUS_POLL_START, projectId, mrIid, intervalMs),
+    invokeIpc(IPC_CHANNELS.GITLAB_MR_STATUS_POLL_START, projectId, mrIid, intervalMs),
 
   stopGitLabMRStatusPoll: (projectId: string, mrIid: number): Promise<IPCResult<{ stopped: boolean }>> =>
-    invokeIpc(IPC_CHANNELS.GITLAB_PR_STATUS_POLL_STOP, projectId, mrIid),
+    invokeIpc(IPC_CHANNELS.GITLAB_MR_STATUS_POLL_STOP, projectId, mrIid),
 
   getGitLabMRLogs: (projectId: string, mrIid: number): Promise<IPCResult<string[]>> =>
-    invokeIpc(IPC_CHANNELS.GITLAB_PR_GET_LOGS, projectId, mrIid),
+    invokeIpc(IPC_CHANNELS.GITLAB_MR_GET_LOGS, projectId, mrIid),
 
   getGitLabMRMemory: (projectId: string, mrIid: number): Promise<IPCResult<any[]>> =>
-    invokeIpc(IPC_CHANNELS.GITLAB_PR_MEMORY_GET, projectId, mrIid),
+    invokeIpc(IPC_CHANNELS.GITLAB_MR_MEMORY_GET, projectId, mrIid),
 
   searchGitLabMRMemory: (projectId: string, query: string): Promise<IPCResult<any[]>> =>
-    invokeIpc(IPC_CHANNELS.GITLAB_PR_MEMORY_SEARCH, projectId, query),
+    invokeIpc(IPC_CHANNELS.GITLAB_MR_MEMORY_SEARCH, projectId, query),
 
   checkGitLabMRMergeReadiness: (
     projectId: string,

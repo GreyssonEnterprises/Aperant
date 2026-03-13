@@ -1,19 +1,28 @@
 /**
  * GitLab Error Parser Utility
  *
- * Parses GitLab API errors and provides user-friendly error messages.
+ * Parses GitLab API errors and returns error codes for i18n translation.
  * Follows the same pattern as GitHub's error parser.
  */
 
+export enum GitLabErrorCode {
+  AUTHENTICATION_FAILED = 'AUTHENTICATION_FAILED',
+  RATE_LIMITED = 'RATE_LIMITED',
+  NETWORK_ERROR = 'NETWORK_ERROR',
+  PROJECT_NOT_FOUND = 'PROJECT_NOT_FOUND',
+  INSUFFICIENT_PERMISSIONS = 'INSUFFICIENT_PERMISSIONS',
+  CONFLICT = 'CONFLICT',
+  UNKNOWN = 'UNKNOWN'
+}
+
 export interface ParsedGitLabError {
-  message: string;
-  code?: string;
+  code: GitLabErrorCode;
   recoverable: boolean;
-  action?: string;
+  details?: string;
 }
 
 /**
- * Parse a GitLab error and return a user-friendly message
+ * Parse a GitLab error and return an error code
  */
 export function parseGitLabError(error: unknown): ParsedGitLabError {
   if (error instanceof Error) {
@@ -25,7 +34,7 @@ export function parseGitLabError(error: unknown): ParsedGitLabError {
   }
 
   return {
-    message: 'An unknown error occurred',
+    code: GitLabErrorCode.UNKNOWN,
     recoverable: false
   };
 }
@@ -39,67 +48,56 @@ function parseGitLabErrorMessage(message: string): ParsedGitLabError {
   // Authentication errors
   if (lowerMessage.includes('401') || lowerMessage.includes('unauthorized') || lowerMessage.includes('invalid token')) {
     return {
-      message: 'GitLab authentication failed. Please check your access token.',
-      code: 'AUTHENTICATION_ERROR',
-      recoverable: true,
-      action: 'Update your GitLab token in project settings'
+      code: GitLabErrorCode.AUTHENTICATION_FAILED,
+      recoverable: true
     };
   }
 
   // Rate limiting (429)
   if (lowerMessage.includes('429') || lowerMessage.includes('rate limit') || lowerMessage.includes('too many requests')) {
     return {
-      message: 'GitLab rate limit exceeded. Please wait a moment before trying again.',
-      code: 'RATE_LIMITED',
-      recoverable: true,
-      action: 'Wait a few moments before retrying'
+      code: GitLabErrorCode.RATE_LIMITED,
+      recoverable: true
     };
   }
 
   // Network errors
   if (lowerMessage.includes('network') || lowerMessage.includes('connect') || lowerMessage.includes('timeout')) {
     return {
-      message: 'Network error. Please check your connection and try again.',
-      code: 'NETWORK_ERROR',
-      recoverable: true,
-      action: 'Check your internet connection'
+      code: GitLabErrorCode.NETWORK_ERROR,
+      recoverable: true
     };
   }
 
   // Project not found (404)
   if (lowerMessage.includes('404') || lowerMessage.includes('not found')) {
     return {
-      message: 'GitLab project not found. Please check your project configuration.',
-      code: 'NOT_FOUND',
-      recoverable: true,
-      action: 'Verify your GitLab project settings'
+      code: GitLabErrorCode.PROJECT_NOT_FOUND,
+      recoverable: true
     };
   }
 
   // Permission denied (403)
   if (lowerMessage.includes('403') || lowerMessage.includes('forbidden') || lowerMessage.includes('permission denied')) {
     return {
-      message: 'Insufficient permissions. Please check your GitLab access token scopes.',
-      code: 'PERMISSION_DENIED',
-      recoverable: true,
-      action: 'Update your token with the required permissions'
+      code: GitLabErrorCode.INSUFFICIENT_PERMISSIONS,
+      recoverable: true
     };
   }
 
   // Conflict (409)
   if (lowerMessage.includes('409') || lowerMessage.includes('conflict')) {
     return {
-      message: 'There was a conflict with the current state of the resource.',
-      code: 'CONFLICT',
-      recoverable: false,
-      action: 'Refresh and try again'
+      code: GitLabErrorCode.CONFLICT,
+      recoverable: false
     };
   }
 
   // Default error
   return {
-    message: message || 'An unknown error occurred',
-    recoverable: true
+    code: GitLabErrorCode.UNKNOWN,
+    recoverable: true,
+    details: message
   };
 }
 
@@ -109,23 +107,4 @@ function parseGitLabErrorMessage(message: string): ParsedGitLabError {
 export function isRecoverableGitLabError(error: unknown): boolean {
   const parsed = parseGitLabError(error);
   return parsed.recoverable;
-}
-
-/**
- * Get suggested action for an error
- */
-export function getGitLabErrorAction(error: unknown): string | undefined {
-  const parsed = parseGitLabError(error);
-  return parsed.action;
-}
-
-/**
- * Format error for display
- */
-export function formatGitLabError(error: unknown): string {
-  const parsed = parseGitLabError(error);
-  if (parsed.action) {
-    return `${parsed.message} ${parsed.action}`;
-  }
-  return parsed.message;
 }

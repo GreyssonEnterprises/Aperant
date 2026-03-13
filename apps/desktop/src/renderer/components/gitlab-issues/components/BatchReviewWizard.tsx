@@ -16,6 +16,7 @@ import {
   Play,
   AlertTriangle,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { Progress } from '../../ui/progress';
@@ -86,6 +87,7 @@ export function GitLabBatchReviewWizard({
   isAnalyzing,
   isApproving,
 }: GitLabBatchReviewWizardProps) {
+  const { t } = useTranslation(['gitlab']);
   // Track which batches are selected for approval
   const [selectedBatchIds, setSelectedBatchIds] = useState<Set<number>>(new Set());
   // Track which single issues are selected for approval
@@ -226,10 +228,9 @@ export function GitLabBatchReviewWizard({
         <Layers className="h-12 w-12 text-primary" />
       </div>
       <div className="text-center space-y-2">
-        <h3 className="text-lg font-semibold">Analyze & Group Issues</h3>
+        <h3 className="text-lg font-semibold">{t('gitlab:batchReview.title')}</h3>
         <p className="text-sm text-muted-foreground max-w-md">
-          This will analyze up to 200 open issues, group similar ones together,
-          and let you review the proposed batches before creating any tasks.
+          {t('gitlab:batchReview.description')}
         </p>
       </div>
       {analysisError && (
@@ -240,7 +241,7 @@ export function GitLabBatchReviewWizard({
       )}
       <Button onClick={onStartAnalysis} size="lg">
         <Layers className="h-4 w-4 mr-2" />
-        Start Analysis
+        {t('gitlab:batchReview.startAnalysis')}
       </Button>
     </div>
   );
@@ -249,15 +250,15 @@ export function GitLabBatchReviewWizard({
     <div className="flex flex-col items-center justify-center py-8 space-y-6">
       <Loader2 className="h-12 w-12 text-primary animate-spin" />
       <div className="text-center space-y-2">
-        <h3 className="text-lg font-semibold">Analyzing Issues...</h3>
+        <h3 className="text-lg font-semibold">{t('gitlab:batchReview.analyzing')}</h3>
         <p className="text-sm text-muted-foreground">
-          {analysisProgress?.message || 'Computing similarity and validating batches...'}
+          {analysisProgress?.message || t('gitlab:batchReview.computingSimilarity')}
         </p>
       </div>
       <div className="w-full max-w-md">
         <Progress value={analysisProgress?.progress ?? 0} />
         <p className="text-xs text-center text-muted-foreground mt-2">
-          {analysisProgress?.progress ?? 0}% complete
+          {analysisProgress?.progress ?? 0}{t('gitlab:batchReview.percentComplete')}
         </p>
       </div>
     </div>
@@ -278,23 +279,23 @@ export function GitLabBatchReviewWizard({
         <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg mb-4">
           <div className="flex items-center gap-4 text-sm">
             <span>
-              <strong>{totalIssues}</strong> issues analyzed
+              <strong>{totalIssues}</strong> {t('gitlab:batchReview.issuesAnalyzed')}
             </span>
             <span className="text-muted-foreground">|</span>
             <span>
-              <strong>{proposedBatches.length}</strong> batches proposed
+              <strong>{proposedBatches.length}</strong> {t('gitlab:batchReview.batchesProposed')}
             </span>
             <span className="text-muted-foreground">|</span>
             <span>
-              <strong>{singleIssues.length}</strong> single issues
+              <strong>{singleIssues.length}</strong> {t('gitlab:batchReview.singleIssues')}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={selectAllBatches}>
-              Select All
+              {t('gitlab:batchReview.selectDeselectAll')}
             </Button>
             <Button variant="ghost" size="sm" onClick={deselectAllBatches}>
-              Deselect All
+              {t('gitlab:batchReview.deselectAll')}
             </Button>
           </div>
         </div>
@@ -319,7 +320,7 @@ export function GitLabBatchReviewWizard({
           {singleIssues.length > 0 && (
             <div className="mt-6">
               <h4 className="text-sm font-medium text-muted-foreground mb-2">
-                Single Issues (not grouped)
+                {t('gitlab:batchReview.selectSingleIssues')}
               </h4>
               <div className="grid grid-cols-2 gap-2">
                 {singleIssues.slice(0, 10).map((issue) => (
@@ -344,7 +345,7 @@ export function GitLabBatchReviewWizard({
                 ))}
                 {singleIssues.length > 10 && (
                   <div className="p-2 text-sm text-muted-foreground">
-                    ...and {singleIssues.length - 10} more
+                    {t('gitlab:batchReview.andMore', { count: singleIssues.length - 10 })}
                   </div>
                 )}
               </div>
@@ -355,9 +356,12 @@ export function GitLabBatchReviewWizard({
         {/* Selection Summary */}
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border">
           <div className="text-sm text-muted-foreground">
-            {selectedCount} batch{selectedCount !== 1 ? 'es' : ''} selected ({totalIssuesInSelected} issues)
+            {t('gitlab:batchReview.batchesSelected', {
+              count: selectedCount,
+              issues: totalIssuesInSelected
+            })}
             {selectedSingleIids.size > 0 && (
-              <> + {selectedSingleIids.size} single issue{selectedSingleIids.size !== 1 ? 's' : ''}</>
+              <> {t('gitlab:batchReview.plusSingleIssues', { count: selectedSingleIids.size })}</>
             )}
           </div>
         </div>
@@ -369,9 +373,9 @@ export function GitLabBatchReviewWizard({
     <div className="flex flex-col items-center justify-center py-8 space-y-6">
       <Loader2 className="h-12 w-12 text-primary animate-spin" />
       <div className="text-center space-y-2">
-        <h3 className="text-lg font-semibold">Creating Batches...</h3>
+        <h3 className="text-lg font-semibold">{t('gitlab:batchReview.creatingBatches')}</h3>
         <p className="text-sm text-muted-foreground">
-          Setting up the approved issue batches for processing.
+          {t('gitlab:batchReview.settingUpBatches')}
         </p>
       </div>
     </div>
@@ -383,13 +387,13 @@ export function GitLabBatchReviewWizard({
         <CheckCircle2 className="h-12 w-12 text-green-500" />
       </div>
       <div className="text-center space-y-2">
-        <h3 className="text-lg font-semibold">Batches Created</h3>
+        <h3 className="text-lg font-semibold">{t('gitlab:batchReview.batchesCreated')}</h3>
         <p className="text-sm text-muted-foreground">
-          Your selected issue batches are ready for processing.
+          {t('gitlab:batchReview.batchesReady')}
         </p>
       </div>
       <Button onClick={onClose}>
-        Close
+        {t('gitlab:batchReview.close')}
       </Button>
     </div>
   );
@@ -400,14 +404,14 @@ export function GitLabBatchReviewWizard({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Layers className="h-5 w-5" />
-            Analyze & Group Issues
+            {t('gitlab:batchReview.title')}
           </DialogTitle>
           <DialogDescription>
-            {step === 'intro' && 'Analyze open issues and group similar ones for batch processing.'}
-            {step === 'analyzing' && 'Analyzing issues for semantic similarity...'}
-            {step === 'review' && 'Review and approve the proposed issue batches.'}
-            {step === 'approving' && 'Creating the approved batches...'}
-            {step === 'done' && 'Batches have been created successfully.'}
+            {step === 'intro' && t('gitlab:batchReview.description')}
+            {step === 'analyzing' && t('gitlab:batchReview.computingSimilarity')}
+            {step === 'review' && t('gitlab:batchReview.description')}
+            {step === 'approving' && t('gitlab:batchReview.settingUpBatches')}
+            {step === 'done' && t('gitlab:batchReview.batchesReady')}
           </DialogDescription>
         </DialogHeader>
 
@@ -422,7 +426,7 @@ export function GitLabBatchReviewWizard({
         {step === 'review' && (
           <DialogFooter>
             <Button variant="outline" onClick={onClose}>
-              Cancel
+              {t('gitlab:batchReview.cancel')}
             </Button>
             <Button
               onClick={handleApprove}
@@ -431,12 +435,14 @@ export function GitLabBatchReviewWizard({
               {isApproving ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Creating...
+                  {t('gitlab:batchReview.creating')}
                 </>
               ) : (
                 <>
                   <Play className="h-4 w-4 mr-2" />
-                  Approve & Create ({selectedBatchIds.size + selectedSingleIids.size} {selectedBatchIds.size + selectedSingleIids.size === 1 ? 'batch' : 'batches'})
+                  {t('gitlab:batchReview.approveAndCreate', {
+                    count: selectedBatchIds.size + selectedSingleIids.size
+                  })}
                 </>
               )}
             </Button>
@@ -464,6 +470,7 @@ function GitLabBatchCard({
   onToggleSelect,
   onToggleExpand,
 }: GitLabBatchCardProps) {
+  const { t } = useTranslation(['gitlab']);
   const confidenceColor = batch.confidence >= 0.8
     ? 'text-green-500'
     : batch.confidence >= 0.6
@@ -493,14 +500,14 @@ function GitLabBatchCard({
                 <ChevronRight className="h-4 w-4" />
               )}
               <span className="font-medium text-sm">
-                {batch.theme || `Batch ${index + 1}`}
+                {batch.theme || t('gitlab:batchReview.batchNumber', { number: index + 1 })}
               </span>
             </CollapsibleTrigger>
 
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-xs">
                 <Users className="h-3 w-3 mr-1" />
-                {batch.issueCount} issues
+                {batch.issueCount} {t('gitlab:batchReview.issues')}
               </Badge>
               <Badge
                 variant={batch.validated ? 'default' : 'secondary'}
@@ -538,7 +545,7 @@ function GitLabBatchCard({
                     <span className="truncate">{issue.title}</span>
                   </div>
                   <span className="text-xs text-muted-foreground">
-                    {Math.round(issue.similarityToPrimary * 100)}% similar
+                    {Math.round(issue.similarityToPrimary * 100)}{t('gitlab:batchReview.similar')}
                   </span>
                 </div>
               ))}

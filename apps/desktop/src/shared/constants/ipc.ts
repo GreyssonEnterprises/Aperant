@@ -339,11 +339,11 @@ export const IPC_CHANNELS = {
   GITLAB_MR_CHECK_MERGE_READINESS: 'gitlab:mr:checkMergeReadiness',  // Check if MR can be merged
   GITLAB_MR_GET_REVIEWS_BATCH: 'gitlab:mr:getReviewsBatch',  // Batch load reviews for multiple MRs
   GITLAB_MR_FIX: 'gitlab:mr:fix',                        // Auto-fix issues in MR
-  GITLAB_PR_GET_LOGS: 'gitlab:pr:getLogs',               // Get AI review logs
-  GITLAB_PR_STATUS_POLL_START: 'gitlab:pr:statusPollStart',  // Start polling MR status
-  GITLAB_PR_STATUS_POLL_STOP: 'gitlab:pr:statusPollStop',    // Stop polling MR status
-  GITLAB_PR_MEMORY_GET: 'gitlab:pr:memory:get',          // Get MR review memories
-  GITLAB_PR_MEMORY_SEARCH: 'gitlab:pr:memory:search',    // Search MR review memories
+  GITLAB_MR_GET_LOGS: 'gitlab:mr:getLogs',               // Get AI review logs
+  GITLAB_MR_STATUS_POLL_START: 'gitlab:mr:statusPollStart',  // Start polling MR status
+  GITLAB_MR_STATUS_POLL_STOP: 'gitlab:mr:statusPollStop',    // Stop polling MR status
+  GITLAB_MR_MEMORY_GET: 'gitlab:mr:memory:get',          // Get MR review memories
+  GITLAB_MR_MEMORY_SEARCH: 'gitlab:mr:memory:search',    // Search MR review memories
 
   // GitLab MR Review events (main -> renderer)
   GITLAB_MR_REVIEW_PROGRESS: 'gitlab:mr:reviewProgress',

@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Wand2, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../../ui/button';
 import { Progress } from '../../ui/progress';
 import type { GitLabIssue } from '../../../../shared/types';
@@ -27,6 +28,7 @@ export function GitLabAutoFixButton({
   queueItem,
   onStartAutoFix,
 }: GitLabAutoFixButtonProps) {
+  const { t } = useTranslation(['gitlab']);
   const [isStarting, setIsStarting] = useState(false);
   const [progress, setProgress] = useState<GitLabAutoFixProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +104,7 @@ export function GitLabAutoFixButton({
     return (
       <div className="flex items-center gap-2 text-success text-sm">
         <CheckCircle2 className="h-4 w-4" />
-        <span>Spec created from issue</span>
+        <span>{t('gitlab:autoFix.specCreated')}</span>
       </div>
     );
   }
@@ -113,11 +115,11 @@ export function GitLabAutoFixButton({
       <div className="space-y-2">
         <div className="flex items-center gap-2 text-destructive text-sm">
           <AlertCircle className="h-4 w-4" />
-          <span>{error || queueItem?.error || 'Auto-fix failed'}</span>
+          <span>{error || queueItem?.error || t('gitlab:autoFix.autoFixFailed')}</span>
         </div>
         <Button size="sm" variant="outline" onClick={handleStartAutoFix}>
           <Wand2 className="h-4 w-4 mr-2" />
-          Retry Auto Fix
+          {t('gitlab:autoFix.retryAutoFix')}
         </Button>
       </div>
     );
@@ -129,7 +131,7 @@ export function GitLabAutoFixButton({
       <div className="space-y-2">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          <span>{progress?.message || 'Processing...'}</span>
+          <span>{progress?.message || t('gitlab:autoFix.processing')}</span>
         </div>
         {progress && (
           <Progress value={progress.progress} className="h-1" />
@@ -146,7 +148,7 @@ export function GitLabAutoFixButton({
       onClick={handleStartAutoFix}
     >
       <Wand2 className="h-4 w-4 mr-2" />
-      Auto Fix
+      {t('gitlab:autoFix.autoFix')}
     </Button>
   );
 }
