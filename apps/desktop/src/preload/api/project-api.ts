@@ -9,7 +9,9 @@ import type {
   ProjectEnvConfig,
   GitStatus,
   KanbanPreferences,
-  GitBranchDetail
+  GitBranchDetail,
+  InfrastructureStatus,
+  MemoryValidationResult
 } from '../../shared/types';
 
 // Tab state interface (persisted in main process)
@@ -47,9 +49,9 @@ export interface ProjectAPI {
   getRecentMemories: (projectId: string, limit?: number) => Promise<IPCResult<unknown>>;
 
   // Memory Infrastructure operations (LadybugDB - no Docker required)
-  getMemoryInfrastructureStatus: (dbPath?: string) => Promise<IPCResult<unknown>>;
-  listMemoryDatabases: (dbPath?: string) => Promise<IPCResult<unknown>>;
-  testMemoryConnection: (dbPath?: string, database?: string) => Promise<IPCResult<unknown>>;
+  getMemoryInfrastructureStatus: (dbPath?: string) => Promise<IPCResult<InfrastructureStatus>>;
+  listMemoryDatabases: (dbPath?: string) => Promise<IPCResult<string[]>>;
+  testMemoryConnection: (dbPath?: string, database?: string) => Promise<IPCResult<MemoryValidationResult>>;
 
   // Memory Management
   verifyMemory: (memoryId: string) => Promise<IPCResult<void>>;
