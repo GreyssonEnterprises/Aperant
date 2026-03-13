@@ -324,6 +324,7 @@ export interface GitLabMRReviewProgress {
 
 export interface GitLabNewCommitsCheck {
   hasNewCommits: boolean;
+  hasCommitsAfterPosting?: boolean;  // True if commits were added AFTER the review was posted
   currentSha?: string;
   reviewedSha?: string;
   newCommitCount?: number;

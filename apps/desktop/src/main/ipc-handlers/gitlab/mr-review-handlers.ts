@@ -811,6 +811,7 @@ export function registerMRReviewHandlers(
         }
 
         const reviewedCommitSha = review.reviewedCommitSha || (review as any).reviewed_commit_sha;
+        const reviewedAt = review.reviewedAt;
         if (!reviewedCommitSha) {
           debugLog('No reviewedCommitSha in review', { mrIid });
           return { hasNewCommits: false };
@@ -834,27 +835,40 @@ export function registerMRReviewHandlers(
           if (reviewedCommitSha === currentHeadSha) {
             return {
               hasNewCommits: false,
+              hasCommitsAfterPosting: false,
               currentSha: currentHeadSha,
               reviewedSha: reviewedCommitSha,
             };
           }
 
-          // Get commits to count new ones
+          // Get commits to count new ones and check for commits after review posting
           const commits = await gitlabFetch(
             config.token,
             config.instanceUrl,
             `/projects/${encodedProject}/merge_requests/${mrIid}/commits`
-          ) as Array<{ id: string }>;
+          ) as Array<{ id: string; created_at: string }>;
 
           // Find how many commits are after the reviewed one
           let newCommitCount = 0;
+          // Check if any commits were added AFTER the review was posted
+          let hasCommitsAfterPosting = false;
+          const reviewTime = reviewedAt ? new Date(reviewedAt).getTime() : 0;
+
           for (const commit of commits) {
             if (commit.id === reviewedCommitSha) break;
             newCommitCount++;
+            // If commit was created after the review was posted, it's a true follow-up commit
+            if (reviewTime > 0 && commit.created_at) {
+              const commitTime = new Date(commit.created_at).getTime();
+              if (commitTime > reviewTime) {
+                hasCommitsAfterPosting = true;
+              }
+            }
           }
 
           return {
             hasNewCommits: true,
+            hasCommitsAfterPosting,
             currentSha: currentHeadSha,
             reviewedSha: reviewedCommitSha,
             newCommitCount: newCommitCount || 1,

@@ -1,0 +1,36 @@
+# Comment: aeb08798e7eed2ac
+
+**Source:** gemini-code-assist
+**Type:** comment
+**File:** `apps/desktop/src/renderer/components/gitlab-merge-requests/components/StatusIndicator.tsx`
+**Line:** 163
+**Original ID:** 2930224290
+**Created:** None
+**Severity:** CRITICAL
+**Status:** PENDING
+
+---
+
+## Original Content
+
+![critical](https://www.gstatic.com/codereviewagent/critical.svg)
+
+There's a critical type mismatch issue with the `mergeableState` prop. It is typed as `MergeableState` (e.g., 'clean', 'dirty'), but it's used as a key for `mergeKeyMap`, which expects GitLab-specific statuses (e.g., 'can_be_merged'). It's also passed directly to `MergeReadinessIcon`, which expects the `MergeableState` enum.
+
+This will cause incorrect behavior: `mergeKey` will be `undefined`, and `MergeReadinessIcon` will always fall back to the default case.
+
+To fix this, you should probably pass the raw GitLab merge status string (e.g., 'can_be_merged') as a prop (e.g., `mergeStatus: string | null`) and then derive both the `mergeKey` for the tooltip and the correct `MergeableState` for the icon inside this component.
+
+---
+
+## Implementation Notes
+
+*Status: PENDING - Not yet verified or implemented*
+
+### Verification Checklist
+
+- [ ] Read file at comment location
+- [ ] Verify if issue is already fixed
+- [ ] Implement fix if needed
+- [ ] Re-verify after implementation
+

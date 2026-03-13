@@ -70,9 +70,8 @@ function getMRComputedStatus(
   const hasBlockingFindings =
     result.overallStatus === 'request_changes' ||
     result.findings?.some(f => f.severity === 'critical' || f.severity === 'high');
-  const hasNewCommits = reviewInfo.newCommitsCheck?.hasNewCommits;
-  // For GitLab, check if new commits exist after review
-  const hasCommitsAfterPosting = hasNewCommits && hasPosted;
+  // Use backend-calculated field that compares commit timestamps against review post time
+  const hasCommitsAfterPosting = reviewInfo.newCommitsCheck?.hasCommitsAfterPosting ?? false;
 
   // Check for ready for follow-up first (highest priority after posting)
   // Must have new commits that happened AFTER findings were posted
