@@ -499,3 +499,19 @@ export interface RoadmapProviderConfig {
  * Canny-specific status values
  */
 export type CannyStatus = 'open' | 'under review' | 'planned' | 'in progress' | 'complete' | 'closed';
+
+/**
+ * MR status update event - sent from main process to renderer
+ */
+export interface GitLabMRStatusUpdate {
+  /** Project ID */
+  projectId: string;
+  /** Merge request IID */
+  mrIid: number;
+  /** Current state of the MR */
+  state: string;
+  /** Merge status */
+  mergeStatus: string;
+  /** Last update timestamp */
+  updatedAt: string;
+}

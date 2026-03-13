@@ -18,6 +18,7 @@ import type {
   GitLabAnalyzePreviewResult,
   GitLabTriageConfig,
   GitLabTriageResult,
+  GitLabMRStatusUpdate,
   GitLabGroup,
   IPCResult
 } from '../../../shared/types';
@@ -112,6 +113,9 @@ export interface GitLabAPI {
   ) => IpcListenerCleanup;
   onGitLabMRReviewError: (
     callback: (projectId: string, data: { mrIid: number; error: string }) => void
+  ) => IpcListenerCleanup;
+  onGitLabMRStatusUpdate: (
+    callback: (update: GitLabMRStatusUpdate) => void
   ) => IpcListenerCleanup;
 
   // GitLab Auto-Fix operations
@@ -367,6 +371,11 @@ export const createGitLabAPI = (): GitLabAPI => ({
     callback: (projectId: string, data: { mrIid: number; error: string }) => void
   ): IpcListenerCleanup =>
     createIpcListener(IPC_CHANNELS.GITLAB_MR_REVIEW_ERROR, callback),
+
+  onGitLabMRStatusUpdate: (
+    callback: (update: GitLabMRStatusUpdate) => void
+  ): IpcListenerCleanup =>
+    createIpcListener(IPC_CHANNELS.GITLAB_MR_STATUS_UPDATE, callback),
 
   // GitLab Auto-Fix operations
   getGitLabAutoFixConfig: (projectId: string): Promise<GitLabAutoFixConfig | null> =>
