@@ -18,6 +18,15 @@ import {
 } from '../subtask-iterator';
 import type { SessionResult } from '../../session/types';
 
+// Mock insight-extractor to avoid actual AI calls
+vi.mock('../runners/insight-extractor', () => ({
+  extractSessionInsights: vi.fn().mockResolvedValue({
+    summary: 'Mock insights',
+    keyLearnings: [],
+    challenges: [],
+  }),
+}));
+
 // =============================================================================
 // Test Utilities
 // =============================================================================
@@ -1097,5 +1106,164 @@ describe('iterateSubtasks - multi-phase plans', () => {
 
     expect(result.totalSubtasks).toBe(3);
     expect(result.completedSubtasks).toBe(3); // All completed after run
+  });
+});
+
+// =============================================================================
+// restampExecutionPhase - Error Cases
+// =============================================================================
+
+describe('restampExecutionPhase - error cases', () => {
+  let tmpDir: string;
+  let planPath: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'restamp-error-test-'));
+    planPath = join(tmpDir, 'implementation_plan.json');
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('handles corrupt JSON gracefully with console.warn', async () => {
+    await writeFile(planPath, '{ invalid json {{{');
+
+    // Should not throw, but log a warning
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await restampExecutionPhase(tmpDir, 'coding');
+
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[restampExecutionPhase] Could not parse'),
+    );
+
+    consoleWarnSpy.mockRestore();
+  });
+
+  it('handles missing file gracefully', async () => {
+    // Don't create the file
+
+    // Should not throw
+    await expect(restampExecutionPhase(tmpDir, 'coding')).resolves.toBeUndefined();
+  });
+});
+
+// =============================================================================
+// delay function
+// =============================================================================
+
+describe('delay function (via iterateSubtasks)', () => {
+  let tmpDir: string;
+  let planPath: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'delay-test-'));
+    planPath = join(tmpDir, 'implementation_plan.json');
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('resolves immediately when abort signal is already aborted', async () => {
+    const plan = createMockPlan([{ id: 's1', status: 'pending' }]);
+    await writeFile(planPath, JSON.stringify(plan, null, 2));
+
+    const abortController = new AbortController();
+    abortController.abort(); // Already aborted
+
+    const runSubtaskSession = vi.fn();
+    runSubtaskSession.mockResolvedValue(createMockSessionResult('completed'));
+
+    const config: SubtaskIteratorConfig = {
+      specDir: tmpDir,
+      projectDir: tmpDir,
+      maxRetries: 3,
+      autoContinueDelayMs: 5000, // Would normally wait 5s
+      abortSignal: abortController.signal,
+      runSubtaskSession,
+    };
+
+    const startTime = Date.now();
+    await iterateSubtasks(config);
+    const elapsed = Date.now() - startTime;
+
+    // Should complete much faster than 5000ms due to abort
+    expect(elapsed).toBeLessThan(1000);
+  });
+
+  it('delays for specified time when no abort signal', async () => {
+    const plan = createMockPlan([
+      { id: 's1', status: 'pending' },
+      { id: 's2', status: 'pending' },
+    ]);
+    await writeFile(planPath, JSON.stringify(plan, null, 2));
+
+    const runSubtaskSession = vi.fn();
+    runSubtaskSession.mockResolvedValue(createMockSessionResult('completed'));
+
+    const config: SubtaskIteratorConfig = {
+      specDir: tmpDir,
+      projectDir: tmpDir,
+      maxRetries: 3,
+      autoContinueDelayMs: 50, // Small delay for testing
+      runSubtaskSession,
+    };
+
+    const startTime = Date.now();
+    await iterateSubtasks(config);
+    const elapsed = Date.now() - startTime;
+
+    // Should have at least one delay of 50ms
+    expect(elapsed).toBeGreaterThanOrEqual(50);
+  });
+});
+
+// =============================================================================
+// ensureSubtaskMarkedCompleted - Corrupt JSON
+// =============================================================================
+
+describe('ensureSubtaskMarkedCompleted - corrupt JSON handling', () => {
+  let tmpDir: string;
+  let planPath: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'corrupt-json-test-'));
+    planPath = join(tmpDir, 'implementation_plan.json');
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('handles corrupt JSON gracefully when ensuring completion', async () => {
+    const plan = createMockPlan([{ id: 's1', status: 'in_progress' }]);
+    await writeFile(planPath, JSON.stringify(plan, null, 2));
+
+    // Create a mock that returns completed first, then we corrupt the file
+    const callCount = { value: 0 };
+    const runSubtaskSession = vi.fn();
+    runSubtaskSession.mockImplementation(async () => {
+      callCount.value++;
+      if (callCount.value === 1) {
+        return createMockSessionResult('completed');
+      }
+      // After first completion, corrupt the file to test error handling
+      await writeFile(planPath, '{corrupt json');
+      return createMockSessionResult('completed');
+    });
+
+    const config: SubtaskIteratorConfig = {
+      specDir: tmpDir,
+      projectDir: tmpDir,
+      maxRetries: 3,
+      autoContinueDelayMs: 0,
+      runSubtaskSession,
+    };
+
+    // Should not throw despite corrupt JSON
+    const result = await iterateSubtasks(config);
+    expect(result).toBeDefined();
   });
 });
