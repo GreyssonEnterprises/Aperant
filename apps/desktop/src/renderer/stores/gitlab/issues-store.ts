@@ -152,6 +152,7 @@ export async function importGitLabIssues(
 ): Promise<boolean> {
   const store = useIssuesStore.getState();
   store.setLoading(true);
+  store.setError(null); // Clear previous errors
 
   try {
     const result = await window.electronAPI.importGitLabIssues(projectId, issueIids);

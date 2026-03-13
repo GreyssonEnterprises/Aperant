@@ -298,6 +298,7 @@ export function useGitLabMRs(projectId?: string, options: UseGitLabMRsOptions = 
         setMergeRequests(prev => [...prev, ...mrs]);
         return hasMore;
       }
+      setError(result.error || 'Failed to load more MRs');
       return false;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load more MRs');
@@ -330,7 +331,11 @@ export function useGitLabMRs(projectId?: string, options: UseGitLabMRsOptions = 
 
     try {
       const result = await window.electronAPI.checkGitLabMRMergeReadiness(projectId, mrIid);
-      return result.success ? (result.data ?? null) : null;
+      if (!result.success) {
+        setError(result.error || 'Failed to check merge readiness');
+        return null;
+      }
+      return result.data ?? null;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to check merge readiness');
       return null;
@@ -342,7 +347,11 @@ export function useGitLabMRs(projectId?: string, options: UseGitLabMRsOptions = 
 
     try {
       const result = await window.electronAPI.getGitLabMRLogs(projectId, mrIid);
-      return result.success ? (result.data ?? null) : null;
+      if (!result.success) {
+        setError(result.error || 'Failed to get logs');
+        return null;
+      }
+      return result.data ?? null;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get logs');
       return null;

@@ -228,7 +228,7 @@
     "startAnalysis": "Démarrer l'analyse",
     "analyzing": "Analyse des issues...",
     "computingSimilarity": "Calcul de la similarité et validation des lots...",
-    "percentComplete": "% complété",
+    "percentComplete": "{{value}}% complété",
     "issuesAnalyzed": "issues analysées",
     "batchesProposed": "lots proposés",
     "singleIssues": "issues seules",
@@ -248,6 +248,7 @@
     "deselectAll": "Tout désélectionner",
     "issues": "issues",
     "similar": "% similaire",
+    "similarPercent": "{{value}}% similaire",
     "batchNumber": "Lot {{number}}"
   },
   "errors": {

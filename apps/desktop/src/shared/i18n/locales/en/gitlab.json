@@ -218,7 +218,7 @@
     "startAnalysis": "Start Analysis",
     "analyzing": "Analyzing Issues...",
     "computingSimilarity": "Computing similarity and validating batches...",
-    "percentComplete": "% complete",
+    "percentComplete": "{{value}}% complete",
     "issuesAnalyzed": "issues analyzed",
     "batchesProposed": "batches proposed",
     "singleIssues": "single issues",
@@ -238,6 +238,7 @@
     "deselectAll": "Deselect All",
     "issues": "issues",
     "similar": "% similar",
+    "similarPercent": "{{value}}% similar",
     "batchNumber": "Batch {{number}}"
   },
   "errors": {

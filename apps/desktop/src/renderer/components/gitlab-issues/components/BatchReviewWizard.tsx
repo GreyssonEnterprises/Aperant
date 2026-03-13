@@ -263,7 +263,7 @@ export function GitLabBatchReviewWizard({
       <div className="w-full max-w-md">
         <Progress value={analysisProgress?.progress ?? 0} />
         <p className="text-xs text-center text-muted-foreground mt-2">
-          {analysisProgress?.progress ?? 0}{t('gitlab:batchReview.percentComplete')}
+          {t('gitlab:batchReview.percentComplete', { value: analysisProgress?.progress ?? 0 })}
         </p>
       </div>
     </div>
@@ -550,7 +550,7 @@ function GitLabBatchCard({
                     <span className="truncate">{issue.title}</span>
                   </div>
                   <span className="text-xs text-muted-foreground">
-                    {Math.round(issue.similarityToPrimary * 100)}{t('gitlab:batchReview.similar')}
+                    {t('gitlab:batchReview.similarPercent', { value: Math.round(issue.similarityToPrimary * 100) })}
                   </span>
                 </div>
               ))}
