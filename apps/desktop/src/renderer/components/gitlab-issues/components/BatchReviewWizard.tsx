@@ -65,7 +65,6 @@ export interface GitLabProposedBatch {
 interface GitLabBatchReviewWizardProps {
   isOpen: boolean;
   onClose: () => void;
-  projectId: string;
   onStartAnalysis: () => void;
   onApproveBatches: (batches: GitLabProposedBatch[]) => Promise<void>;
   analysisProgress: GitLabAnalyzePreviewProgress | null;
@@ -78,7 +77,6 @@ interface GitLabBatchReviewWizardProps {
 export function GitLabBatchReviewWizard({
   isOpen,
   onClose,
-  projectId,
   onStartAnalysis,
   onApproveBatches,
   analysisProgress,
@@ -240,10 +238,10 @@ export function GitLabBatchReviewWizard({
           {t('gitlab:batchReview.description')}
         </p>
       </div>
-      {analysisError && (
+      {(analysisError || approvalError) && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive">
           <AlertTriangle className="h-4 w-4" />
-          <span className="text-sm">{analysisError}</span>
+          <span className="text-sm">{analysisError || approvalError}</span>
         </div>
       )}
       <Button onClick={onStartAnalysis} size="lg">
