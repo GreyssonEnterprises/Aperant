@@ -147,7 +147,7 @@ describe('MergeOrchestrator', () => {
         semanticChanges: [],
       };
 
-      orchestrator.evolutionTracker.getTaskModifications = vi.fn(() => [['src/test.ts', mockSnapshot]]);
+      orchestrator.evolutionTracker.getTaskModifications = vi.fn((): [string, TaskSnapshot][] => [['src/test.ts', mockSnapshot]]);
       orchestrator.evolutionTracker.getBaselineContent = vi.fn(() => 'baseline content');
 
       const report = await orchestrator.mergeTask('task-1', '/worktree/path', 'main', mockProgressCallback);
@@ -258,7 +258,7 @@ describe('MergeOrchestrator', () => {
       const preview = orchestrator.previewMerge(['task-1', 'task-2']);
 
       expect(preview.files_with_potential_conflicts).toContain('src/test.ts');
-      expect(preview.summary.total_conflicts).toBeGreaterThan(0);
+      expect((preview.summary as { total_conflicts: number }).total_conflicts).toBeGreaterThan(0);
     });
   });
 
@@ -527,15 +527,12 @@ describe('MergeOrchestrator', () => {
             location: 'src/test.ts:10',
             lineStart: 10,
             lineEnd: 15,
-            contentBefore: 'old',
-            contentAfter: 'new',
-            rawDiff: 'diff content',
             metadata: {},
           },
         ],
       };
 
-      orchestrator.evolutionTracker.getTaskModifications = vi.fn(() => [['src/test.ts', mockSnapshot]]);
+      orchestrator.evolutionTracker.getTaskModifications = vi.fn().mockReturnValue([['src/test.ts', mockSnapshot]] as [string, TaskSnapshot][]);
       orchestrator.evolutionTracker.getBaselineContent = vi.fn(() => 'baseline');
 
       const report = await aiOrchestrator.mergeTask('task-1', '/worktree', 'main');
@@ -584,7 +581,7 @@ describe('MergeOrchestrator', () => {
         semanticChanges: [],
       };
 
-      orchestrator.evolutionTracker.getTaskModifications = vi.fn(() => [['src/test.ts', mockSnapshot]]);
+      orchestrator.evolutionTracker.getTaskModifications = vi.fn().mockReturnValue([['src/test.ts', mockSnapshot]] as [string, TaskSnapshot][]);
       orchestrator.evolutionTracker.getBaselineContent = vi.fn(() => 'baseline');
 
       const report = await orchestrator.mergeTask('task-1', '/worktree/path', 'main');

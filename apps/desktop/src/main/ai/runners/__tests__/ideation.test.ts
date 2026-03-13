@@ -456,6 +456,7 @@ describe('Ideation Runner', () => {
       const errorStream = createMockStreamResult([]);
       // Make the generator throw an error
       errorStream.fullStream = (async function* () {
+        yield '';
         throw new Error('AI API error');
       })();
 

@@ -68,7 +68,7 @@ describe('Changelog Runner', () => {
     // Mock generateText
     vi.mocked(generateText).mockResolvedValue({
       text: '## Added\n- New feature',
-    });
+    } as any);
   });
 
   afterEach(() => {

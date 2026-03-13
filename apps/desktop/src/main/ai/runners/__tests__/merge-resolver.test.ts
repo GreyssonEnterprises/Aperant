@@ -59,7 +59,7 @@ describe('Merge Resolver Runner', () => {
     // Mock createSimpleClient
     vi.mocked(createSimpleClient).mockResolvedValue(createMockClientResult());
     // Mock generateText
-    vi.mocked(generateText).mockResolvedValue({ text: 'Resolved content' });
+    vi.mocked(generateText).mockResolvedValue({ text: 'Resolved content' } as any);
   });
 
   afterEach(() => {
