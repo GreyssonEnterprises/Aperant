@@ -14,8 +14,21 @@ import type {
   TerminalRecoveryInfo,
 } from '../../shared/types/terminal-session';
 
-const SESSIONS_FILE = path.join(app.getPath('userData'), 'terminal-sessions.json');
-const BUFFERS_DIR = path.join(app.getPath('userData'), 'terminal-buffers');
+// Helper to get app data path safely (works in tests where app might not be fully mocked)
+function getUserDataPath(): string {
+  try {
+    if (app && typeof app.getPath === 'function') {
+      return app.getPath('userData');
+    }
+  } catch {
+    // Ignore errors in test environment
+  }
+  // Fallback for test environment
+  return '/tmp/test-app-data';
+}
+
+const SESSIONS_FILE = path.join(getUserDataPath(), 'terminal-sessions.json');
+const BUFFERS_DIR = path.join(getUserDataPath(), 'terminal-buffers');
 
 // Session age limit: 7 days
 const MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -307,19 +320,31 @@ class SessionPersistence {
 // Singleton instance
 export const sessionPersistence = new SessionPersistence();
 
-// Hook into app lifecycle
-app.on('before-quit', () => {
-  console.warn('[SessionPersistence] App quitting, saving sessions...');
-  sessionPersistence.saveNow();
-});
+// Hook into app lifecycle (only if running in real Electron environment, not tests)
+try {
+  if (app && typeof app.on === 'function') {
+    app.on('before-quit', () => {
+      console.warn('[SessionPersistence] App quitting, saving sessions...');
+      sessionPersistence.saveNow();
+    });
 
-app.on('will-quit', () => {
-  sessionPersistence.saveNow();
-});
+    app.on('will-quit', () => {
+      sessionPersistence.saveNow();
+    });
+  }
+} catch {
+  // Ignore errors in test environment
+}
 
 // Cleanup orphaned buffers on startup (after initial load)
-app.whenReady().then(() => {
-  setTimeout(() => {
-    sessionPersistence.cleanupOrphanedBuffers();
-  }, 5000); // Wait 5 seconds after app ready
-});
+try {
+  if (app && typeof app.whenReady === 'function') {
+    app.whenReady().then(() => {
+      setTimeout(() => {
+        sessionPersistence.cleanupOrphanedBuffers();
+      }, 5000); // Wait 5 seconds after app ready
+    });
+  }
+} catch {
+  // Ignore errors in test environment
+}

@@ -18,6 +18,7 @@ export const app = {
   getVersion: vi.fn(() => '0.1.0'),
   isPackaged: false,
   on: vi.fn(),
+  whenReady: vi.fn(() => Promise.resolve()),
   quit: vi.fn()
 };
 

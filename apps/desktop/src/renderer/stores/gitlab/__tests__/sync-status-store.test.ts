@@ -2,8 +2,7 @@
  * Unit tests for GitLab sync status store
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { useSyncStatusStore } from '@/stores/gitlab/sync-status-store';
-import { checkGitLabConnection } from '@/stores/gitlab/sync-status-store';
+import { useSyncStatusStore, checkGitLabConnection } from '../sync-status-store';
 import type { GitLabSyncStatus } from '@shared/types';
 
 // Mock electronAPI
