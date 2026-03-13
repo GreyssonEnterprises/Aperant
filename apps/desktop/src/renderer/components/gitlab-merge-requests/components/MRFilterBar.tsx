@@ -57,13 +57,13 @@ const STATUS_OPTIONS: Array<{
   color: string;
   bgColor: string;
 }> = [
-  { value: 'reviewing', labelKey: 'mrReview.reviewing', icon: Loader2, color: 'text-amber-400', bgColor: 'bg-amber-500/20' },
-  { value: 'not_reviewed', labelKey: 'mrReview.notReviewed', icon: Sparkles, color: 'text-slate-500', bgColor: 'bg-slate-500/20' },
-  { value: 'reviewed', labelKey: 'mrReview.reviewed', icon: CheckCircle2, color: 'text-blue-400', bgColor: 'bg-blue-500/20' },
-  { value: 'posted', labelKey: 'mrReview.posted', icon: Send, color: 'text-purple-400', bgColor: 'bg-purple-500/20' },
-  { value: 'changes_requested', labelKey: 'mrReview.changesRequested', icon: AlertCircle, color: 'text-red-400', bgColor: 'bg-red-500/20' },
-  { value: 'ready_to_merge', labelKey: 'mrReview.readyToMerge', icon: CheckCheck, color: 'text-emerald-400', bgColor: 'bg-emerald-500/20' },
-  { value: 'ready_for_followup', labelKey: 'mrReview.readyForFollowup', icon: RefreshCw, color: 'text-cyan-400', bgColor: 'bg-cyan-500/20' },
+  { value: 'reviewing', labelKey: 'mrFiltering.reviewing', icon: Loader2, color: 'text-amber-400', bgColor: 'bg-amber-500/20' },
+  { value: 'not_reviewed', labelKey: 'mrFiltering.notReviewed', icon: Sparkles, color: 'text-slate-500', bgColor: 'bg-slate-500/20' },
+  { value: 'reviewed', labelKey: 'mrFiltering.reviewed', icon: CheckCircle2, color: 'text-blue-400', bgColor: 'bg-blue-500/20' },
+  { value: 'posted', labelKey: 'mrFiltering.posted', icon: Send, color: 'text-purple-400', bgColor: 'bg-purple-500/20' },
+  { value: 'changes_requested', labelKey: 'mrFiltering.changesRequested', icon: AlertCircle, color: 'text-red-400', bgColor: 'bg-red-500/20' },
+  { value: 'ready_to_merge', labelKey: 'mrFiltering.readyToMerge', icon: CheckCheck, color: 'text-emerald-400', bgColor: 'bg-emerald-500/20' },
+  { value: 'ready_for_followup', labelKey: 'mrFiltering.readyForFollowup', icon: RefreshCw, color: 'text-cyan-400', bgColor: 'bg-cyan-500/20' },
 ];
 
 // Sort options
@@ -72,9 +72,9 @@ const SORT_OPTIONS: Array<{
   labelKey: string;
   icon: typeof Clock;
 }> = [
-  { value: 'newest', labelKey: 'mrReview.sort.newest', icon: Clock },
-  { value: 'oldest', labelKey: 'mrReview.sort.oldest', icon: Clock },
-  { value: 'largest', labelKey: 'mrReview.sort.largest', icon: FileCode },
+  { value: 'newest', labelKey: 'mrFiltering.sort.newest', icon: Clock },
+  { value: 'oldest', labelKey: 'mrFiltering.sort.oldest', icon: Clock },
+  { value: 'largest', labelKey: 'mrFiltering.sort.largest', icon: FileCode },
 ];
 
 /**
@@ -448,7 +448,7 @@ export function MRFilterBar({
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder={t('mrReview.searchPlaceholder')}
+            placeholder={t('mrFiltering.searchPlaceholder')}
             value={filters.searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             className="h-8 pl-9 bg-background/50 focus:bg-background transition-colors"
@@ -457,7 +457,7 @@ export function MRFilterBar({
             <button
               onClick={() => onSearchChange('')}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              aria-label={t('mrReview.clearSearch')}
+              aria-label={t('mrFiltering.clearSearch')}
             >
               <X className="h-3 w-3" />
             </button>
@@ -469,16 +469,16 @@ export function MRFilterBar({
         {/* Contributors Filter */}
         <div className="flex-1 max-w-[240px]">
           <FilterDropdown
-            title={t('mrReview.contributors')}
+            title={t('mrFiltering.contributors')}
             icon={Users}
             items={contributors}
             selected={filters.contributors}
             onChange={onContributorsChange}
             searchable={true}
-            searchPlaceholder={t('mrReview.searchContributors')}
-            selectedCountLabel={t('mrReview.selectedCount', { count: filters.contributors.length })}
-            noResultsLabel={t('mrReview.noResultsFound')}
-            clearLabel={t('mrReview.clearFilters')}
+            searchPlaceholder={t('mrFiltering.searchContributors')}
+            selectedCountLabel={t('mrFiltering.selectedCount', { count: filters.contributors.length })}
+            noResultsLabel={t('mrFiltering.noResultsFound')}
+            clearLabel={t('mrFiltering.clearFilters')}
             renderItem={(contributor) => (
                <div className="flex items-center gap-2 min-w-0">
                  <div className="h-5 w-5 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
@@ -495,14 +495,14 @@ export function MRFilterBar({
         {/* Status Filter */}
         <div className="flex-1 max-w-[240px]">
           <FilterDropdown
-            title={t('mrReview.allStatuses')}
+            title={t('mrFiltering.allStatuses')}
             icon={Filter}
             items={STATUS_OPTIONS.map((opt) => opt.value)}
             selected={filters.statuses}
             onChange={onStatusesChange}
-            selectedCountLabel={t('mrReview.selectedCount', { count: filters.statuses.length })}
-            noResultsLabel={t('mrReview.noResultsFound')}
-            clearLabel={t('mrReview.clearFilters')}
+            selectedCountLabel={t('mrFiltering.selectedCount', { count: filters.statuses.length })}
+            noResultsLabel={t('mrFiltering.noResultsFound')}
+            clearLabel={t('mrFiltering.clearFilters')}
             renderItem={(status) => {
               const option = getStatusOption(status);
               if (!option) return null;
@@ -546,7 +546,7 @@ export function MRFilterBar({
             value={filters.sortBy}
             onChange={onSortChange}
             options={SORT_OPTIONS}
-            title={t('mrReview.sort.label')}
+            title={t('mrFiltering.sort.label')}
           />
         </div>
 

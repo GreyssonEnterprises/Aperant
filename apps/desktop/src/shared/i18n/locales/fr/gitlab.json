@@ -259,7 +259,7 @@
     "CONFLICT": "Il y a eu un conflit avec l'état actuel de la ressource.",
     "UNKNOWN": "Une erreur inconnue s'est produite"
   },
-  "mrReview": {
+  "mrFiltering": {
     "reviewed": "Analysée",
     "posted": "Publié",
     "changesRequested": "Modifications demandées",

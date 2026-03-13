@@ -209,7 +209,6 @@ describe('Claude Profile IPC Integration', () => {
 
       await handleProfileSave?.(null, profile);
 
-      // biome-ignore lint/style/noNonNullAssertion: Test file - configDir is set in createTestProfile
       expect(existsSync(profile.configDir!)).toBe(true);
     });
 
@@ -224,7 +223,6 @@ describe('Claude Profile IPC Integration', () => {
 
       await handleProfileSave?.(null, profile);
 
-      // biome-ignore lint/style/noNonNullAssertion: Test file - configDir is set in createTestProfile
       expect(existsSync(profile.configDir!)).toBe(false);
     });
 

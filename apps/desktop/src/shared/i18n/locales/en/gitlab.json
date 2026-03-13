@@ -249,7 +249,7 @@
     "CONFLICT": "There was a conflict with the current state of the resource.",
     "UNKNOWN": "An unknown error occurred"
   },
-  "mrReview": {
+  "mrFiltering": {
     "reviewed": "Reviewed",
     "posted": "Posted",
     "changesRequested": "Changes Requested",

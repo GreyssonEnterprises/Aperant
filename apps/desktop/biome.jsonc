@@ -45,7 +45,8 @@
         "noProcessEnv": "off",
         "useNodejsImportProtocol": "off",
         "useImportType": "off",
-        "useTemplate": "off"
+        "useTemplate": "off",
+        "noNonNullAssertion": "off"
       },
       "suspicious": {
         "recommended": true,

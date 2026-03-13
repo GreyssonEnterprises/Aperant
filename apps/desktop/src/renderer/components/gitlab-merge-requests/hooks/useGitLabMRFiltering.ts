@@ -172,13 +172,14 @@ export function useGitLabMRFiltering(
         case 'oldest':
           // Sort by createdAt ascending (oldest first)
           return aTime - bTime;
-        case 'largest':
+        case 'largest': {
           // Sort by title length as a proxy for complexity (descending)
           const aTitleLen = a.title.length;
           const bTitleLen = b.title.length;
           if (bTitleLen !== aTitleLen) return bTitleLen - aTitleLen;
           // Secondary sort by createdAt (newest first) for stable ordering
           return bTime - aTime;
+        }
         default:
           return 0;
       }
