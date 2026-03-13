@@ -76,6 +76,7 @@ export const IPC_CHANNELS = {
   TERMINAL_GENERATE_NAME: 'terminal:generateName',
   TERMINAL_SET_TITLE: 'terminal:setTitle',  // Renderer -> Main: user renamed terminal
   TERMINAL_SET_WORKTREE_CONFIG: 'terminal:setWorktreeConfig',  // Renderer -> Main: worktree association changed
+  TERMINAL_SAVE_BUFFER: 'terminal:saveBuffer',  // Renderer -> Main: save terminal buffer content
 
   // Terminal session management
   TERMINAL_GET_SESSIONS: 'terminal:getSessions',

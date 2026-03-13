@@ -12,6 +12,7 @@ import { debugLog, } from '../../shared/utils/debug-logger';
 import { migrateSession } from '../claude-profile/session-utils';
 import { createProfileDirectory } from '../claude-profile/profile-utils';
 import { isValidConfigDir } from '../utils/config-path-validator';
+import { sessionPersistence } from '../terminal/session-persistence';
 
 
 /**
@@ -112,6 +113,22 @@ export function registerTerminalHandlers(
     IPC_CHANNELS.TERMINAL_SET_WORKTREE_CONFIG,
     (_, id: string, config: import('../../shared/types').TerminalWorktreeConfig | undefined) => {
       terminalManager.setWorktreeConfig(id, config);
+    }
+  );
+
+  // Save terminal buffer (serialized xterm.js content)
+  ipcMain.handle(
+    IPC_CHANNELS.TERMINAL_SAVE_BUFFER,
+    async (_, terminalId: string, serializedBuffer: string): Promise<IPCResult> => {
+      try {
+        sessionPersistence.saveBuffer(terminalId, serializedBuffer);
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to save terminal buffer',
+        };
+      }
     }
   );
 

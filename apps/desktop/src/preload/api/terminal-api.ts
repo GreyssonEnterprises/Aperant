@@ -218,7 +218,7 @@ export const createTerminalAPI = (): TerminalAPI => ({
 
   // Terminal Buffer Persistence
   saveTerminalBuffer: (terminalId: string, serializedBuffer: string): Promise<IPCResult> =>
-    ipcRenderer.invoke('terminal:saveBuffer', terminalId, serializedBuffer),
+    ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_SAVE_BUFFER, terminalId, serializedBuffer),
 
   // Terminal Event Listeners
   onTerminalOutput: (
