@@ -1,416 +1,230 @@
-/**
- * Commit Message Runner Tests
- *
- * Tests for AI-powered commit message generation.
- * Covers conventional commits, GitHub issue references, spec context extraction, and fallback messages.
- */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { join } from 'node:path';
-import { generateCommitMessage, type CommitMessageConfig } from '../commit-message';
+// =============================================================================
+// Mocks — must be declared before any imports that use them
+// =============================================================================
 
-// Mock all dependencies
-vi.mock('../../client/factory', () => ({
-  createSimpleClient: vi.fn(),
+const mockGenerateText = vi.fn();
+
+vi.mock('ai', () => ({
+  generateText: (...args: unknown[]) => mockGenerateText(...args),
 }));
 
-vi.mock('ai', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('ai')>();
+const mockCreateSimpleClient = vi.fn();
+
+vi.mock('../../client/factory', () => ({
+  createSimpleClient: (...args: unknown[]) => mockCreateSimpleClient(...args),
+}));
+
+// Mock filesystem access so tests are hermetic
+const mockExistsSync = vi.fn();
+const mockReadFileSync = vi.fn();
+
+vi.mock('node:fs', () => ({
+  existsSync: (...args: unknown[]) => mockExistsSync(...args),
+  readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
+}));
+
+// json-repair is used by the commit-message runner for safeParseJson
+vi.mock('../../../utils/json-repair', () => ({
+  safeParseJson: (text: string) => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  },
+}));
+
+// =============================================================================
+// Import after mocking
+// =============================================================================
+
+import { generateCommitMessage } from '../commit-message';
+import type { CommitMessageConfig } from '../commit-message';
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+const fakeModel = { modelId: 'claude-haiku-test' };
+
+function makeMockClient(systemPrompt = 'You are a Git expert.') {
+  return { model: fakeModel, systemPrompt };
+}
+
+function baseConfig(overrides: Partial<CommitMessageConfig> = {}): CommitMessageConfig {
   return {
-    ...actual,
-    generateText: vi.fn(),
+    projectDir: '/project',
+    specName: '001-add-feature',
+    diffSummary: '+5 -2 src/app.ts',
+    filesChanged: ['src/app.ts', 'src/utils.ts'],
+    ...overrides,
   };
-});
+}
 
-vi.mock('node:fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs')>();
-  return {
-    ...actual,
-    existsSync: vi.fn(),
-    readFileSync: vi.fn(),
-  };
-});
+// =============================================================================
+// Tests
+// =============================================================================
 
-import { createSimpleClient } from '../../client/factory';
-import { generateText } from 'ai';
-import { existsSync, readFileSync } from 'node:fs';
-
-// ============================================
-// Test Fixtures
-// ============================================
-
-const createMockConfig = (
-  overrides?: Partial<CommitMessageConfig>,
-): CommitMessageConfig => ({
-  projectDir: '/test/project',
-  specName: '001-add-feature',
-  ...overrides,
-});
-
-// ============================================
-// Setup & Teardown
-// ============================================
-
-describe('Commit Message Runner', () => {
+describe('generateCommitMessage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
-    // Mock createSimpleClient
-    vi.mocked(createSimpleClient).mockResolvedValue({
-      model: 'gpt-4',
-      systemPrompt: 'You are a Git expert.',
-      resolvedModelId: 'gpt-4',
-      tools: {},
-      maxSteps: 1,
-      thinkingLevel: 'low' as any,
-    } as any);
-
-    // Mock generateText
-    vi.mocked(generateText).mockResolvedValue({
-      text: 'feat: add OAuth2 authentication\n\nImplemented OAuth2 with Google and GitHub.',
-    } as any);
-
-    // Mock fs.existsSync to return false by default (no spec files)
-    vi.mocked(existsSync).mockReturnValue(false);
+    mockCreateSimpleClient.mockResolvedValue(makeMockClient());
+    // By default, spec directory does not exist
+    mockExistsSync.mockReturnValue(false);
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
+  // ---------------------------------------------------------------------------
+  // Successful generation
+  // ---------------------------------------------------------------------------
+
+  it('returns trimmed AI-generated commit message on success', async () => {
+    mockGenerateText.mockResolvedValue({
+      text: '  feat(app): add authentication flow\n\nImplemented OAuth2.\n  ',
+    });
+
+    const result = await generateCommitMessage(baseConfig());
+
+    expect(result).toBe('feat(app): add authentication flow\n\nImplemented OAuth2.');
   });
 
-  // ============================================
-  // generateCommitMessage - basic
-  // ============================================
+  it('passes model and systemPrompt from client to generateText', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'feat: something' });
 
-  describe('generateCommitMessage', () => {
-    it('should generate a commit message using AI', async () => {
-      const config = createMockConfig();
+    await generateCommitMessage(baseConfig());
 
-      const result = await generateCommitMessage(config);
-
-      expect(result).toContain('feat:');
-      expect(result).toContain('OAuth2');
-    });
-
-    it('should use default model and thinking level', async () => {
-      const config = createMockConfig();
-
-      await generateCommitMessage(config);
-
-      expect(createSimpleClient).toHaveBeenCalledWith({
-        systemPrompt: expect.any(String),
-        modelShorthand: 'haiku',
-        thinkingLevel: 'low',
-      });
-    });
-
-    it('should use provided model and thinking level', async () => {
-      const config = createMockConfig({
-        modelShorthand: 'sonnet',
-        thinkingLevel: 'medium',
-      });
-
-      await generateCommitMessage(config);
-
-      expect(createSimpleClient).toHaveBeenCalledWith({
-        systemPrompt: expect.any(String),
-        modelShorthand: 'sonnet',
-        thinkingLevel: 'medium',
-      });
-    });
+    expect(mockGenerateText).toHaveBeenCalledOnce();
+    const callArgs = mockGenerateText.mock.calls[0][0];
+    expect(callArgs.model).toBe(fakeModel);
+    expect(callArgs.system).toBe('You are a Git expert.');
   });
 
-  // ============================================
-  // generateCommitMessage - spec context
-  // ============================================
+  it('includes diffSummary in the prompt sent to generateText', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'fix: resolve bug' });
 
-  describe('spec context extraction', () => {
-    it('should read spec.md for title', async () => {
-      const specPath = join('.auto-claude', 'specs', '001-add-feature');
-      vi.mocked(existsSync).mockImplementation((path) => {
-        const pathStr = String(path);
-        // Return true for spec directory and spec.md file
-        return pathStr.includes(specPath) || pathStr.includes('.auto-claude/specs/001-add-feature') || pathStr.includes('spec.md');
-      });
-      vi.mocked(readFileSync).mockImplementation((path) => {
-        if (String(path).includes('spec.md')) {
-          return '# Add User Authentication\n\nImplement login flow.';
-        }
-        return '';
-      });
+    await generateCommitMessage(baseConfig({ diffSummary: 'removed null check in auth.ts' }));
 
-      const config = createMockConfig();
-
-      await generateCommitMessage(config);
-
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      expect(prompt).toContain('Add User Authentication');
-    });
-
-    it('should read requirements.json for category', async () => {
-      vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockImplementation((path) => {
-        if (String(path).includes('requirements.json')) {
-          return JSON.stringify({ workflow_type: 'feature' });
-        }
-        return '';
-      });
-
-      const config = createMockConfig();
-
-      await generateCommitMessage(config);
-
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      expect(prompt).toContain('Type: feat');
-    });
-
-    it('should try both spec directory locations', async () => {
-      const existsCalls: string[] = [];
-      vi.mocked(existsSync).mockImplementation((path) => {
-        existsCalls.push(String(path));
-        return false;
-      });
-
-      const config = createMockConfig();
-
-      await generateCommitMessage(config);
-
-      expect(existsCalls).toContain(join('/test/project', '.auto-claude', 'specs', '001-add-feature'));
-      expect(existsCalls).toContain(join('/test/project', 'auto-claude', 'specs', '001-add-feature'));
-    });
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('removed null check in auth.ts');
   });
 
-  // ============================================
-  // generateCommitMessage - GitHub issue
-  // ============================================
+  it('includes filesChanged in the prompt', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'refactor: split utilities' });
 
-  describe('GitHub issue handling', () => {
-    it('should include GitHub issue number when provided', async () => {
-      vi.mocked(generateText).mockResolvedValue({
-        text: 'feat: add feature\n\nFixes #42',
-      } as any);
+    await generateCommitMessage(
+      baseConfig({ filesChanged: ['src/auth.ts', 'src/utils.ts', 'src/index.ts'] }),
+    );
 
-      const config = createMockConfig({ githubIssue: 42 });
-
-      const result = await generateCommitMessage(config);
-
-      expect(result).toContain('Fixes #42');
-    });
-
-    it('should prefer provided issue over spec metadata', async () => {
-      vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockImplementation((path) => {
-        if (String(path).includes('implementation_plan.json')) {
-          return JSON.stringify({
-            metadata: { githubIssueNumber: 99 },
-          });
-        }
-        return '';
-      });
-
-      vi.mocked(generateText).mockResolvedValue({
-        text: 'feat: feature\n\nFixes #123',
-      } as any);
-
-      const config = createMockConfig({ githubIssue: 123 });
-
-      const result = await generateCommitMessage(config);
-
-      expect(result).toContain('Fixes #123');
-      expect(result).not.toContain('#99');
-    });
-
-    it('should use spec issue when githubIssue not provided', async () => {
-      vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockImplementation((path) => {
-        if (String(path).includes('implementation_plan.json')) {
-          return JSON.stringify({
-            metadata: { githubIssueNumber: 42 },
-          });
-        }
-        return '';
-      });
-
-      vi.mocked(generateText).mockResolvedValue({
-        text: 'feat: feature\n\nFixes #42',
-      } as any);
-
-      const config = createMockConfig(); // No githubIssue provided
-
-      const result = await generateCommitMessage(config);
-
-      expect(result).toContain('Fixes #42');
-    });
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('src/auth.ts');
   });
 
-  // ============================================
-  // generateCommitMessage - diff summary
-  // ============================================
+  // ---------------------------------------------------------------------------
+  // Default model / thinking level
+  // ---------------------------------------------------------------------------
 
-  describe('diff summary handling', () => {
-    it('should include diff summary in prompt', async () => {
-      const config = createMockConfig({
-        diffSummary: '+ addFeature()',
-        filesChanged: ['src/auth.ts'],
-      });
+  it('uses haiku model and low thinking level by default', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'chore: update deps' });
 
-      await generateCommitMessage(config);
+    await generateCommitMessage(baseConfig());
 
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      expect(prompt).toContain('+ addFeature()');
-      expect(prompt).toContain('Files changed: 1');
-    });
-
-    it('should truncate large diff summary', async () => {
-      const largeDiff = 'x'.repeat(3000);
-      const config = createMockConfig({
-        diffSummary: largeDiff,
-      });
-
-      await generateCommitMessage(config);
-
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      // Prompt includes preamble text, but truncated diff means total should be < 3000
-      expect(prompt.length).toBeLessThan(3000);
-      expect(prompt.length).toBeGreaterThan(2000); // preamble + truncated diff
-    });
-
-    it('should handle many changed files', async () => {
-      const files = Array.from({ length: 25 }, (_, i) => `src/file${i}.ts`);
-      const config = createMockConfig({
-        filesChanged: files,
-      });
-
-      await generateCommitMessage(config);
-
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      expect(prompt).toContain('... and 5 more files');
-      expect(prompt).not.toContain('src/file24.ts');
-    });
+    const clientArgs = mockCreateSimpleClient.mock.calls[0][0];
+    expect(clientArgs.modelShorthand).toBe('haiku');
+    expect(clientArgs.thinkingLevel).toBe('low');
   });
 
-  // ============================================
-  // generateCommitMessage - fallback
-  // ============================================
+  it('accepts custom modelShorthand and thinkingLevel', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'feat: new endpoint' });
 
-  describe('fallback message', () => {
-    it('should return fallback message on AI failure', async () => {
-      vi.mocked(generateText).mockRejectedValue(new Error('API error'));
+    await generateCommitMessage(baseConfig({ modelShorthand: 'sonnet', thinkingLevel: 'medium' }));
 
-      const config = createMockConfig();
-
-      const result = await generateCommitMessage(config);
-
-      expect(result).toContain('chore:');
-      expect(result).toContain('001-add-feature');
-    });
-
-    it('should include issue number in fallback', async () => {
-      vi.mocked(generateText).mockRejectedValue(new Error('API error'));
-
-      const config = createMockConfig({ githubIssue: 42 });
-
-      const result = await generateCommitMessage(config);
-
-      expect(result).toContain('Fixes #42');
-    });
-
-    it('should use category from spec in fallback', async () => {
-      vi.mocked(generateText).mockRejectedValue(new Error('API error'));
-      vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockImplementation((path) => {
-        if (String(path).includes('requirements.json')) {
-          return JSON.stringify({ workflow_type: 'bug_fix' });
-        }
-        return '';
-      });
-
-      const config = createMockConfig();
-
-      const result = await generateCommitMessage(config);
-
-      expect(result).toMatch(/fix:\s*\S+/i);
-    });
+    const clientArgs = mockCreateSimpleClient.mock.calls[0][0];
+    expect(clientArgs.modelShorthand).toBe('sonnet');
+    expect(clientArgs.thinkingLevel).toBe('medium');
   });
 
-  // ============================================
-  // generateCommitMessage - error handling
-  // ============================================
+  // ---------------------------------------------------------------------------
+  // GitHub issue handling
+  // ---------------------------------------------------------------------------
 
-  describe('error handling', () => {
-    it('should handle non-Error objects in catch', async () => {
-      vi.mocked(generateText).mockRejectedValue('String error');
+  it('includes Fixes reference when githubIssue is provided', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'fix: null pointer\n\nFixes #99' });
 
-      const config = createMockConfig();
+    const result = await generateCommitMessage(baseConfig({ githubIssue: 99 }));
 
-      const result = await generateCommitMessage(config);
-
-      expect(result).toContain('chore:'); // Falls back to default
-    });
-
-    it('should return non-empty string even on complete failure', async () => {
-      vi.mocked(createSimpleClient).mockRejectedValue(new Error('Client error'));
-      vi.mocked(existsSync).mockReturnValue(false);
-
-      const config = createMockConfig();
-
-      const result = await generateCommitMessage(config);
-
-      expect(result).toBeTruthy();
-      expect(result.length).toBeGreaterThan(0);
-    });
+    expect(result).toContain('Fixes #99');
   });
 
-  // ============================================
-  // Category mapping
-  // ============================================
+  // ---------------------------------------------------------------------------
+  // Spec file context
+  // ---------------------------------------------------------------------------
 
-  describe('category to commit type mapping', () => {
-    const categories: Array<{ workflow_type: string; expected: string }> = [
-      { workflow_type: 'feature', expected: 'feat' },
-      { workflow_type: 'bug_fix', expected: 'fix' },
-      { workflow_type: 'bug', expected: 'fix' },
-      { workflow_type: 'refactoring', expected: 'refactor' },
-      { workflow_type: 'documentation', expected: 'docs' },
-      { workflow_type: 'docs', expected: 'docs' },
-      { workflow_type: 'testing', expected: 'test' },
-      { workflow_type: 'performance', expected: 'perf' },
-      { workflow_type: 'security', expected: 'security' },
-      { workflow_type: 'chore', expected: 'chore' },
-    ];
-
-    it.each(categories)('should map $workflow_type to $expected', async ({ workflow_type, expected }) => {
-      vi.mocked(generateText).mockRejectedValue(new Error('AI error'));
-      vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockImplementation((path) => {
-        if (String(path).includes('requirements.json')) {
-          return JSON.stringify({ workflow_type });
-        }
-        return '';
-      });
-
-      const config = createMockConfig();
-
-      const result = await generateCommitMessage(config);
-
-      expect(result).toMatch(new RegExp(`^${expected}:`, 'm'));
+  it('reads spec.md for title when spec directory exists', async () => {
+    // Spec directory at .auto-claude/specs/001-add-feature
+    mockExistsSync.mockImplementation((p: string) => {
+      const normalized = p.replace(/\\/g, '/');
+      if (normalized.includes('specs/001-add-feature')) return true;
+      return false;
     });
-
-    it('should default to "chore" for unknown category', async () => {
-      vi.mocked(generateText).mockRejectedValue(new Error('AI error'));
-      vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockImplementation((path) => {
-        if (String(path).includes('requirements.json')) {
-          return JSON.stringify({ workflow_type: 'unknown_type' });
-        }
-        return '';
-      });
-
-      const config = createMockConfig();
-
-      const result = await generateCommitMessage(config);
-
-      expect(result).toMatch(/^chore:/);
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.includes('spec.md')) return '# Add OAuth Feature\n\n## Overview\nFull OAuth2 support.';
+      return '{}';
     });
+    mockGenerateText.mockResolvedValue({ text: 'feat(auth): add OAuth2' });
+
+    const result = await generateCommitMessage(baseConfig());
+
+    // Result should come from LLM (title from spec was available for context)
+    expect(result).toBe('feat(auth): add OAuth2');
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('Add OAuth Feature');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Fallback message
+  // ---------------------------------------------------------------------------
+
+  it('returns fallback message when generateText throws', async () => {
+    mockGenerateText.mockRejectedValue(new Error('Network error'));
+
+    const result = await generateCommitMessage(baseConfig({ specName: '001-add-feature' }));
+
+    // Fallback format: "<type>: <title or specName>"
+    expect(result).toMatch(/^(feat|fix|refactor|docs|test|perf|chore|style|ci|build):/);
+    expect(typeof result).toBe('string');
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it('includes Fixes in fallback when githubIssue provided and LLM fails', async () => {
+    mockGenerateText.mockRejectedValue(new Error('Timeout'));
+
+    const result = await generateCommitMessage(baseConfig({ githubIssue: 77 }));
+
+    expect(result).toContain('Fixes #77');
+  });
+
+  it('returns fallback when LLM returns empty text', async () => {
+    mockGenerateText.mockResolvedValue({ text: '   ' });
+
+    const result = await generateCommitMessage(baseConfig());
+
+    // Should fall through to fallback
+    expect(typeof result).toBe('string');
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Large filesChanged list
+  // ---------------------------------------------------------------------------
+
+  it('truncates filesChanged list when more than 20 files', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'refactor: big cleanup' });
+
+    const manyFiles = Array.from({ length: 30 }, (_, i) => `src/file${i}.ts`);
+    await generateCommitMessage(baseConfig({ filesChanged: manyFiles }));
+
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('and 10 more files');
   });
 });

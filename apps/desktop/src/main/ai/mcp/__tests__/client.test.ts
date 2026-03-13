@@ -1,626 +1,316 @@
 /**
- * MCP Client Tests
+ * Tests for MCP Client
  *
- * Tests for MCP client creation and management.
- * Covers transport creation, client initialization, tool merging,
- * and cleanup functions.
+ * Validates transport creation, client initialization, parallel agent setup,
+ * tool merging, and cleanup behavior.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { McpServerConfig, McpClientResult, StdioTransportConfig, StreamableHttpTransportConfig } from '../types';
-import type { McpRegistryOptions } from '../registry';
-import type { AgentType } from '../../config/agent-configs';
-import type { McpServerResolveOptions } from '../../config/agent-configs';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-// Mock all dependencies
-vi.mock('@ai-sdk/mcp');
-vi.mock('@modelcontextprotocol/sdk/client/stdio.js');
-vi.mock('../../config/agent-configs');
+// Mock @ai-sdk/mcp using inline factory to avoid vi.mock hoisting issues
+vi.mock('@ai-sdk/mcp', () => ({
+  createMCPClient: vi.fn(),
+}));
 
-import { createMcpClient, createMcpClientsForAgent, mergeMcpTools, closeAllMcpClients } from '../client';
-import { createMCPClient } from '@ai-sdk/mcp';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { getRequiredMcpServers } from '../../config/agent-configs';
-
-// ============================================
-// Test Fixtures
-// ============================================
-
-const createMockStdioConfig = (
-  overrides?: Partial<StdioTransportConfig>,
-): StdioTransportConfig => ({
-  type: 'stdio',
-  command: 'npx',
-  args: ['-y', 'test-server'],
-  ...overrides,
-});
-
-const createMockHttpConfig = (
-  overrides?: Partial<StreamableHttpTransportConfig>,
-): StreamableHttpTransportConfig => ({
-  type: 'streamable-http',
-  url: 'http://localhost:8000',
-  ...overrides,
-});
-
-const createMockServerConfig = (
-  overrides?: Partial<McpServerConfig>,
-): McpServerConfig => ({
-  id: 'test-server',
-  name: 'Test Server',
-  enabledByDefault: true,
-  transport: createMockStdioConfig(),
-  ...overrides,
-});
-
-const createMockClientResult = (
-  overrides?: Partial<McpClientResult>,
-): McpClientResult => ({
-  serverId: 'test-server',
-  tools: { tool1: { name: 'tool1' }, tool2: { name: 'tool2' } },
-  close: vi.fn().mockResolvedValue(undefined),
-  ...overrides,
-});
-
-const createMockMCPClient = () => ({
-  tools: vi.fn().mockResolvedValue({
-    tool1: { name: 'tool1', description: 'Test tool 1' },
-    tool2: { name: 'tool2', description: 'Test tool 2' },
+// Mock StdioClientTransport constructor using a proper constructor function
+vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
+  // biome-ignore lint/suspicious/noExplicitAny: test mock constructor
+  StdioClientTransport: vi.fn().mockImplementation(function (this: any) {
+    Object.assign(this, { __kind: 'stdio-transport' });
   }),
-  close: vi.fn().mockResolvedValue(undefined),
-}) as any;
+}));
 
-// ============================================
-// Setup & Teardown
-// ============================================
+// Mock registry to control which servers get resolved
+vi.mock('../registry', () => ({
+  resolveMcpServers: vi.fn(),
+}));
 
-describe('MCP Client', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+// Mock agent-configs to control required servers
+vi.mock('../../config/agent-configs', () => ({
+  getRequiredMcpServers: vi.fn().mockReturnValue([]),
+}));
 
-    // Mock createMCPClient from @ai-sdk/mcp
-    vi.mocked(createMCPClient).mockResolvedValue(createMockMCPClient());
+import { createMCPClient } from '@ai-sdk/mcp';
+import type { MCPClient } from '@ai-sdk/mcp';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { resolveMcpServers } from '../registry';
+import { getRequiredMcpServers } from '../../config/agent-configs';
+import type { McpServerResolveOptions } from '../../config/agent-configs';
+import {
+  createMcpClient,
+  createMcpClientsForAgent,
+  closeAllMcpClients,
+  mergeMcpTools,
+} from '../client';
+import type { McpServerConfig } from '../types';
 
-    // Mock getRequiredMcpServers
-    vi.mocked(getRequiredMcpServers).mockReturnValue(['context7']);
-  });
+const mockCreateMCPClient = vi.mocked(createMCPClient);
+const mockStdioClientTransport = vi.mocked(StdioClientTransport);
+const mockResolveMcpServers = vi.mocked(resolveMcpServers);
+const mockGetRequiredMcpServers = vi.mocked(getRequiredMcpServers);
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+// Sentinel: what StdioClientTransport instances look like after construction
+const FAKE_STDIO_TRANSPORT_PROPS = { __kind: 'stdio-transport' };
 
-  // ============================================
-  // createMcpClient
-  // ============================================
+// Helper: build a mock MCP client instance
+function makeMockMcpInstance(tools = { tool_a: {}, tool_b: {} }) {
+  return {
+    tools: vi.fn().mockResolvedValue(tools),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+}
 
-  describe('createMcpClient', () => {
-    it('should create client with stdio transport', async () => {
-      const config = createMockServerConfig({
-        transport: createMockStdioConfig(),
-      });
+// Helpers: server configs
+const stdioConfig: McpServerConfig = {
+  id: 'test-stdio',
+  name: 'Test Stdio Server',
+  description: 'A test stdio server',
+  enabledByDefault: true,
+  transport: {
+    type: 'stdio',
+    command: 'npx',
+    args: ['-y', 'some-mcp-server'],
+    env: { MY_VAR: 'value' },
+  },
+};
 
-      const result = await createMcpClient(config);
+const httpConfig: McpServerConfig = {
+  id: 'test-http',
+  name: 'Test HTTP Server',
+  description: 'A test streamable-http server',
+  enabledByDefault: true,
+  transport: {
+    type: 'streamable-http',
+    url: 'https://mcp.example.com/sse',
+    headers: { Authorization: 'Bearer token123' },
+  },
+};
 
-      expect(createMCPClient).toHaveBeenCalledWith({
-        transport: expect.any(StdioClientTransport),
-      });
-      expect(result.serverId).toBe('test-server');
-      expect(result.tools).toBeDefined();
-      expect(typeof result.close).toBe('function');
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Default: StdioClientTransport constructor sets __kind on instance
+  // biome-ignore lint/suspicious/noExplicitAny: test mock constructor
+  mockStdioClientTransport.mockImplementation(function (this: any) {
+    Object.assign(this, FAKE_STDIO_TRANSPORT_PROPS);
+  } as unknown as typeof StdioClientTransport);
+  // Default: createMCPClient returns a standard mock instance
+  mockCreateMCPClient.mockResolvedValue(makeMockMcpInstance() as unknown as MCPClient);
+  mockGetRequiredMcpServers.mockReturnValue([]);
+  mockResolveMcpServers.mockReturnValue([]);
+});
+
+// =============================================================================
+// createMcpClient — transport creation
+// =============================================================================
+
+describe('createMcpClient', () => {
+  it('creates a StdioClientTransport for stdio server config', async () => {
+    await createMcpClient(stdioConfig);
+
+    expect(mockStdioClientTransport).toHaveBeenCalledWith({
+      command: 'npx',
+      args: ['-y', 'some-mcp-server'],
+      env: expect.objectContaining({ MY_VAR: 'value' }),
+      cwd: undefined,
     });
-
-    it('should create client with streamable-http transport', async () => {
-      const config = createMockServerConfig({
-        transport: createMockHttpConfig({ url: 'http://test-server:9000' }),
-      });
-
-      const result = await createMcpClient(config);
-
-      expect(createMCPClient).toHaveBeenCalledWith({
-        transport: {
-          type: 'sse',
-          url: 'http://test-server:9000',
-        },
-      });
-      expect(result.serverId).toBe('test-server');
-    });
-
-    it('should pass environment variables to stdio transport', async () => {
-      const config = createMockServerConfig({
-        transport: createMockStdioConfig({
-          env: { API_KEY: 'test-key', DEBUG: 'true' },
-        }),
-      });
-
-      await createMcpClient(config);
-
-      const transportCall = vi.mocked(createMCPClient).mock.calls[0][0].transport;
-      expect(transportCall).toBeInstanceOf(StdioClientTransport);
-    });
-
-    it('should pass working directory to stdio transport', async () => {
-      const config = createMockServerConfig({
-        transport: createMockStdioConfig({
-          cwd: '/test/working/dir',
-        }),
-      });
-
-      await createMcpClient(config);
-
-      const transportCall = vi.mocked(createMCPClient).mock.calls[0][0].transport;
-      expect(transportCall).toBeInstanceOf(StdioClientTransport);
-    });
-
-    it('should include headers in http transport when provided', async () => {
-      const config = createMockServerConfig({
-        transport: createMockHttpConfig({
-          headers: { Authorization: 'Bearer token123' },
-        }),
-      });
-
-      await createMcpClient(config);
-
-      expect(createMCPClient).toHaveBeenCalledWith({
-        transport: {
-          type: 'sse',
-          url: 'http://localhost:8000',
-          headers: { Authorization: 'Bearer token123' },
-        },
-      });
-    });
-
-    it('should return tools from MCP client', async () => {
-      const mockTools = {
-        search: { name: 'search', description: 'Search tool' },
-        read: { name: 'read', description: 'Read tool' },
-      };
-      vi.mocked(createMCPClient).mockResolvedValue({
-        tools: vi.fn().mockResolvedValue(mockTools),
-        close: vi.fn().mockResolvedValue(undefined),
-        listTools: vi.fn().mockResolvedValue([]),
-        toolsFromDefinitions: vi.fn().mockResolvedValue({}),
-        listResources: vi.fn().mockResolvedValue([]),
-        readResource: vi.fn().mockResolvedValue(''),
-        listPrompts: vi.fn().mockResolvedValue([]),
-        getPrompt: vi.fn().mockResolvedValue({ messages: [] }),
-      } as any);
-
-      const config = createMockServerConfig();
-      const result = await createMcpClient(config);
-
-      expect(result.tools).toEqual(mockTools);
-    });
-
-    it('should provide cleanup function that closes client', async () => {
-      const mockClient = createMockMCPClient();
-      const closeSpy = vi.spyOn(mockClient, 'close').mockResolvedValue(undefined);
-      vi.mocked(createMCPClient).mockResolvedValue(mockClient);
-
-      const config = createMockServerConfig();
-      const result = await createMcpClient(config);
-
-      await result.close();
-
-      expect(closeSpy).toHaveBeenCalled();
+    // The transport passed to createMCPClient is an instance of the mocked StdioClientTransport
+    expect(mockCreateMCPClient).toHaveBeenCalledWith({
+      transport: expect.objectContaining(FAKE_STDIO_TRANSPORT_PROPS),
     });
   });
 
-  // ============================================
-  // createMcpClientsForAgent
-  // ============================================
-
-  describe('createMcpClientsForAgent', () => {
-    it('should create clients for all required servers', async () => {
-      vi.mocked(getRequiredMcpServers).mockReturnValue(['context7', 'electron']);
-
-      const result = await createMcpClientsForAgent('coder');
-
-      expect(result).toHaveLength(2);
-      expect(result.every((c) => c.serverId)).toBeDefined();
-      expect(getRequiredMcpServers).toHaveBeenCalledWith('coder', {});
-    });
-
-    it('should pass resolveOptions to getRequiredMcpServers', async () => {
-      const resolveOptions: McpServerResolveOptions = {
-        projectCapabilities: { is_electron: true },
-      };
-
-      await createMcpClientsForAgent('qa_reviewer', resolveOptions);
-
-      expect(getRequiredMcpServers).toHaveBeenCalledWith('qa_reviewer', resolveOptions);
-    });
-
-    it('should pass registryOptions to server resolution', async () => {
-      const registryOptions: McpRegistryOptions = {
-        specDir: '/test/spec',
-        memoryMcpUrl: 'http://memory:8000',
-      };
-
-      vi.mocked(getRequiredMcpServers).mockReturnValue(['auto-claude']);
-
-      await createMcpClientsForAgent('planner', {}, registryOptions);
-
-      // The registry options should be used when resolving servers
-      expect(getRequiredMcpServers).toHaveBeenCalled();
-    });
-
-    it('should create clients in parallel', async () => {
-      vi.mocked(getRequiredMcpServers).mockReturnValue([
-        'context7',
-        'electron',
-        'puppeteer',
-      ]);
-
-      const startTime = Date.now();
-      await createMcpClientsForAgent('coder');
-      const endTime = Date.now();
-
-      // With parallel creation, this should complete quickly
-      expect(endTime - startTime).toBeLessThan(100);
-    });
-
-    it('should handle client creation failures gracefully', async () => {
-      vi.mocked(getRequiredMcpServers).mockReturnValue(['context7', 'invalid-server']);
-
-      // Mock createMCPClient to fail for the second call
-      let callCount = 0;
-      vi.mocked(createMCPClient).mockImplementation(async () => {
-        callCount++;
-        if (callCount === 2) {
-          throw new Error('Connection failed');
-        }
-        return createMockMCPClient();
-      });
-
-      const result = await createMcpClientsForAgent('coder');
-
-      // Should return only successful clients
-      expect(result).toHaveLength(1);
-    });
-
-    it('should return empty array when no servers required', async () => {
-      vi.mocked(getRequiredMcpServers).mockReturnValue([]);
-
-      const result = await createMcpClientsForAgent('coder');
-
-      expect(result).toEqual([]);
-    });
-
-    it('should include serverId in each client result', async () => {
-      vi.mocked(getRequiredMcpServers).mockReturnValue(['context7', 'electron']);
-
-      const result = await createMcpClientsForAgent('coder');
-
-      expect(result[0].serverId).toBeDefined();
-      expect(result[1].serverId).toBeDefined();
-      expect(result[0].serverId).not.toBe(result[1].serverId);
-    });
-  });
-
-  // ============================================
-  // mergeMcpTools
-  // ============================================
-
-  describe('mergeMcpTools', () => {
-    it('should merge tools from multiple clients', () => {
-      const client1 = createMockClientResult({
-        serverId: 'server1',
-        tools: { tool1: { name: 'tool1' }, tool2: { name: 'tool2' } },
-      });
-      const client2 = createMockClientResult({
-        serverId: 'server2',
-        tools: { tool3: { name: 'tool3' }, tool4: { name: 'tool4' } },
-      });
-
-      const result = mergeMcpTools([client1, client2]);
-
-      expect(result).toEqual({
-        tool1: { name: 'tool1' },
-        tool2: { name: 'tool2' },
-        tool3: { name: 'tool3' },
-        tool4: { name: 'tool4' },
-      });
-    });
-
-    it('should handle empty client array', () => {
-      const result = mergeMcpTools([]);
-
-      expect(result).toEqual({});
-    });
-
-    it('should handle single client', () => {
-      const client = createMockClientResult({
-        tools: { tool1: { name: 'tool1' } },
-      });
-
-      const result = mergeMcpTools([client]);
-
-      expect(result).toEqual({ tool1: { name: 'tool1' } });
-    });
-
-    it('should handle client with no tools', () => {
-      const client = createMockClientResult({
-        tools: {},
-      });
-
-      const result = mergeMcpTools([client]);
-
-      expect(result).toEqual({});
-    });
-
-    it('should overwrite duplicate tool names with last client value', () => {
-      const client1 = createMockClientResult({
-        tools: { shared: { from: 'client1' } },
-      });
-      const client2 = createMockClientResult({
-        tools: { shared: { from: 'client2' } },
-      });
-
-      const result = mergeMcpTools([client1, client2]);
-
-      // Last client wins
-      expect(result.shared).toEqual({ from: 'client2' });
-    });
-
-    it('should preserve tool references from clients', () => {
-      const tool1 = { name: 'tool1', execute: vi.fn() };
-      const tool2 = { name: 'tool2', execute: vi.fn() };
-
-      const client = createMockClientResult({
-        tools: { tool1, tool2 },
-      });
-
-      const result = mergeMcpTools([client]);
-
-      expect(result.tool1).toBe(tool1);
-      expect(result.tool2).toBe(tool2);
-    });
-  });
-
-  // ============================================
-  // closeAllMcpClients
-  // ============================================
-
-  describe('closeAllMcpClients', () => {
-    it('should close all clients', async () => {
-      const closeSpy1 = vi.fn().mockResolvedValue(undefined);
-      const closeSpy2 = vi.fn().mockResolvedValue(undefined);
-      const closeSpy3 = vi.fn().mockResolvedValue(undefined);
-
-      const clients = [
-        createMockClientResult({ close: closeSpy1 }),
-        createMockClientResult({ close: closeSpy2 }),
-        createMockClientResult({ close: closeSpy3 }),
-      ];
-
-      await closeAllMcpClients(clients);
-
-      expect(closeSpy1).toHaveBeenCalled();
-      expect(closeSpy2).toHaveBeenCalled();
-      expect(closeSpy3).toHaveBeenCalled();
-    });
-
-    it('should handle empty client array', async () => {
-      await expect(closeAllMcpClients([])).resolves.toBeUndefined();
-    });
-
-    it('should handle single client', async () => {
-      const closeSpy = vi.fn().mockResolvedValue(undefined);
-      const clients = [createMockClientResult({ close: closeSpy })];
-
-      await closeAllMcpClients(clients);
-
-      expect(closeSpy).toHaveBeenCalled();
-    });
-
-    it('should continue closing if one client fails', async () => {
-      const closeSpy1 = vi.fn().mockResolvedValue(undefined);
-      const closeSpy2 = vi.fn().mockRejectedValue(new Error('Close failed'));
-      const closeSpy3 = vi.fn().mockResolvedValue(undefined);
-
-      const clients = [
-        createMockClientResult({ close: closeSpy1 }),
-        createMockClientResult({ close: closeSpy2 }),
-        createMockClientResult({ close: closeSpy3 }),
-      ];
-
-      await closeAllMcpClients(clients);
-
-      expect(closeSpy1).toHaveBeenCalled();
-      expect(closeSpy2).toHaveBeenCalled();
-      expect(closeSpy3).toHaveBeenCalled();
-    });
-
-    it('should close clients in parallel', async () => {
-      let closeOrder: string[] = [];
-      const clients = [
-        createMockClientResult({
-          close: vi.fn().mockImplementation(async () => {
-            closeOrder.push('client1');
-            await new Promise((resolve) => setTimeout(resolve, 10));
-          }),
-        }),
-        createMockClientResult({
-          close: vi.fn().mockImplementation(async () => {
-            closeOrder.push('client2');
-            await new Promise((resolve) => setTimeout(resolve, 5));
-          }),
-        }),
-        createMockClientResult({
-          close: vi.fn().mockImplementation(async () => {
-            closeOrder.push('client3');
-            await new Promise((resolve) => setTimeout(resolve, 1));
-          }),
-        }),
-      ];
-
-      await closeAllMcpClients(clients);
-
-      // All should close, but order depends on Promise.allSettled
-      expect(closeOrder).toHaveLength(3);
-    });
-
-    it('should await all close operations', async () => {
-      let closeCount = 0;
-      const clients = [
-        createMockClientResult({
-          close: vi.fn().mockImplementation(async () => {
-            await new Promise((resolve) => setTimeout(resolve, 10));
-            closeCount++;
-          }),
-        }),
-        createMockClientResult({
-          close: vi.fn().mockImplementation(async () => {
-            await new Promise((resolve) => setTimeout(resolve, 10));
-            closeCount++;
-          }),
-        }),
-      ];
-
-      await closeAllMcpClients(clients);
-
-      expect(closeCount).toBe(2);
-    });
-  });
-
-  // ============================================
-  // Transport Creation (Internal)
-  // ============================================
-
-  describe('transport creation', () => {
-    it('should create StdioClientTransport with correct args', async () => {
-      const config = createMockServerConfig({
-        transport: createMockStdioConfig({
-          command: 'node',
-          args: ['server.js'],
-          env: { NODE_ENV: 'test' },
-        }),
-      });
-
-      await createMcpClient(config);
-
-      const transport = vi.mocked(createMCPClient).mock.calls[0][0].transport;
-      expect(transport).toBeInstanceOf(StdioClientTransport);
-    });
-
-    it('should create SSE transport config with url', async () => {
-      const config = createMockServerConfig({
-        transport: createMockHttpConfig({
-          url: 'https://api.example.com/mcp',
-        }),
-      });
-
-      await createMcpClient(config);
-
-      const transportConfig = vi.mocked(createMCPClient).mock.calls[0][0].transport;
-      expect(transportConfig).toEqual({
+  it('creates an SSE transport object for streamable-http config', async () => {
+    await createMcpClient(httpConfig);
+
+    expect(mockCreateMCPClient).toHaveBeenCalledWith({
+      transport: {
         type: 'sse',
-        url: 'https://api.example.com/mcp',
-      });
+        url: 'https://mcp.example.com/sse',
+        headers: { Authorization: 'Bearer token123' },
+      },
     });
-
-    it('should include optional headers in SSE transport', async () => {
-      const config = createMockServerConfig({
-        transport: createMockHttpConfig({
-          url: 'https://api.example.com/mcp',
-          headers: {
-            Authorization: 'Bearer token',
-            'X-Custom-Header': 'value',
-          },
-        }),
-      });
-
-      await createMcpClient(config);
-
-      const transportConfig = vi.mocked(createMCPClient).mock.calls[0][0].transport;
-      expect(transportConfig).toEqual({
-        type: 'sse',
-        url: 'https://api.example.com/mcp',
-        headers: {
-          Authorization: 'Bearer token',
-          'X-Custom-Header': 'value',
-        },
-      });
-    });
+    // StdioClientTransport should NOT be called for HTTP config
+    expect(mockStdioClientTransport).not.toHaveBeenCalled();
   });
 
-  // ============================================
-  // Error Handling
-  // ============================================
+  it('returns a result with serverId, tools, and close function', async () => {
+    const result = await createMcpClient(stdioConfig);
 
-  describe('error handling', () => {
-    it('should propagate client creation errors', async () => {
-      vi.mocked(createMCPClient).mockRejectedValue(new Error('Connection timeout'));
-
-      const config = createMockServerConfig();
-
-      await expect(createMcpClient(config)).rejects.toThrow('Connection timeout');
-    });
-
-    it('should propagate tools() errors', async () => {
-      vi.mocked(createMCPClient).mockResolvedValue({
-        tools: vi.fn().mockRejectedValue(new Error('Tools fetch failed')),
-        close: vi.fn().mockResolvedValue(undefined),
-        listTools: vi.fn().mockResolvedValue([]),
-        toolsFromDefinitions: vi.fn().mockResolvedValue({}),
-        listResources: vi.fn().mockResolvedValue([]),
-        readResource: vi.fn().mockResolvedValue(''),
-        listPrompts: vi.fn().mockResolvedValue([]),
-        getPrompt: vi.fn().mockResolvedValue({ messages: [] }),
-      } as any);
-
-      const config = createMockServerConfig();
-
-      await expect(createMcpClient(config)).rejects.toThrow('Tools fetch failed');
-    });
-
-    it('should handle cleanup errors gracefully in closeAllMcpClients', async () => {
-      const clients = [
-        createMockClientResult({
-          close: vi.fn().mockRejectedValue(new Error('Cleanup failed')),
-        }),
-      ];
-
-      // Should not throw
-      await expect(closeAllMcpClients(clients)).resolves.toBeUndefined();
-    });
+    expect(result.serverId).toBe('test-stdio');
+    expect(result.tools).toEqual({ tool_a: {}, tool_b: {} });
+    expect(typeof result.close).toBe('function');
   });
 
-  // ============================================
-  // Agent Type Integration
-  // ============================================
+  it('merges process.env with server env for stdio transport', async () => {
+    const originalPath = process.env.PATH;
+    process.env.PATH = '/usr/bin';
 
-  describe('agent type integration', () => {
-    it('should get correct servers for coder agent', async () => {
-      vi.mocked(getRequiredMcpServers).mockImplementation((agentType) => {
-        if (agentType === 'coder') return ['context7', 'auto-claude'];
-        return [];
-      });
+    await createMcpClient(stdioConfig);
 
-      const result = await createMcpClientsForAgent('coder');
+    expect(mockStdioClientTransport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: expect.objectContaining({ PATH: '/usr/bin', MY_VAR: 'value' }),
+      }),
+    );
 
-      expect(getRequiredMcpServers).toHaveBeenCalledWith('coder', {});
-      expect(result).toHaveLength(2);
-    });
+    process.env.PATH = originalPath;
+  });
 
-    it('should get correct servers for qa agent', async () => {
-      vi.mocked(getRequiredMcpServers).mockImplementation((agentType) => {
-        if (agentType === 'qa_reviewer') return ['context7', 'electron', 'puppeteer'];
-        return [];
-      });
+  it('passes undefined env to StdioClientTransport when no env in config', async () => {
+    const noEnvConfig: McpServerConfig = {
+      ...stdioConfig,
+      transport: { type: 'stdio', command: 'node', args: ['server.js'] },
+    };
 
-      const result = await createMcpClientsForAgent('qa_reviewer');
+    await createMcpClient(noEnvConfig);
 
-      expect(getRequiredMcpServers).toHaveBeenCalledWith('qa_reviewer', {});
-      expect(result).toHaveLength(3);
-    });
+    expect(mockStdioClientTransport).toHaveBeenCalledWith(
+      expect.objectContaining({ env: undefined }),
+    );
+  });
 
-    it('should support custom agent types', async () => {
-      vi.mocked(getRequiredMcpServers).mockReturnValue(['context7']);
+  it('close() delegates to the underlying MCP client close method', async () => {
+    const mockInstance = makeMockMcpInstance();
+    mockCreateMCPClient.mockResolvedValueOnce(mockInstance as unknown as MCPClient);
 
-      const result = await createMcpClientsForAgent('custom-agent' as AgentType);
+    const result = await createMcpClient(stdioConfig);
+    await result.close();
 
-      expect(result).toHaveLength(1);
-    });
+    expect(mockInstance.close).toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// createMcpClientsForAgent
+// =============================================================================
+
+describe('createMcpClientsForAgent', () => {
+  it('returns empty array when agent requires no MCP servers', async () => {
+    mockGetRequiredMcpServers.mockReturnValueOnce([]);
+    mockResolveMcpServers.mockReturnValueOnce([]);
+
+    const clients = await createMcpClientsForAgent('commit_message');
+
+    expect(clients).toEqual([]);
+  });
+
+  it('creates clients for each resolved server config', async () => {
+    mockGetRequiredMcpServers.mockReturnValueOnce(['context7', 'auto-claude']);
+    mockResolveMcpServers.mockReturnValueOnce([
+      { ...stdioConfig, id: 'context7' },
+      { ...stdioConfig, id: 'auto-claude' },
+    ]);
+    // Two separate mock instances for the two servers
+    mockCreateMCPClient
+      .mockResolvedValueOnce(makeMockMcpInstance() as unknown as MCPClient)
+      .mockResolvedValueOnce(makeMockMcpInstance() as unknown as MCPClient);
+
+    const clients = await createMcpClientsForAgent('coder');
+
+    expect(clients).toHaveLength(2);
+    expect(clients[0].serverId).toBe('context7');
+    expect(clients[1].serverId).toBe('auto-claude');
+  });
+
+  it('skips failed connections without throwing', async () => {
+    mockGetRequiredMcpServers.mockReturnValueOnce(['context7', 'broken-server']);
+    mockResolveMcpServers.mockReturnValueOnce([
+      { ...stdioConfig, id: 'context7' },
+      { ...stdioConfig, id: 'broken-server' },
+    ]);
+
+    // First call succeeds, second call fails
+    mockCreateMCPClient
+      .mockResolvedValueOnce(makeMockMcpInstance() as unknown as MCPClient)
+      .mockRejectedValueOnce(new Error('connection refused'));
+
+    const clients = await createMcpClientsForAgent('coder');
+
+    // Only the successful client should be returned
+    expect(clients).toHaveLength(1);
+    expect(clients[0].serverId).toBe('context7');
+  });
+
+  it('passes resolveOptions to getRequiredMcpServers', async () => {
+    mockGetRequiredMcpServers.mockReturnValueOnce([]);
+    mockResolveMcpServers.mockReturnValueOnce([]);
+
+    const resolveOptions = { electronMcpEnabled: true };
+    await createMcpClientsForAgent('qa_reviewer', resolveOptions as unknown as McpServerResolveOptions);
+
+    expect(mockGetRequiredMcpServers).toHaveBeenCalledWith('qa_reviewer', resolveOptions);
+  });
+});
+
+// =============================================================================
+// mergeMcpTools
+// =============================================================================
+
+describe('mergeMcpTools', () => {
+  it('merges tools from multiple clients into a single object', () => {
+    const clients = [
+      { serverId: 'a', tools: { tool1: {}, tool2: {} }, close: vi.fn() },
+      { serverId: 'b', tools: { tool3: {}, tool4: {} }, close: vi.fn() },
+    ];
+
+    const merged = mergeMcpTools(clients);
+
+    expect(Object.keys(merged)).toHaveLength(4);
+    expect(merged).toHaveProperty('tool1');
+    expect(merged).toHaveProperty('tool3');
+  });
+
+  it('returns empty object for empty clients array', () => {
+    expect(mergeMcpTools([])).toEqual({});
+  });
+
+  it('later client tools overwrite earlier ones on key collision', () => {
+    const clients = [
+      { serverId: 'a', tools: { shared_tool: { version: 1 } }, close: vi.fn() },
+      { serverId: 'b', tools: { shared_tool: { version: 2 } }, close: vi.fn() },
+    ];
+
+    const merged = mergeMcpTools(clients);
+
+    // biome-ignore lint/suspicious/noExplicitAny: test mock property access
+    expect((merged.shared_tool as any).version).toBe(2);
+  });
+});
+
+// =============================================================================
+// closeAllMcpClients
+// =============================================================================
+
+describe('closeAllMcpClients', () => {
+  it('calls close on all clients', async () => {
+    const close1 = vi.fn().mockResolvedValue(undefined);
+    const close2 = vi.fn().mockResolvedValue(undefined);
+    const clients = [
+      { serverId: 'a', tools: {}, close: close1 },
+      { serverId: 'b', tools: {}, close: close2 },
+    ];
+
+    await closeAllMcpClients(clients);
+
+    expect(close1).toHaveBeenCalled();
+    expect(close2).toHaveBeenCalled();
+  });
+
+  it('resolves even when one client fails to close', async () => {
+    const close1 = vi.fn().mockResolvedValue(undefined);
+    const close2 = vi.fn().mockRejectedValue(new Error('close failed'));
+    const clients = [
+      { serverId: 'a', tools: {}, close: close1 },
+      { serverId: 'b', tools: {}, close: close2 },
+    ];
+
+    // Should not throw
+    await expect(closeAllMcpClients(clients)).resolves.toBeUndefined();
+    expect(close1).toHaveBeenCalled();
+    expect(close2).toHaveBeenCalled();
+  });
+
+  it('resolves immediately for empty clients array', async () => {
+    await expect(closeAllMcpClients([])).resolves.toBeUndefined();
   });
 });

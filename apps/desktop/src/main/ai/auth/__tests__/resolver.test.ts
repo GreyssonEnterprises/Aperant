@@ -1,412 +1,507 @@
 /**
- * AI Auth Resolver Tests
+ * Tests for AI Auth Resolver
  *
- * Tests for multi-stage credential resolution with fallback chains.
- * Covers OAuth tokens, API keys, environment variables, and queue-based resolution.
+ * Validates the multi-stage credential resolution fallback chain,
+ * provider account resolution, settings accessor registration,
+ * environment variable fallback, and Z.AI endpoint routing.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { SupportedProvider } from '../../providers/types';
-import type {
-  AuthResolverContext,
-  ResolvedAuth,
-  QueueResolvedAuth,
-} from '../types';
-import type { ProviderAccount } from '../../../../shared/types/provider-account';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+
+// Mock token-refresh before importing resolver
+// Path resolution from src/main/ai/auth/__tests__/:
+//   ../     = src/main/ai/auth/
+//   ../../  = src/main/ai/
+//   ../../../ = src/main/
+// So ../../../claude-profile/ = src/main/claude-profile/
+vi.mock('../../../claude-profile/token-refresh', () => ({
+  ensureValidToken: vi.fn(),
+  reactiveTokenRefresh: vi.fn(),
+}));
+
+// Mock profile-scorer
+vi.mock('../../../claude-profile/profile-scorer', () => ({
+  scoreProviderAccount: vi.fn(),
+}));
+
+// Mock model equivalence
+// ../../../../shared/ = src/shared/ (4 levels up from __tests__ = src/)
+vi.mock('../../../../shared/constants/models', () => ({
+  resolveModelEquivalent: vi.fn(),
+}));
+
+// Mock provider factory detection
+// ../../providers/ = src/main/ai/providers/
+vi.mock('../../providers/factory', () => ({
+  detectProviderFromModel: vi.fn(),
+}));
+
+import { ensureValidToken, reactiveTokenRefresh } from '../../../claude-profile/token-refresh';
+import { scoreProviderAccount } from '../../../claude-profile/profile-scorer';
+import { resolveModelEquivalent } from '../../../../shared/constants/models';
+import { detectProviderFromModel } from '../../providers/factory';
 import {
-  registerSettingsAccessor,
   resolveAuth,
-  refreshOAuthTokenReactive,
   hasCredentials,
+  registerSettingsAccessor,
+  refreshOAuthTokenReactive,
   resolveAuthFromQueue,
   buildDefaultQueueConfig,
 } from '../resolver';
-import {
-  PROVIDER_ENV_VARS,
-  PROVIDER_SETTINGS_KEY,
-  PROVIDER_BASE_URL_ENV,
-} from '../types';
 
-// ============================================
-// Test Fixtures
-// ============================================
+const mockEnsureValidToken = vi.mocked(ensureValidToken);
+const mockReactiveTokenRefresh = vi.mocked(reactiveTokenRefresh);
+const mockScoreProviderAccount = vi.mocked(scoreProviderAccount);
+const mockResolveModelEquivalent = vi.mocked(resolveModelEquivalent);
+const _mockDetectProviderFromModel = vi.mocked(detectProviderFromModel);
 
-const mockSettingsAccessor = vi.fn();
+// Helper: reset the module-level settings accessor between tests
+function clearSettingsAccessor() {
+  registerSettingsAccessor(() => undefined);
+}
 
-const createMockContext = (
-  provider: SupportedProvider = 'anthropic',
-  overrides?: Partial<AuthResolverContext>,
-): AuthResolverContext => ({
-  provider,
-  profileId: 'test-profile',
-  configDir: '/test/config',
-  ...overrides,
+beforeEach(() => {
+  vi.clearAllMocks();
+  clearSettingsAccessor();
+  // Clean up any environment variable side effects
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.ANTHROPIC_BASE_URL;
+  delete process.env.OPENAI_BASE_URL;
 });
 
-const createMockProviderAccount = (
-  overrides?: Partial<ProviderAccount>,
-): ProviderAccount => ({
-  id: 'test-account-1',
-  provider: 'anthropic',
-  name: 'Test Account',
-  authType: 'api-key',
-  billingModel: 'pay-per-use',
-  apiKey: 'sk-test-key',
-  createdAt: Date.now(),
-  updatedAt: Date.now(),
-  ...overrides,
+afterEach(() => {
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.ANTHROPIC_BASE_URL;
+  delete process.env.OPENAI_BASE_URL;
 });
 
-// ============================================
-// Setup & Teardown
-// ============================================
+// =============================================================================
+// registerSettingsAccessor
+// =============================================================================
 
-describe('AI Auth Resolver', () => {
-  const originalEnv = process.env;
+describe('registerSettingsAccessor', () => {
+  it('wires up settings so subsequent calls read from the accessor', async () => {
+    registerSettingsAccessor((key) => (key === 'globalAnthropicApiKey' ? 'sk-from-settings' : undefined));
+
+    const auth = await resolveAuth({ provider: 'anthropic' });
+    expect(auth).not.toBeNull();
+    expect(auth?.apiKey).toBe('sk-from-settings');
+    expect(auth?.source).toBe('profile-api-key');
+  });
+});
+
+// =============================================================================
+// Stage 1: Profile OAuth Token
+// =============================================================================
+
+describe('resolveAuth — Stage 1: Profile OAuth', () => {
+  it('returns oauth token for anthropic when ensureValidToken resolves', async () => {
+    mockEnsureValidToken.mockResolvedValueOnce({ token: 'oauth-token-abc', wasRefreshed: false });
+
+    const auth = await resolveAuth({ provider: 'anthropic', configDir: '/home/.config/claude' });
+
+    expect(auth).not.toBeNull();
+    expect(auth?.apiKey).toBe('oauth-token-abc');
+    expect(auth?.source).toBe('profile-oauth');
+    expect(auth?.headers).toMatchObject({ 'anthropic-beta': expect.stringContaining('oauth') });
+  });
+
+  it('includes custom base URL when ANTHROPIC_BASE_URL is set', async () => {
+    process.env.ANTHROPIC_BASE_URL = 'https://proxy.example.com';
+    mockEnsureValidToken.mockResolvedValueOnce({ token: 'oauth-token-abc', wasRefreshed: false });
+
+    const auth = await resolveAuth({ provider: 'anthropic' });
+
+    expect(auth?.baseURL).toBe('https://proxy.example.com');
+  });
+
+  it('skips oauth stage for non-anthropic providers', async () => {
+    // openai has no oauth stage; should fall through to environment
+    process.env.OPENAI_API_KEY = 'sk-env-openai';
+
+    const auth = await resolveAuth({ provider: 'openai' });
+
+    expect(mockEnsureValidToken).not.toHaveBeenCalled();
+    expect(auth?.source).toBe('environment');
+  });
+
+  it('falls through when ensureValidToken throws', async () => {
+    mockEnsureValidToken.mockRejectedValueOnce(new Error('keychain locked'));
+    process.env.ANTHROPIC_API_KEY = 'sk-env-fallback';
+
+    const auth = await resolveAuth({ provider: 'anthropic' });
+
+    expect(auth?.apiKey).toBe('sk-env-fallback');
+    expect(auth?.source).toBe('environment');
+  });
+
+  it('falls through when ensureValidToken returns no token', async () => {
+    mockEnsureValidToken.mockResolvedValueOnce({ token: null, wasRefreshed: false });
+    process.env.ANTHROPIC_API_KEY = 'sk-env-fallback';
+
+    const auth = await resolveAuth({ provider: 'anthropic' });
+
+    expect(auth?.source).toBe('environment');
+  });
+});
+
+// =============================================================================
+// Stage 2: Profile API Key (from settings)
+// =============================================================================
+
+describe('resolveAuth — Stage 2: Profile API Key', () => {
+  it('returns api-key from settings when no oauth token available', async () => {
+    mockEnsureValidToken.mockResolvedValueOnce({ token: null, wasRefreshed: false });
+    registerSettingsAccessor((key) => (key === 'globalAnthropicApiKey' ? 'sk-settings-key' : undefined));
+
+    const auth = await resolveAuth({ provider: 'anthropic' });
+
+    expect(auth?.apiKey).toBe('sk-settings-key');
+    expect(auth?.source).toBe('profile-api-key');
+  });
+
+  it('includes base URL from environment even for settings-based keys', async () => {
+    process.env.ANTHROPIC_BASE_URL = 'https://custom.proxy.io';
+    mockEnsureValidToken.mockResolvedValueOnce({ token: null, wasRefreshed: false });
+    registerSettingsAccessor((key) => (key === 'globalAnthropicApiKey' ? 'sk-settings' : undefined));
+
+    const auth = await resolveAuth({ provider: 'anthropic' });
+
+    expect(auth?.baseURL).toBe('https://custom.proxy.io');
+  });
+
+  it('returns null from settings stage when accessor returns nothing', async () => {
+    mockEnsureValidToken.mockResolvedValueOnce({ token: null, wasRefreshed: false });
+    // settings accessor returns undefined for everything, env also not set
+    const auth = await resolveAuth({ provider: 'anthropic' });
+    expect(auth).toBeNull();
+  });
+});
+
+// =============================================================================
+// Stage 3: Environment Variable
+// =============================================================================
+
+describe('resolveAuth — Stage 3: Environment Variable', () => {
+  it('returns env key for openai', async () => {
+    process.env.OPENAI_API_KEY = 'sk-env-openai-123';
+
+    const auth = await resolveAuth({ provider: 'openai' });
+
+    expect(auth?.apiKey).toBe('sk-env-openai-123');
+    expect(auth?.source).toBe('environment');
+  });
+
+  it('includes base URL from env when OPENAI_BASE_URL is set', async () => {
+    process.env.OPENAI_API_KEY = 'sk-env-openai';
+    process.env.OPENAI_BASE_URL = 'https://openai-proxy.com';
+
+    const auth = await resolveAuth({ provider: 'openai' });
+
+    expect(auth?.baseURL).toBe('https://openai-proxy.com');
+  });
+
+  it('returns null for bedrock (no env var defined)', async () => {
+    const auth = await resolveAuth({ provider: 'bedrock' });
+    expect(auth).toBeNull();
+  });
+});
+
+// =============================================================================
+// Stage 4: Default Credentials (no-auth providers)
+// =============================================================================
+
+describe('resolveAuth — Stage 4: Default Credentials', () => {
+  it('returns empty api key for ollama', async () => {
+    const auth = await resolveAuth({ provider: 'ollama' });
+
+    expect(auth).not.toBeNull();
+    expect(auth?.apiKey).toBe('');
+    expect(auth?.source).toBe('default');
+  });
+
+  it('returns null for unknown provider with no credentials', async () => {
+    const auth = await resolveAuth({ provider: 'groq' });
+    expect(auth).toBeNull();
+  });
+});
+
+// =============================================================================
+// hasCredentials
+// =============================================================================
+
+describe('hasCredentials', () => {
+  it('returns true when credentials resolve', async () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    expect(await hasCredentials({ provider: 'openai' })).toBe(true);
+  });
+
+  it('returns true for ollama (no-auth)', async () => {
+    expect(await hasCredentials({ provider: 'ollama' })).toBe(true);
+  });
+
+  it('returns false when no credentials available', async () => {
+    expect(await hasCredentials({ provider: 'groq' })).toBe(false);
+  });
+});
+
+// =============================================================================
+// refreshOAuthTokenReactive
+// =============================================================================
+
+describe('refreshOAuthTokenReactive', () => {
+  it('returns new token from reactiveTokenRefresh', async () => {
+    mockReactiveTokenRefresh.mockResolvedValueOnce({ token: 'refreshed-token-xyz', wasRefreshed: true });
+
+    const result = await refreshOAuthTokenReactive('/some/config/dir');
+
+    expect(result).toBe('refreshed-token-xyz');
+    expect(mockReactiveTokenRefresh).toHaveBeenCalledWith('/some/config/dir');
+  });
+
+  it('returns null when reactiveTokenRefresh returns no token', async () => {
+    mockReactiveTokenRefresh.mockResolvedValueOnce({ token: null, wasRefreshed: false });
+
+    const result = await refreshOAuthTokenReactive(undefined);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null when reactiveTokenRefresh throws', async () => {
+    mockReactiveTokenRefresh.mockRejectedValueOnce(new Error('network error'));
+
+    const result = await refreshOAuthTokenReactive('/config');
+
+    expect(result).toBeNull();
+  });
+});
+
+// =============================================================================
+// Provider Account Resolution (Stage 0)
+// =============================================================================
+
+describe('resolveAuth — Stage 0: Provider Account', () => {
+  it('returns api-key auth from providerAccounts setting', async () => {
+    const accounts = [
+      {
+        provider: 'openai',
+        isActive: true,
+        authType: 'api-key',
+        apiKey: 'sk-provider-account-key',
+      },
+    ];
+    registerSettingsAccessor((key) => {
+      if (key === 'providerAccounts') return JSON.stringify(accounts);
+      return undefined;
+    });
+
+    const auth = await resolveAuth({ provider: 'openai' });
+
+    expect(auth?.apiKey).toBe('sk-provider-account-key');
+    expect(auth?.source).toBe('profile-api-key');
+  });
+
+  it('routes z.ai subscription to coding API endpoint', async () => {
+    const accounts = [
+      {
+        provider: 'zai',
+        isActive: true,
+        authType: 'api-key',
+        apiKey: 'zhipu-key',
+        billingModel: 'subscription',
+      },
+    ];
+    registerSettingsAccessor((key) => {
+      if (key === 'providerAccounts') return JSON.stringify(accounts);
+      return undefined;
+    });
+
+    const auth = await resolveAuth({ provider: 'zai' });
+
+    expect(auth?.apiKey).toBe('zhipu-key');
+    expect(auth?.baseURL).toContain('/coding/paas/v4');
+  });
+
+  it('routes z.ai pay-per-use to general API endpoint', async () => {
+    const accounts = [
+      {
+        provider: 'zai',
+        isActive: true,
+        authType: 'api-key',
+        apiKey: 'zhipu-key',
+        billingModel: 'pay-per-use',
+      },
+    ];
+    registerSettingsAccessor((key) => {
+      if (key === 'providerAccounts') return JSON.stringify(accounts);
+      return undefined;
+    });
+
+    const auth = await resolveAuth({ provider: 'zai' });
+
+    expect(auth?.baseURL).toContain('/paas/v4');
+    expect(auth?.baseURL).not.toContain('/coding/');
+  });
+
+  it('skips inactive accounts and falls through', async () => {
+    const accounts = [
+      { provider: 'openai', isActive: false, authType: 'api-key', apiKey: 'sk-inactive' },
+    ];
+    registerSettingsAccessor((key) => {
+      if (key === 'providerAccounts') return JSON.stringify(accounts);
+      return undefined;
+    });
+    process.env.OPENAI_API_KEY = 'sk-env-fallback';
+
+    const auth = await resolveAuth({ provider: 'openai' });
+
+    expect(auth?.source).toBe('environment');
+  });
+
+  it('handles malformed providerAccounts JSON gracefully', async () => {
+    registerSettingsAccessor((key) => {
+      if (key === 'providerAccounts') return 'not-valid-json{{';
+      return undefined;
+    });
+    process.env.OPENAI_API_KEY = 'sk-fallback';
+
+    const auth = await resolveAuth({ provider: 'openai' });
+    expect(auth?.source).toBe('environment');
+  });
+});
+
+// =============================================================================
+// resolveAuthFromQueue
+// =============================================================================
+
+describe('resolveAuthFromQueue', () => {
+  const baseAccount = {
+    id: 'acc-1',
+    provider: 'anthropic' as const,
+    authType: 'api-key' as const,
+    apiKey: 'sk-queue-key',
+    isActive: true,
+    name: 'Primary Account',
+    billingModel: 'pay-per-use' as const,
+    createdAt: 0,
+    updatedAt: 0,
+  };
 
   beforeEach(() => {
-    // Reset environment
-    process.env = { ...originalEnv };
-
-    // Clear mock settings accessor
-    mockSettingsAccessor.mockReset();
-    registerSettingsAccessor(mockSettingsAccessor);
-
-    // Clear any env vars that might interfere
-    delete process.env.ANTHROPIC_API_KEY;
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    delete process.env.ANTHROPIC_BASE_URL;
-    delete process.env.OPENAI_BASE_URL;
-    delete process.env.AZURE_OPENAI_API_KEY;
-    delete process.env.MISTRAL_API_KEY;
-    delete process.env.GROQ_API_KEY;
-    delete process.env.XAI_API_KEY;
-    delete process.env.OPENROUTER_API_KEY;
-    delete process.env.ZHIPU_API_KEY;
-  });
-
-  afterEach(() => {
-    process.env = originalEnv;
-  });
-
-  // ============================================
-  // Settings Accessor Registration
-  // ============================================
-
-  describe('registerSettingsAccessor', () => {
-    it('should register a settings accessor function', () => {
-      const accessor = vi.fn();
-      registerSettingsAccessor(accessor);
-      // Accessor is registered; actual usage tested in other tests
-      expect(accessor).toBeDefined();
+    mockScoreProviderAccount.mockReturnValue({ available: true, score: 100 });
+    mockResolveModelEquivalent.mockReturnValue({
+      modelId: 'claude-sonnet-4-5-20250929',
+      reasoning: { type: 'none' },
     });
   });
 
-  // ============================================
-  // Environment Variable Resolution
-  // ============================================
+  it('resolves auth from the first available account in queue', async () => {
+    const result = await resolveAuthFromQueue('sonnet', [baseAccount]);
 
-  describe('resolveFromEnvironment', () => {
-    it('should resolve Anthropic API key from environment', async () => {
-      process.env.ANTHROPIC_API_KEY = 'sk-ant-test-key';
-      const ctx = createMockContext('anthropic');
-
-      const result = await resolveAuth(ctx);
-
-      expect(result).toEqual({
-        apiKey: 'sk-ant-test-key',
-        source: 'environment',
-      });
-    });
-
-    it('should resolve OpenAI API key from environment', async () => {
-      process.env.OPENAI_API_KEY = 'sk-openai-test-key';
-      const ctx = createMockContext('openai');
-
-      const result = await resolveAuth(ctx);
-
-      expect(result).toEqual({
-        apiKey: 'sk-openai-test-key',
-        source: 'environment',
-      });
-    });
-
-    it('should resolve Google API key from environment', async () => {
-      process.env.GOOGLE_GENERATIVE_AI_API_KEY = 'google-test-key';
-      const ctx = createMockContext('google');
-
-      const result = await resolveAuth(ctx);
-
-      expect(result).toEqual({
-        apiKey: 'google-test-key',
-        source: 'environment',
-      });
-    });
-
-    it('should include custom base URL from environment', async () => {
-      process.env.ANTHROPIC_API_KEY = 'sk-ant-test-key';
-      process.env.ANTHROPIC_BASE_URL = 'https://custom.anthropic.com';
-      const ctx = createMockContext('anthropic');
-
-      const result = await resolveAuth(ctx);
-
-      expect(result?.baseURL).toBe('https://custom.anthropic.com');
-    });
-
-    it('should return null for providers without env var support', async () => {
-      const ctx = createMockContext('bedrock'); // Uses AWS credential chain
-
-      const result = await resolveAuth(ctx);
-
-      expect(result).toBeNull();
-    });
+    expect(result).not.toBeNull();
+    expect(result?.accountId).toBe('acc-1');
+    expect(result?.apiKey).toBe('sk-queue-key');
+    expect(result?.resolvedProvider).toBe('anthropic');
   });
 
-  // ============================================
-  // Profile API Key Resolution
-  // ============================================
-
-  describe('resolveFromProfileApiKey', () => {
-    it('should resolve API key from settings', async () => {
-      mockSettingsAccessor.mockReturnValue('sk-settings-key');
-      const ctx = createMockContext('anthropic');
-
-      const result = await resolveAuth(ctx);
-
-      expect(result).toEqual({
-        apiKey: 'sk-settings-key',
-        source: 'profile-api-key',
-      });
-      expect(mockSettingsAccessor).toHaveBeenCalledWith('globalAnthropicApiKey');
+  it('skips excluded account IDs', async () => {
+    const result = await resolveAuthFromQueue('sonnet', [baseAccount], {
+      excludeAccountIds: ['acc-1'],
     });
 
-    it('should return null when no API key in settings', async () => {
-      mockSettingsAccessor.mockReturnValue(undefined);
-      const ctx = createMockContext('anthropic');
-
-      const result = await resolveAuth(ctx);
-
-      expect(result).toBeNull();
-    });
-
-    it('should include base URL from environment when resolving from settings', async () => {
-      mockSettingsAccessor.mockReturnValue('sk-settings-key');
-      process.env.OPENAI_BASE_URL = 'https://custom.openai.com';
-      const ctx = createMockContext('openai');
-
-      const result = await resolveAuth(ctx);
-
-      expect(result?.baseURL).toBe('https://custom.openai.com');
-    });
+    expect(result).toBeNull();
   });
 
-  // ============================================
-  // Default Credentials (No-Auth Providers)
-  // ============================================
+  it('skips unavailable accounts', async () => {
+    mockScoreProviderAccount.mockReturnValueOnce({ available: false, score: 0 });
 
-  describe('resolveDefaultCredentials', () => {
-    it('should return default credentials for Ollama', async () => {
-      const ctx = createMockContext('ollama');
+    const result = await resolveAuthFromQueue('sonnet', [baseAccount]);
 
-      const result = await resolveAuth(ctx);
-
-      expect(result).toEqual({
-        apiKey: '',
-        source: 'default',
-      });
-    });
-
-    it('should return null for providers requiring auth', async () => {
-      const ctx = createMockContext('anthropic');
-
-      const result = await resolveAuth(ctx);
-
-      expect(result).toBeNull();
-    });
+    expect(result).toBeNull();
   });
 
-  // ============================================
-  // Fallback Chain Priority
-  // ============================================
-
-  describe('resolveAuth fallback chain', () => {
-    it('should prioritize profile API key over environment', async () => {
-      mockSettingsAccessor.mockReturnValue('sk-settings-key');
-      process.env.ANTHROPIC_API_KEY = 'sk-env-key';
-      const ctx = createMockContext('anthropic');
-
-      const result = await resolveAuth(ctx);
-
-      expect(result?.source).toBe('profile-api-key');
-      expect(result?.apiKey).toBe('sk-settings-key');
-    });
-
-    it('should fall back to environment when profile key not set', async () => {
-      mockSettingsAccessor.mockReturnValue(undefined);
-      process.env.ANTHROPIC_API_KEY = 'sk-env-key';
-      const ctx = createMockContext('anthropic');
-
-      const result = await resolveAuth(ctx);
-
-      expect(result?.source).toBe('environment');
-      expect(result?.apiKey).toBe('sk-env-key');
-    });
-
-    it('should return null when no credentials available', async () => {
-      mockSettingsAccessor.mockReturnValue(undefined);
-      const ctx = createMockContext('anthropic');
-
-      const result = await resolveAuth(ctx);
-
-      expect(result).toBeNull();
-    });
+  it('returns null when queue is empty', async () => {
+    const result = await resolveAuthFromQueue('sonnet', []);
+    expect(result).toBeNull();
   });
 
-  // ============================================
-  // hasCredentials
-  // ============================================
-
-  describe('hasCredentials', () => {
-    it('should return true when credentials are available', async () => {
-      process.env.ANTHROPIC_API_KEY = 'sk-test-key';
-      const ctx = createMockContext('anthropic');
-
-      const result = await hasCredentials(ctx);
-
-      expect(result).toBe(true);
+  it('uses the resolved model ID from equivalence table', async () => {
+    mockResolveModelEquivalent.mockReturnValueOnce({
+      modelId: 'claude-haiku-4-5',
+      reasoning: { type: 'none' },
     });
 
-    it('should return false when no credentials available', async () => {
-      const ctx = createMockContext('anthropic');
+    const result = await resolveAuthFromQueue('haiku', [baseAccount]);
 
-      const result = await hasCredentials(ctx);
-
-      expect(result).toBe(false);
-    });
+    expect(result?.resolvedModelId).toBe('claude-haiku-4-5');
   });
 
-  // ============================================
-  // Queue-Based Resolution
-  // ============================================
+  it('falls through to next account when first has no credentials', async () => {
+    const noKeyAccount = { ...baseAccount, id: 'acc-no-key', apiKey: undefined, authType: 'api-key' as const };
+    const goodAccount = { ...baseAccount, id: 'acc-2' };
 
-  describe('resolveAuthFromQueue', () => {
-    it('should resolve from first available account in queue', async () => {
-      process.env.ANTHROPIC_API_KEY = 'sk-test-key';
-      const queue = [
-        createMockProviderAccount({ id: 'account-1', provider: 'anthropic' }),
-      ];
-      mockSettingsAccessor.mockReturnValue(JSON.stringify(queue));
+    const result = await resolveAuthFromQueue('sonnet', [noKeyAccount, goodAccount]);
 
-      const result = await resolveAuthFromQueue('claude-opus-4-6', queue);
+    expect(result?.accountId).toBe('acc-2');
+  });
+});
 
-      expect(result).not.toBeNull();
-      expect(result?.accountId).toBe('account-1');
-      expect(result?.resolvedProvider).toBe('anthropic');
-    });
+// =============================================================================
+// buildDefaultQueueConfig
+// =============================================================================
 
-    it('should skip excluded accounts', async () => {
-      process.env.ANTHROPIC_API_KEY = 'sk-test-key';
-      const queue = [
-        createMockProviderAccount({ id: 'account-1', provider: 'anthropic' }),
-        createMockProviderAccount({ id: 'account-2', provider: 'anthropic' }),
-      ];
-
-      const result = await resolveAuthFromQueue('claude-opus-4-6', queue, {
-        excludeAccountIds: ['account-1'],
-      });
-
-      expect(result?.accountId).toBe('account-2');
-    });
-
-    it('should return null when no accounts available', async () => {
-      const queue: ProviderAccount[] = [];
-
-      const result = await resolveAuthFromQueue('claude-opus-4-6', queue);
-
-      expect(result).toBeNull();
-    });
-
-    it('should include resolved model ID in result', async () => {
-      process.env.ANTHROPIC_API_KEY = 'sk-test-key';
-      const queue = [
-        createMockProviderAccount({ id: 'account-1', provider: 'anthropic' }),
-      ];
-
-      const result = await resolveAuthFromQueue('claude-opus-4-6', queue);
-
-      expect(result?.resolvedModelId).toBe('claude-opus-4-6');
-    });
+describe('buildDefaultQueueConfig', () => {
+  it('returns undefined when no settings accessor is registered', () => {
+    // accessor returns undefined for everything
+    const result = buildDefaultQueueConfig('claude-sonnet-4-5-20250929');
+    expect(result).toBeUndefined();
   });
 
-  // ============================================
-  // buildDefaultQueueConfig
-  // ============================================
+  it('returns sorted queue when providerAccounts are configured', () => {
+    const accounts = [
+      { id: 'b', provider: 'openai', isActive: true },
+      { id: 'a', provider: 'anthropic', isActive: true },
+    ];
+    const priorityOrder = ['a', 'b'];
 
-  describe('buildDefaultQueueConfig', () => {
-    it('should build queue config from settings', () => {
-      const accounts = [
-        createMockProviderAccount({ id: 'account-1', name: 'Account 1' }),
-        createMockProviderAccount({ id: 'account-2', name: 'Account 2' }),
-      ];
-      mockSettingsAccessor.mockImplementation((key) => {
-        if (key === 'providerAccounts') return JSON.stringify(accounts);
-        if (key === 'globalPriorityOrder') return JSON.stringify(['account-2', 'account-1']);
-        return undefined;
-      });
-
-      const result = buildDefaultQueueConfig('claude-opus-4-6');
-
-      expect(result).toBeDefined();
-      expect(result?.queue).toHaveLength(2);
-      expect(result?.queue[0].id).toBe('account-2'); // Priority order
-      expect(result?.requestedModel).toBe('claude-opus-4-6');
+    registerSettingsAccessor((key) => {
+      if (key === 'providerAccounts') return JSON.stringify(accounts);
+      if (key === 'globalPriorityOrder') return JSON.stringify(priorityOrder);
+      return undefined;
     });
 
-    it('should return undefined when no accounts configured', () => {
-      mockSettingsAccessor.mockReturnValue(undefined);
+    const result = buildDefaultQueueConfig('claude-sonnet-4-5-20250929');
 
-      const result = buildDefaultQueueConfig('claude-opus-4-6');
-
-      expect(result).toBeUndefined();
-    });
-
-    it('should handle invalid JSON gracefully', () => {
-      mockSettingsAccessor.mockReturnValue('invalid-json');
-
-      const result = buildDefaultQueueConfig('claude-opus-4-6');
-
-      expect(result).toBeUndefined();
-    });
+    expect(result).not.toBeUndefined();
+    expect(result?.queue[0].id).toBe('a');
+    expect(result?.queue[1].id).toBe('b');
   });
 
-  // ============================================
-  // Type Constants
-  // ============================================
-
-  describe('PROVIDER_ENV_VARS constant', () => {
-    it('should have correct env var mappings', () => {
-      expect(PROVIDER_ENV_VARS.anthropic).toBe('ANTHROPIC_API_KEY');
-      expect(PROVIDER_ENV_VARS.openai).toBe('OPENAI_API_KEY');
-      expect(PROVIDER_ENV_VARS.google).toBe('GOOGLE_GENERATIVE_AI_API_KEY');
-      expect(PROVIDER_ENV_VARS.bedrock).toBeUndefined();
-      expect(PROVIDER_ENV_VARS.ollama).toBeUndefined();
+  it('returns undefined when providerAccounts is empty array', () => {
+    registerSettingsAccessor((key) => {
+      if (key === 'providerAccounts') return JSON.stringify([]);
+      return undefined;
     });
+
+    const result = buildDefaultQueueConfig('sonnet');
+    expect(result).toBeUndefined();
   });
 
-  describe('PROVIDER_SETTINGS_KEY constant', () => {
-    it('should have correct settings key mappings', () => {
-      expect(PROVIDER_SETTINGS_KEY.anthropic).toBe('globalAnthropicApiKey');
-      expect(PROVIDER_SETTINGS_KEY.openai).toBe('globalOpenAIApiKey');
-      expect(PROVIDER_SETTINGS_KEY.google).toBe('globalGoogleApiKey');
+  it('returns accounts in natural order when no priority order is set', () => {
+    const accounts = [
+      { id: 'x', provider: 'groq', isActive: true },
+      { id: 'y', provider: 'mistral', isActive: true },
+    ];
+    registerSettingsAccessor((key) => {
+      if (key === 'providerAccounts') return JSON.stringify(accounts);
+      return undefined;
     });
-  });
 
-  describe('PROVIDER_BASE_URL_ENV constant', () => {
-    it('should have correct base URL env var mappings', () => {
-      expect(PROVIDER_BASE_URL_ENV.anthropic).toBe('ANTHROPIC_BASE_URL');
-      expect(PROVIDER_BASE_URL_ENV.openai).toBe('OPENAI_BASE_URL');
-      expect(PROVIDER_BASE_URL_ENV.azure).toBe('AZURE_OPENAI_ENDPOINT');
-    });
+    const result = buildDefaultQueueConfig('some-model');
+
+    expect(result?.queue[0].id).toBe('x');
+    expect(result?.queue[1].id).toBe('y');
   });
 });

@@ -39,6 +39,8 @@
     "start:packaged:win": "start \"\" \"dist\\win-unpacked\\Auto-Claude.exe\"",
     "start:packaged:linux": "./dist/linux-unpacked/auto-claude",
     "test": "vitest run",
+    "test:unit": "vitest run --exclude src/__tests__/integration/ --exclude src/__tests__/e2e/",
+    "test:integration": "vitest run src/__tests__/integration/",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "npx playwright test --config=e2e/playwright.config.ts",

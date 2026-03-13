@@ -1,532 +1,329 @@
 /**
- * AI Client Factory Tests
+ * Tests for Client Factory
  *
- * Tests for creating configured AI clients.
- * Covers createAgentClient() and createSimpleClient() with various configurations.
+ * Validates createSimpleClient() and createAgentClient() — model resolution,
+ * credential wiring, tool registry binding, queue-based auth, and cleanup.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { LanguageModel } from 'ai';
-import type { AgentClientConfig, SimpleClientConfig } from '../types';
-import type { ToolContext } from '../../tools/types';
-import type { ProviderAccount } from '../../../../shared/types/provider-account';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-// Mock all dependencies
-vi.mock('../../auth/resolver');
-vi.mock('../../config/agent-configs');
-vi.mock('../../config/phase-config');
-vi.mock('../../mcp/client');
-vi.mock('../../providers/factory');
-vi.mock('../../tools/build-registry');
+// Mock auth resolver — inline to avoid hoisting issues
+vi.mock('../../auth/resolver', () => ({
+  resolveAuth: vi.fn().mockResolvedValue({ apiKey: 'sk-default', source: 'environment' }),
+  resolveAuthFromQueue: vi.fn().mockResolvedValue(null),
+  buildDefaultQueueConfig: vi.fn().mockReturnValue(undefined),
+}));
 
-import { createAgentClient, createSimpleClient } from '../factory';
+// Mock provider factory — inline
+vi.mock('../../providers/factory', () => ({
+  createProvider: vi.fn().mockReturnValue({ type: 'language-model', modelId: 'mock-model-id' }),
+  detectProviderFromModel: vi.fn().mockReturnValue('anthropic'),
+}));
+
+// Mock phase config — inline
+vi.mock('../../config/phase-config', () => ({
+  resolveModelId: vi.fn().mockReturnValue('claude-haiku-4-5'),
+}));
+
+// Mock agent configs — inline
+vi.mock('../../config/agent-configs', () => ({
+  getDefaultThinkingLevel: vi.fn().mockReturnValue('medium'),
+  getRequiredMcpServers: vi.fn().mockReturnValue([]),
+}));
+
+// Mock MCP client module — inline
+vi.mock('../../mcp/client', () => ({
+  createMcpClientsForAgent: vi.fn().mockResolvedValue([]),
+  closeAllMcpClients: vi.fn().mockResolvedValue(undefined),
+  mergeMcpTools: vi.fn().mockReturnValue({}),
+}));
+
+// Mock tool registry — inline
+vi.mock('../../tools/build-registry', () => ({
+  buildToolRegistry: vi.fn().mockReturnValue({
+    getToolsForAgent: vi.fn().mockReturnValue({ Read: {}, Write: {} }),
+  }),
+}));
+
+// Mock config/types resolveReasoningParams — inline
+vi.mock('../../config/types', () => ({
+  resolveReasoningParams: vi.fn().mockReturnValue({}),
+}));
+
 import { resolveAuth, resolveAuthFromQueue, buildDefaultQueueConfig } from '../../auth/resolver';
-import { getDefaultThinkingLevel, getRequiredMcpServers } from '../../config/agent-configs';
-import { resolveModelId } from '../../config/phase-config';
-import { createMcpClientsForAgent, closeAllMcpClients, mergeMcpTools } from '../../mcp/client';
 import { createProvider, detectProviderFromModel } from '../../providers/factory';
+import { resolveModelId } from '../../config/phase-config';
+import { getDefaultThinkingLevel, getRequiredMcpServers } from '../../config/agent-configs';
+import { createMcpClientsForAgent, closeAllMcpClients, mergeMcpTools } from '../../mcp/client';
 import { buildToolRegistry } from '../../tools/build-registry';
+import { createSimpleClient, createAgentClient } from '../factory';
+import type { LanguageModel, Tool } from 'ai';
+import type { ToolContext } from '../../tools/types';
+import type { AgentClientConfig } from '../types';
+import type { ProviderAccount } from '../../../../shared/types/provider-account';
+import type { McpClientResult } from '../../mcp/types';
+import type { ToolRegistry } from '../../tools/registry';
 
-// ============================================
-// Test Fixtures
-// ============================================
+const mockResolveAuth = vi.mocked(resolveAuth);
+const mockResolveAuthFromQueue = vi.mocked(resolveAuthFromQueue);
+const mockBuildDefaultQueueConfig = vi.mocked(buildDefaultQueueConfig);
+const mockCreateProvider = vi.mocked(createProvider);
+const mockDetectProviderFromModel = vi.mocked(detectProviderFromModel);
+const mockResolveModelId = vi.mocked(resolveModelId);
+const mockGetDefaultThinkingLevel = vi.mocked(getDefaultThinkingLevel);
+const mockGetRequiredMcpServers = vi.mocked(getRequiredMcpServers);
+const mockCreateMcpClientsForAgent = vi.mocked(createMcpClientsForAgent);
+const mockCloseAllMcpClients = vi.mocked(closeAllMcpClients);
+const mockMergeMcpTools = vi.mocked(mergeMcpTools);
+const mockBuildToolRegistry = vi.mocked(buildToolRegistry);
 
-const createMockToolContext = (): ToolContext => ({
-  cwd: '/test/cwd',
-  projectDir: '/test/project',
-  specDir: '/test/spec',
-  securityProfile: {
-    baseCommands: new Set(),
-    stackCommands: new Set(),
-    scriptCommands: new Set(),
-    customCommands: new Set(),
-    customScripts: { shellScripts: [] },
-    getAllAllowedCommands: () => new Set(),
-  },
+const FAKE_MODEL = { type: 'language-model', modelId: 'mock-model-id' };
+
+const baseToolContext = {
+  cwd: '/project',
+  projectDir: '/project',
+  specDir: '/project/.auto-claude/specs/001',
+  securityProfile: 'standard' as const,
+} as unknown as ToolContext;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+
+  // Re-establish defaults after clearAllMocks
+  mockResolveAuth.mockResolvedValue({ apiKey: 'sk-default', source: 'environment' });
+  mockResolveAuthFromQueue.mockResolvedValue(null);
+  mockBuildDefaultQueueConfig.mockReturnValue(undefined);
+  mockCreateProvider.mockReturnValue(FAKE_MODEL as unknown as LanguageModel);
+  mockDetectProviderFromModel.mockReturnValue('anthropic');
+  mockResolveModelId.mockReturnValue('claude-haiku-4-5');
+  mockGetDefaultThinkingLevel.mockReturnValue('medium');
+  mockGetRequiredMcpServers.mockReturnValue([]);
+  mockCreateMcpClientsForAgent.mockResolvedValue([]);
+  mockCloseAllMcpClients.mockResolvedValue(undefined);
+  mockMergeMcpTools.mockReturnValue({});
+
+  // ToolRegistry mock: getToolsForAgent returns a basic tools map
+  const mockRegistry = { getToolsForAgent: vi.fn().mockReturnValue({ Read: {}, Write: {} }) };
+  mockBuildToolRegistry.mockReturnValue(mockRegistry as unknown as ToolRegistry);
 });
 
-const createMockAgentClientConfig = (
-  overrides?: Partial<AgentClientConfig>,
-): AgentClientConfig => ({
-  agentType: 'coder',
-  systemPrompt: 'You are a coder agent.',
-  toolContext: createMockToolContext(),
-  phase: 'coding',
-  ...overrides,
+// =============================================================================
+// createSimpleClient
+// =============================================================================
+
+describe('createSimpleClient', () => {
+  it('returns model, resolvedModelId, tools, systemPrompt, maxSteps, and thinkingLevel', async () => {
+    const result = await createSimpleClient({ systemPrompt: 'You are helpful.' });
+
+    expect(result.model).toBe(FAKE_MODEL);
+    expect(result.resolvedModelId).toBeDefined();
+    expect(result.tools).toBeDefined();
+    expect(result.systemPrompt).toBe('You are helpful.');
+    expect(result.maxSteps).toBe(1);
+    expect(result.thinkingLevel).toBe('low');
+  });
+
+  it('defaults modelShorthand to haiku when not specified', async () => {
+    await createSimpleClient({ systemPrompt: 'Test' });
+    expect(mockResolveModelId).toHaveBeenCalledWith('haiku');
+  });
+
+  it('uses the specified modelShorthand', async () => {
+    await createSimpleClient({ systemPrompt: 'Test', modelShorthand: 'sonnet' });
+    expect(mockResolveModelId).toHaveBeenCalledWith('sonnet');
+  });
+
+  it('uses the specified thinkingLevel', async () => {
+    const result = await createSimpleClient({ systemPrompt: 'Test', thinkingLevel: 'high' });
+    expect(result.thinkingLevel).toBe('high');
+  });
+
+  it('uses specified maxSteps', async () => {
+    const result = await createSimpleClient({ systemPrompt: 'Test', maxSteps: 5 });
+    expect(result.maxSteps).toBe(5);
+  });
+
+  it('wires resolved auth credentials into createProvider', async () => {
+    mockResolveAuth.mockResolvedValueOnce({
+      apiKey: 'sk-resolved',
+      source: 'environment',
+      baseURL: 'https://custom.api.com',
+    });
+
+    await createSimpleClient({ systemPrompt: 'Test' });
+
+    expect(mockCreateProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          apiKey: 'sk-resolved',
+          baseURL: 'https://custom.api.com',
+        }),
+      }),
+    );
+  });
+
+  it('passes tools option through to result', async () => {
+    const customTools = { myTool: {} as unknown as Tool };
+    const result = await createSimpleClient({ systemPrompt: 'Test', tools: customTools });
+    expect(result.tools).toBe(customTools);
+  });
+
+  it('uses queue-based resolution when queueConfig is provided', async () => {
+    const queueAuth = {
+      apiKey: 'sk-queue',
+      source: 'profile-api-key' as const,
+      accountId: 'acc-1',
+      resolvedProvider: 'anthropic' as const,
+      resolvedModelId: 'claude-opus-4-6',
+      reasoningConfig: { type: 'none' as const },
+    };
+    mockResolveAuthFromQueue.mockResolvedValueOnce(queueAuth);
+
+    const queueConfig = {
+      queue: [{ id: 'acc-1' } as unknown as ProviderAccount],
+      requestedModel: 'claude-opus-4-6',
+    };
+
+    const result = await createSimpleClient({ systemPrompt: 'Test', queueConfig });
+
+    expect(mockResolveAuthFromQueue).toHaveBeenCalled();
+    expect(result.queueAuth).toBe(queueAuth);
+    expect(result.resolvedModelId).toBe('claude-opus-4-6');
+  });
+
+  it('throws when queueConfig is provided but no account is available', async () => {
+    mockResolveAuthFromQueue.mockResolvedValueOnce(null);
+
+    const queueConfig = { queue: [], requestedModel: 'sonnet' };
+
+    await expect(
+      createSimpleClient({ systemPrompt: 'Test', queueConfig }),
+    ).rejects.toThrow('No available account in priority queue');
+  });
 });
 
-const createMockSimpleClientConfig = (
-  overrides?: Partial<SimpleClientConfig>,
-): SimpleClientConfig => ({
-  systemPrompt: 'Generate a commit message.',
-  ...overrides,
-});
+// =============================================================================
+// createAgentClient
+// =============================================================================
 
-const createMockProviderAccount = (
-  overrides?: Partial<ProviderAccount>,
-): ProviderAccount => ({
-  id: 'test-account-1',
-  provider: 'anthropic',
-  name: 'Test Account',
-  authType: 'api-key',
-  billingModel: 'pay-per-use',
-  apiKey: 'sk-test-key',
-  createdAt: Date.now(),
-  updatedAt: Date.now(),
-  ...overrides,
-});
-
-// ============================================
-// Setup & Teardown
-// ============================================
-
-describe('AI Client Factory', () => {
-  const mockModel = {} as LanguageModel;
-  const mockTools = { read: {} as any, write: {} as any };
-  const mockAuth = {
-    apiKey: 'sk-test-key',
-    source: 'environment' as const,
+describe('createAgentClient', () => {
+  const baseConfig = {
+    agentType: 'coder' as const,
+    systemPrompt: 'You are a coder.',
+    toolContext: baseToolContext,
+    phase: 'coding' as const,
   };
 
-  beforeEach(() => {
-    // Reset all mocks
-    vi.clearAllMocks();
+  it('returns model, tools, mcpClients, systemPrompt, maxSteps, thinkingLevel, and cleanup', async () => {
+    const result = await createAgentClient(baseConfig);
 
-    // Setup default mock returns
-    vi.mocked(resolveAuth).mockResolvedValue(mockAuth);
-    vi.mocked(detectProviderFromModel).mockReturnValue('anthropic');
-    vi.mocked(createProvider).mockReturnValue(mockModel);
-    vi.mocked(getDefaultThinkingLevel).mockReturnValue('medium');
-    vi.mocked(getRequiredMcpServers).mockReturnValue([]);
+    expect(result.model).toBe(FAKE_MODEL);
+    expect(result.tools).toBeDefined();
+    expect(result.mcpClients).toEqual([]);
+    expect(result.systemPrompt).toBe('You are a coder.');
+    expect(result.maxSteps).toBe(200);
+    expect(result.thinkingLevel).toBeDefined();
+    expect(typeof result.cleanup).toBe('function');
+  });
 
-    // Mock tool registry
-    const mockRegistry = {
-      getToolsForAgent: vi.fn().mockReturnValue(mockTools),
+  it('uses agent-config default thinking level', async () => {
+    mockGetDefaultThinkingLevel.mockReturnValueOnce('high');
+
+    const result = await createAgentClient(baseConfig);
+
+    expect(result.thinkingLevel).toBe('high');
+    expect(mockGetDefaultThinkingLevel).toHaveBeenCalledWith('coder');
+  });
+
+  it('overrides thinking level when thinkingLevel is specified', async () => {
+    const result = await createAgentClient({ ...baseConfig, thinkingLevel: 'low' });
+    expect(result.thinkingLevel).toBe('low');
+  });
+
+  it('uses specified maxSteps', async () => {
+    const result = await createAgentClient({ ...baseConfig, maxSteps: 50 });
+    expect(result.maxSteps).toBe(50);
+  });
+
+  it('calls getToolsForAgent with agentType and toolContext', async () => {
+    const mockRegistry = { getToolsForAgent: vi.fn().mockReturnValue({ Read: {}, Write: {} }) };
+    mockBuildToolRegistry.mockReturnValueOnce(mockRegistry as unknown as ToolRegistry);
+
+    await createAgentClient(baseConfig);
+
+    expect(mockRegistry.getToolsForAgent).toHaveBeenCalledWith('coder', baseToolContext);
+  });
+
+  it('creates MCP clients when agent requires servers', async () => {
+    const mockMcpClient = { serverId: 'context7', tools: { ctx7_tool: {} }, close: vi.fn() };
+    mockGetRequiredMcpServers.mockReturnValueOnce(['context7']);
+    mockCreateMcpClientsForAgent.mockResolvedValueOnce([mockMcpClient] as unknown as McpClientResult[]);
+    mockMergeMcpTools.mockReturnValueOnce({ ctx7_tool: {} });
+
+    const result = await createAgentClient(baseConfig);
+
+    expect(mockCreateMcpClientsForAgent).toHaveBeenCalledWith('coder', expect.any(Object));
+    expect(result.mcpClients).toHaveLength(1);
+    expect(result.tools).toHaveProperty('ctx7_tool');
+  });
+
+  it('cleanup calls closeAllMcpClients with the client list', async () => {
+    const result = await createAgentClient(baseConfig);
+    await result.cleanup();
+    expect(mockCloseAllMcpClients).toHaveBeenCalledWith(result.mcpClients);
+  });
+
+  it('uses queue-based auth when queueConfig is provided', async () => {
+    const queueAuth = {
+      apiKey: 'sk-queue-coder',
+      source: 'profile-api-key' as const,
+      accountId: 'acc-coder',
+      resolvedProvider: 'anthropic' as const,
+      resolvedModelId: 'claude-sonnet-4-5-20250929',
+      reasoningConfig: { type: 'none' as const },
     };
-    vi.mocked(buildToolRegistry).mockReturnValue(mockRegistry as any);
+    mockResolveAuthFromQueue.mockResolvedValueOnce(queueAuth);
 
-    // Mock MCP functions
-    vi.mocked(createMcpClientsForAgent).mockResolvedValue([]);
-    vi.mocked(mergeMcpTools).mockReturnValue({});
-    vi.mocked(closeAllMcpClients).mockResolvedValue(undefined);
-
-    // Set default mock for resolveModelId to pass through by default
-    vi.mocked(resolveModelId).mockImplementation((model) => model);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  // ============================================
-  // createAgentClient
-  // ============================================
-
-  describe('createAgentClient', () => {
-    it('should create an agent client with default config', async () => {
-      const config = createMockAgentClientConfig();
-
-      const result = await createAgentClient(config);
-
-      expect(result).toBeDefined();
-      expect(result.model).toBe(mockModel);
-      expect(result.tools).toEqual(mockTools);
-      expect(result.systemPrompt).toBe(config.systemPrompt);
-      expect(result.maxSteps).toBe(200); // DEFAULT_MAX_STEPS
-      expect(result.thinkingLevel).toBe('medium');
-      expect(result.mcpClients).toEqual([]);
-      expect(result.cleanup).toBeDefined();
+    const result = await createAgentClient({
+      ...baseConfig,
+      queueConfig: {
+        queue: [{ id: 'acc-coder' } as unknown as ProviderAccount],
+        requestedModel: 'claude-sonnet-4-5-20250929',
+      },
     });
 
-    it('should resolve auth using provider detection', async () => {
-      // Mock resolveModelId to return a proper model ID for the phase
-      vi.mocked(resolveModelId).mockImplementation((model) => {
-        if (model === 'coding') return 'claude-opus-4-6';
-        return model;
-      });
-
-      const config = createMockAgentClientConfig({
-        profileId: 'test-profile',
-      });
-
-      await createAgentClient(config);
-
-      expect(resolveModelId).toHaveBeenCalledWith('coding');
-      expect(detectProviderFromModel).toHaveBeenCalledWith('claude-opus-4-6');
-      expect(resolveAuth).toHaveBeenCalledWith({
-        provider: 'anthropic',
-        profileId: 'test-profile',
-      });
-    });
-
-    it('should use custom maxSteps when provided', async () => {
-      const config = createMockAgentClientConfig({
-        maxSteps: 50,
-      });
-
-      const result = await createAgentClient(config);
-
-      expect(result.maxSteps).toBe(50);
-    });
-
-    it('should use custom thinkingLevel when provided', async () => {
-      const config = createMockAgentClientConfig({
-        thinkingLevel: 'high',
-      });
-
-      const result = await createAgentClient(config);
-
-      expect(result.thinkingLevel).toBe('high');
-    });
-
-    it('should use custom modelShorthand when provided', async () => {
-      const config = createMockAgentClientConfig({
-        modelShorthand: 'opus',
-      });
-
-      await createAgentClient(config);
-
-      expect(resolveModelId).toHaveBeenCalledWith('opus');
-    });
-
-    it('should create MCP clients when required', async () => {
-      vi.mocked(getRequiredMcpServers).mockReturnValue(['mcp-server-1']);
-      const mockMcpClient = {
-        serverId: 'mcp-server-1',
-        tools: {},
-        close: vi.fn().mockResolvedValue(undefined),
-      };
-      vi.mocked(createMcpClientsForAgent).mockResolvedValue([mockMcpClient]);
-
-      const config = createMockAgentClientConfig();
-
-      const result = await createAgentClient(config);
-
-      expect(createMcpClientsForAgent).toHaveBeenCalledWith('coder', {});
-      expect(result.mcpClients).toEqual([mockMcpClient]);
-    });
-
-    it('should merge MCP tools into builtin tools', async () => {
-      vi.mocked(getRequiredMcpServers).mockReturnValue(['mcp-server-1']);
-      const mockMcpTools = { mcpTool: {} as any };
-      vi.mocked(mergeMcpTools).mockReturnValue(mockMcpTools);
-
-      const config = createMockAgentClientConfig();
-
-      const result = await createAgentClient(config);
-
-      expect(mergeMcpTools).toHaveBeenCalled();
-      expect(result.tools).toEqual(expect.objectContaining(mockMcpTools));
-    });
-
-    it('should include additional MCP servers when provided', async () => {
-      vi.mocked(getRequiredMcpServers).mockReturnValue(['builtin-server']);
-      const config = createMockAgentClientConfig({
-        additionalMcpServers: ['custom-server-1', 'custom-server-2'],
-      });
-
-      await createAgentClient(config);
-
-      expect(getRequiredMcpServers).toHaveBeenCalledWith('coder', {});
-      // Additional servers should be pushed to the list
-    });
-
-    it('should use queue-based resolution when queueConfig is provided', async () => {
-      const queue = [createMockProviderAccount()];
-      const mockQueueAuth = {
-        apiKey: 'sk-queue-key',
-        source: 'profile-api-key' as const,
-        accountId: 'test-account-1',
-        resolvedProvider: 'anthropic' as const,
-        resolvedModelId: 'claude-opus-4-6',
-        reasoningConfig: { type: 'none' as const },
-      };
-      vi.mocked(resolveAuthFromQueue).mockResolvedValue(mockQueueAuth);
-
-      const config = createMockAgentClientConfig({
-        queueConfig: {
-          queue,
-          requestedModel: 'claude-opus-4-6',
-        },
-      });
-
-      const result = await createAgentClient(config);
-
-      expect(resolveAuthFromQueue).toHaveBeenCalledWith('claude-opus-4-6', queue, expect.any(Object));
-      expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
+    expect(result.queueAuth).toBe(queueAuth);
+    expect(mockCreateProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
         config: expect.objectContaining({
           provider: 'anthropic',
-          apiKey: 'sk-queue-key',
+          apiKey: 'sk-queue-coder',
         }),
-        modelId: 'claude-opus-4-6',
-      }));
-      expect(result.queueAuth).toEqual(mockQueueAuth);
-    });
-
-    it('should throw error when queueConfig has no available accounts', async () => {
-      vi.mocked(resolveAuthFromQueue).mockResolvedValue(null);
-
-      const config = createMockAgentClientConfig({
-        queueConfig: {
-          queue: [],
-          requestedModel: 'claude-opus-4-6',
-        },
-      });
-
-      await expect(createAgentClient(config)).rejects.toThrow(
-        'No available account in priority queue'
-      );
-    });
-
-    it('should cleanup MCP clients when cleanup is called', async () => {
-      const mockMcpClient = {
-        serverId: 'mcp-server-1',
-        tools: {},
-        close: vi.fn().mockResolvedValue(undefined),
-      };
-      vi.mocked(createMcpClientsForAgent).mockResolvedValue([mockMcpClient]);
-      vi.mocked(getRequiredMcpServers).mockReturnValue(['mcp-server-1']);
-
-      const config = createMockAgentClientConfig();
-      const result = await createAgentClient(config);
-
-      // Verify MCP clients are in the result
-      expect(result.mcpClients).toEqual([mockMcpClient]);
-
-      await result.cleanup();
-
-      expect(closeAllMcpClients).toHaveBeenCalledWith([mockMcpClient]);
-    });
+        modelId: 'claude-sonnet-4-5-20250929',
+      }),
+    );
   });
 
-  // ============================================
-  // createSimpleClient
-  // ============================================
+  it('throws when queueConfig provided but no account available', async () => {
+    mockResolveAuthFromQueue.mockResolvedValueOnce(null);
 
-  describe('createSimpleClient', () => {
-    it('should create a simple client with defaults', async () => {
-      // Mock the haiku model ID
-      vi.mocked(resolveModelId).mockImplementation((model) => {
-        if (model === 'haiku') return 'claude-haiku-4-5-20251001';
-        return model;
-      });
-
-      const config = createMockSimpleClientConfig();
-
-      const result = await createSimpleClient(config);
-
-      expect(result).toBeDefined();
-      expect(result.model).toBe(mockModel);
-      expect(result.resolvedModelId).toBe('claude-haiku-4-5-20251001'); // default 'haiku'
-      expect(result.systemPrompt).toBe(config.systemPrompt);
-      expect(result.maxSteps).toBe(1); // DEFAULT_SIMPLE_MAX_STEPS
-      expect(result.thinkingLevel).toBe('low'); // default thinking level
-    });
-
-    it('should use custom modelShorthand when provided', async () => {
-      vi.mocked(resolveModelId).mockReturnValue('claude-sonnet-4-6');
-      const config = createMockSimpleClientConfig({
-        modelShorthand: 'sonnet',
-      });
-
-      const result = await createSimpleClient(config);
-
-      expect(resolveModelId).toHaveBeenCalledWith('sonnet');
-      expect(result.resolvedModelId).toBe('claude-sonnet-4-6');
-    });
-
-    it('should use custom thinkingLevel when provided', async () => {
-      const config = createMockSimpleClientConfig({
-        thinkingLevel: 'high',
-      });
-
-      const result = await createSimpleClient(config);
-
-      expect(result.thinkingLevel).toBe('high');
-    });
-
-    it('should use custom maxSteps when provided', async () => {
-      const config = createMockSimpleClientConfig({
-        maxSteps: 5,
-      });
-
-      const result = await createSimpleClient(config);
-
-      expect(result.maxSteps).toBe(5);
-    });
-
-    it('should include custom tools when provided', async () => {
-      const customTools = { customTool: {} as any };
-      const config = createMockSimpleClientConfig({
-        tools: customTools,
-      });
-
-      const result = await createSimpleClient(config);
-
-      expect(result.tools).toEqual(customTools);
-    });
-
-    it('should use profileId for auth resolution', async () => {
-      const config = createMockSimpleClientConfig({
-        profileId: 'test-profile',
-      });
-
-      await createSimpleClient(config);
-
-      expect(resolveAuth).toHaveBeenCalledWith({
-        provider: 'anthropic',
-        profileId: 'test-profile',
-      });
-    });
-
-    it('should use queue-based resolution when queueConfig is provided', async () => {
-      const queue = [createMockProviderAccount()];
-      const mockQueueAuth = {
-        apiKey: 'sk-queue-key',
-        source: 'profile-api-key' as const,
-        accountId: 'test-account-1',
-        resolvedProvider: 'anthropic' as const,
-        resolvedModelId: 'claude-sonnet-4-6',
-        reasoningConfig: { type: 'none' as const },
-      };
-      vi.mocked(resolveAuthFromQueue).mockResolvedValue(mockQueueAuth);
-
-      const config = createMockSimpleClientConfig({
-        queueConfig: {
-          queue,
-          requestedModel: 'claude-sonnet-4-6',
-        },
-      });
-
-      const result = await createSimpleClient(config);
-
-      expect(resolveAuthFromQueue).toHaveBeenCalled();
-      expect(result.queueAuth).toEqual(mockQueueAuth);
-      expect(result.resolvedModelId).toBe('claude-sonnet-4-6');
-    });
-
-    it('should throw error when queueConfig has no available accounts', async () => {
-      vi.mocked(resolveAuthFromQueue).mockResolvedValue(null);
-
-      const config = createMockSimpleClientConfig({
-        queueConfig: {
-          queue: [],
-          requestedModel: 'claude-opus-4-6',
-        },
-      });
-
-      await expect(createSimpleClient(config)).rejects.toThrow(
-        'No available account in priority queue'
-      );
-    });
-
-    it('should auto-build queue config from settings when not explicitly provided', async () => {
-      const mockQueueConfig = {
-        queue: [createMockProviderAccount()],
-        requestedModel: 'claude-haiku-4-5-20251001',
-      };
-      vi.mocked(buildDefaultQueueConfig).mockReturnValue(mockQueueConfig);
-      vi.mocked(resolveModelId).mockReturnValue('claude-haiku-4-5-20251001');
-      // Mock successful queue resolution
-      vi.mocked(resolveAuthFromQueue).mockResolvedValue({
-        apiKey: 'sk-test-key',
-        source: 'profile-api-key' as const,
-        accountId: 'test-account-1',
-        resolvedProvider: 'anthropic' as const,
-        resolvedModelId: 'claude-haiku-4-5-20251001',
-        reasoningConfig: { type: 'none' as const },
-      });
-
-      const config = createMockSimpleClientConfig();
-
-      const result = await createSimpleClient(config);
-
-      expect(buildDefaultQueueConfig).toHaveBeenCalledWith('claude-haiku-4-5-20251001');
-      expect(result.queueAuth).toBeDefined();
-    });
-
-    it('should use explicit queueConfig when provided, skipping auto-build', async () => {
-      const explicitQueueConfig = {
-        queue: [createMockProviderAccount()],
-        requestedModel: 'custom-model',
-      };
-      vi.mocked(buildDefaultQueueConfig).mockReturnValue(undefined); // Would return undefined if called
-      // Mock successful queue resolution
-      vi.mocked(resolveAuthFromQueue).mockResolvedValue({
-        apiKey: 'sk-test-key',
-        source: 'profile-api-key' as const,
-        accountId: 'test-account-1',
-        resolvedProvider: 'anthropic' as const,
-        resolvedModelId: 'custom-model',
-        reasoningConfig: { type: 'none' as const },
-      });
-
-      const config = createMockSimpleClientConfig({
-        queueConfig: explicitQueueConfig,
-      });
-
-      const result = await createSimpleClient(config);
-
-      // Should NOT call buildDefaultQueueConfig since explicit config was provided
-      expect(buildDefaultQueueConfig).not.toHaveBeenCalled();
-      expect(result.queueAuth).toBeDefined();
-    });
-
-    it('should handle full model IDs from other providers', async () => {
-      const fullModelId = 'gpt-5.2-codex';
-      vi.mocked(resolveModelId).mockReturnValue(fullModelId);
-      vi.mocked(detectProviderFromModel).mockReturnValue('openai');
-
-      const config = createMockSimpleClientConfig({
-        modelShorthand: fullModelId,
-      });
-
-      const result = await createSimpleClient(config);
-
-      expect(result.resolvedModelId).toBe(fullModelId);
-      expect(detectProviderFromModel).toHaveBeenCalledWith(fullModelId);
-    });
+    await expect(
+      createAgentClient({
+        ...baseConfig,
+        queueConfig: { queue: [], requestedModel: 'sonnet' },
+      }),
+    ).rejects.toThrow('No available account in priority queue');
   });
 
-  // ============================================
-  // Default Constants
-  // ============================================
+  it('merges additionalMcpServers into the required servers list', async () => {
+    mockGetRequiredMcpServers.mockReturnValueOnce(['context7']);
 
-  describe('default constants', () => {
-    it('should use DEFAULT_MAX_STEPS for agent clients', async () => {
-      const config = createMockAgentClientConfig();
-      // Don't provide maxSteps
-
-      const result = await createAgentClient(config);
-
-      expect(result.maxSteps).toBe(200);
+    await createAgentClient({
+      ...baseConfig,
+      additionalMcpServers: ['custom-server'],
     });
 
-    it('should use DEFAULT_SIMPLE_MAX_STEPS for simple clients', async () => {
-      const config = createMockSimpleClientConfig();
-      // Don't provide maxSteps
-
-      const result = await createSimpleClient(config);
-
-      expect(result.maxSteps).toBe(1);
-    });
-
-    it('should default to haiku for simple client model', async () => {
-      const config = createMockSimpleClientConfig();
-      // Don't provide modelShorthand
-
-      await createSimpleClient(config);
-
-      expect(resolveModelId).toHaveBeenCalledWith('haiku');
-    });
-
-    it('should default to low thinking for simple client', async () => {
-      const config = createMockSimpleClientConfig();
-      // Don't provide thinkingLevel
-
-      const result = await createSimpleClient(config);
-
-      expect(result.thinkingLevel).toBe('low');
-    });
+    // createMcpClientsForAgent is called because the combined server list is non-empty
+    expect(mockCreateMcpClientsForAgent).toHaveBeenCalled();
   });
 });

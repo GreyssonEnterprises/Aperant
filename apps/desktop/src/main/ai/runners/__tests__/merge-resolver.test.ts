@@ -1,342 +1,247 @@
-/**
- * Merge Resolver Runner Tests
- *
- * Tests for AI-powered merge conflict resolution.
- * Covers conflict resolution, resolver function creation, and error handling.
- */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  resolveMergeConflict,
-  createMergeResolverFn,
-  type MergeResolverConfig,
-  type MergeResolverResult,
-  type MergeResolverCallFn,
-} from '../merge-resolver';
-import type { ModelShorthand, ThinkingLevel } from '../../config/types';
+// =============================================================================
+// Mocks — must be declared before any imports that use them
+// =============================================================================
 
-// Mock all dependencies
-vi.mock('../../client/factory', () => ({
-  createSimpleClient: vi.fn(),
-}));
+const mockGenerateText = vi.fn();
 
 vi.mock('ai', () => ({
-  generateText: vi.fn(),
+  generateText: (...args: unknown[]) => mockGenerateText(...args),
 }));
 
-import { createSimpleClient } from '../../client/factory';
-import { generateText } from 'ai';
+const mockCreateSimpleClient = vi.fn();
 
-// ============================================
-// Test Fixtures
-// ============================================
+vi.mock('../../client/factory', () => ({
+  createSimpleClient: (...args: unknown[]) => mockCreateSimpleClient(...args),
+}));
 
-const createMockConfig = (
-  overrides?: Partial<MergeResolverConfig>,
-): MergeResolverConfig => ({
-  systemPrompt: 'You are a merge resolver. Resolve the conflict.',
-  userPrompt: 'Resolve this merge conflict...',
-  ...overrides,
-});
+// =============================================================================
+// Import after mocking
+// =============================================================================
 
-const createMockClientResult = () => ({
-  model: 'gpt-4',
-  systemPrompt: 'You are a merge resolver.',
-  resolvedModelId: 'gpt-4',
-  tools: {},
-  maxSteps: 100,
-  thinkingLevel: 'low' as ThinkingLevel,
-}) as any;
+import { resolveMergeConflict, createMergeResolverFn } from '../merge-resolver';
+import type { MergeResolverConfig } from '../merge-resolver';
 
-// ============================================
-// Setup & Teardown
-// ============================================
+// =============================================================================
+// Helpers
+// =============================================================================
 
-describe('Merge Resolver Runner', () => {
+const fakeModel = { modelId: 'claude-haiku-test' };
+
+function makeMockClient(systemPrompt = 'Resolve merge conflicts.') {
+  return { model: fakeModel, systemPrompt };
+}
+
+function baseConfig(overrides: Partial<MergeResolverConfig> = {}): MergeResolverConfig {
+  return {
+    systemPrompt: 'You are a merge conflict resolver.',
+    userPrompt: '<<<\nHEAD version\n===\nIncoming version\n>>>',
+    ...overrides,
+  };
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+describe('resolveMergeConflict', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
-    // Mock createSimpleClient
-    vi.mocked(createSimpleClient).mockResolvedValue(createMockClientResult());
-    // Mock generateText
-    vi.mocked(generateText).mockResolvedValue({ text: 'Resolved content' } as any);
+    mockCreateSimpleClient.mockResolvedValue(makeMockClient());
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
+  // ---------------------------------------------------------------------------
+  // Successful resolution
+  // ---------------------------------------------------------------------------
+
+  it('returns success with trimmed resolved text', async () => {
+    mockGenerateText.mockResolvedValue({ text: '  Resolved: use incoming version.  ' });
+
+    const result = await resolveMergeConflict(baseConfig());
+
+    expect(result.success).toBe(true);
+    expect(result.text).toBe('Resolved: use incoming version.');
+    expect(result.error).toBeUndefined();
   });
 
-  // ============================================
-  // resolveMergeConflict
-  // ============================================
+  it('passes model and systemPrompt from client to generateText', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'merged code here' });
 
-  describe('resolveMergeConflict', () => {
-    it('should resolve a merge conflict successfully', async () => {
-      const config = createMockConfig();
+    await resolveMergeConflict(baseConfig());
 
-      const result = await resolveMergeConflict(config);
-
-      expect(result.success).toBe(true);
-      expect(result.text).toBe('Resolved content');
-      expect(result.error).toBeUndefined();
-    });
-
-    it('should use default model and thinking level when not specified', async () => {
-      const config = createMockConfig();
-
-      await resolveMergeConflict(config);
-
-      expect(createSimpleClient).toHaveBeenCalledWith({
-        systemPrompt: config.systemPrompt,
-        modelShorthand: 'haiku',
-        thinkingLevel: 'low',
-      });
-    });
-
-    it('should use provided model and thinking level', async () => {
-      const config = createMockConfig({
-        modelShorthand: 'sonnet',
-        thinkingLevel: 'medium',
-      });
-
-      await resolveMergeConflict(config);
-
-      expect(createSimpleClient).toHaveBeenCalledWith({
-        systemPrompt: config.systemPrompt,
-        modelShorthand: 'sonnet',
-        thinkingLevel: 'medium',
-      });
-    });
-
-    it('should handle empty AI response', async () => {
-      vi.mocked(generateText).mockResolvedValue({ text: '   ' } as any);
-
-      const config = createMockConfig();
-      const result = await resolveMergeConflict(config);
-
-      expect(result.success).toBe(false);
-      expect(result.text).toBe('');
-      expect(result.error).toBe('Empty response from AI');
-    });
-
-    it('should handle AI generation errors', async () => {
-      vi.mocked(generateText).mockRejectedValue(new Error('API rate limit exceeded'));
-
-      const config = createMockConfig();
-      const result = await resolveMergeConflict(config);
-
-      expect(result.success).toBe(false);
-      expect(result.text).toBe('');
-      expect(result.error).toBe('API rate limit exceeded');
-    });
-
-    it('should handle client creation errors', async () => {
-      vi.mocked(createSimpleClient).mockRejectedValue(new Error('Invalid model'));
-
-      const config = createMockConfig();
-      const result = await resolveMergeConflict(config);
-
-      expect(result.success).toBe(false);
-      expect(result.text).toBe('');
-      expect(result.error).toBe('Invalid model');
-    });
-
-    it('should trim whitespace from resolved text', async () => {
-      vi.mocked(generateText).mockResolvedValue({
-        text: '  \n  Resolved content  \n  ',
-      } as any);
-
-      const config = createMockConfig();
-      const result = await resolveMergeConflict(config);
-
-      expect(result.success).toBe(true);
-      expect(result.text).toBe('Resolved content');
-    });
-
-    it('should pass system prompt and user prompt to AI', async () => {
-      vi.clearAllMocks();
-      vi.mocked(createSimpleClient).mockImplementation(async ({ systemPrompt }) => ({
-        model: 'gpt-4',
-        systemPrompt,
-        resolvedModelId: 'gpt-4',
-        tools: {},
-        maxSteps: 100,
-        thinkingLevel: 'low' as any,
-      } as any));
-      vi.mocked(generateText).mockResolvedValue({ text: 'Resolved' } as any);
-
-      const config: MergeResolverConfig = {
-        systemPrompt: 'You are a merge resolver for JavaScript files.',
-        userPrompt: 'Merge these two functions...',
-      };
-
-      await resolveMergeConflict(config);
-
-      expect(createSimpleClient).toHaveBeenCalledWith({
-        systemPrompt: config.systemPrompt,
-        modelShorthand: 'haiku',
-        thinkingLevel: 'low',
-      });
-
-      expect(generateText).toHaveBeenCalledWith({
-        model: 'gpt-4',
-        system: config.systemPrompt,
-        prompt: config.userPrompt,
-      });
-    });
+    expect(mockGenerateText).toHaveBeenCalledOnce();
+    const callArgs = mockGenerateText.mock.calls[0][0];
+    expect(callArgs.model).toBe(fakeModel);
+    expect(callArgs.system).toBe('Resolve merge conflicts.');
   });
 
-  // ============================================
-  // createMergeResolverFn
-  // ============================================
+  it('passes userPrompt as the prompt parameter to generateText', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'resolved' });
 
-  describe('createMergeResolverFn', () => {
-    it('should create a resolver function', () => {
-      const resolverFn = createMergeResolverFn();
+    const conflict = '<<<\nmy change\n===\ntheir change\n>>>';
+    await resolveMergeConflict(baseConfig({ userPrompt: conflict }));
 
-      expect(typeof resolverFn).toBe('function');
-    });
-
-    it('should use default model and thinking level when not specified', async () => {
-      const resolverFn = createMergeResolverFn();
-
-      await resolverFn('System prompt', 'User prompt');
-
-      expect(createSimpleClient).toHaveBeenCalledWith({
-        systemPrompt: 'System prompt',
-        modelShorthand: 'haiku',
-        thinkingLevel: 'low',
-      });
-    });
-
-    it('should use provided model and thinking level', async () => {
-      const resolverFn = createMergeResolverFn('sonnet', 'high');
-
-      await resolverFn('System prompt', 'User prompt');
-
-      expect(createSimpleClient).toHaveBeenCalledWith({
-        systemPrompt: 'System prompt',
-        modelShorthand: 'sonnet',
-        thinkingLevel: 'high',
-      });
-    });
-
-    it('should return only the resolved text', async () => {
-      vi.mocked(generateText).mockResolvedValue({
-        text: 'Resolved merge content',
-      } as any);
-
-      const resolverFn = createMergeResolverFn();
-
-      const result = await resolverFn('System', 'User');
-
-      expect(result).toBe('Resolved merge content');
-    });
-
-    it('should propagate errors from resolveMergeConflict', async () => {
-      vi.mocked(generateText).mockRejectedValue(new Error('Generation failed'));
-
-      const resolverFn = createMergeResolverFn();
-
-      // The function should still return a string (empty on error)
-      const result = await resolverFn('System', 'User');
-
-      expect(result).toBe('');
-    });
-
-    it('should handle empty responses gracefully', async () => {
-      vi.mocked(generateText).mockResolvedValue({ text: '' } as any);
-
-      const resolverFn = createMergeResolverFn();
-
-      const result = await resolverFn('System', 'User');
-
-      expect(result).toBe('');
-    });
-
-    it('should match MergeResolverCallFn type signature', async () => {
-      const resolverFn: MergeResolverCallFn = createMergeResolverFn();
-
-      // This is a compile-time check - if it compiles, the type is correct
-      expect(resolverFn).toBeDefined();
-
-      const result = await resolverFn('System', 'User');
-      expect(typeof result).toBe('string');
-    });
+    const callArgs = mockGenerateText.mock.calls[0][0];
+    expect(callArgs.prompt).toBe(conflict);
   });
 
-  // ============================================
-  // Error Handling
-  // ============================================
+  it('passes systemPrompt config to createSimpleClient', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'resolved' });
 
-  describe('error handling', () => {
-    it('should handle non-Error objects in catch block', async () => {
-      vi.mocked(generateText).mockRejectedValue('String error');
+    const customSystem = 'Custom system prompt.';
+    await resolveMergeConflict(baseConfig({ systemPrompt: customSystem }));
 
-      const config = createMockConfig();
-      const result = await resolveMergeConflict(config);
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('String error');
-    });
-
-    it('should handle null errors', async () => {
-      vi.mocked(generateText).mockRejectedValue(null);
-
-      const config = createMockConfig();
-      const result = await resolveMergeConflict(config);
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('null');
-    });
+    const clientArgs = mockCreateSimpleClient.mock.calls[0][0];
+    expect(clientArgs.systemPrompt).toBe(customSystem);
   });
 
-  // ============================================
-  // Integration with AI SDK
-  // ============================================
+  // ---------------------------------------------------------------------------
+  // Default model / thinking level
+  // ---------------------------------------------------------------------------
 
-  describe('AI SDK integration', () => {
-    it('should call generateText with correct parameters', async () => {
-      vi.clearAllMocks();
-      const clientResult = createMockClientResult();
-      vi.mocked(createSimpleClient).mockImplementation(async (config) => ({
-        ...clientResult,
-        systemPrompt: config.systemPrompt,
-      } as any));
-      vi.mocked(generateText).mockResolvedValue({ text: 'Resolved' } as any);
+  it('uses haiku model and low thinking level by default', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'resolved' });
 
-      const config = createMockConfig();
+    await resolveMergeConflict(baseConfig());
 
-      await resolveMergeConflict(config);
+    const clientArgs = mockCreateSimpleClient.mock.calls[0][0];
+    expect(clientArgs.modelShorthand).toBe('haiku');
+    expect(clientArgs.thinkingLevel).toBe('low');
+  });
 
-      expect(generateText).toHaveBeenCalledWith({
-        model: 'gpt-4',
-        system: config.systemPrompt,
-        prompt: config.userPrompt,
-      });
-    });
+  it('accepts custom modelShorthand and thinkingLevel', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'resolved' });
 
-    it('should use model from client result', async () => {
-      vi.clearAllMocks();
-      vi.mocked(createSimpleClient).mockImplementation(async () => ({
-        model: 'claude-3-opus',
-        systemPrompt: 'System',
-        resolvedModelId: 'claude-3-opus',
-        tools: {},
-        maxSteps: 100,
-        thinkingLevel: 'low' as ThinkingLevel,
-      } as any));
-      vi.mocked(generateText).mockResolvedValue({ text: 'Resolved' } as any);
+    await resolveMergeConflict(
+      baseConfig({ modelShorthand: 'sonnet', thinkingLevel: 'medium' }),
+    );
 
-      const config = createMockConfig();
+    const clientArgs = mockCreateSimpleClient.mock.calls[0][0];
+    expect(clientArgs.modelShorthand).toBe('sonnet');
+    expect(clientArgs.thinkingLevel).toBe('medium');
+  });
 
-      await resolveMergeConflict(config);
+  // ---------------------------------------------------------------------------
+  // Empty response handling
+  // ---------------------------------------------------------------------------
 
-      expect(generateText).toHaveBeenCalledWith({
-        model: 'claude-3-opus',
-        system: 'System',
-        prompt: config.userPrompt,
-      });
-    });
+  it('returns failure when LLM returns empty text', async () => {
+    mockGenerateText.mockResolvedValue({ text: '   ' });
+
+    const result = await resolveMergeConflict(baseConfig());
+
+    expect(result.success).toBe(false);
+    expect(result.text).toBe('');
+    expect(result.error).toBe('Empty response from AI');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Error handling
+  // ---------------------------------------------------------------------------
+
+  it('returns failure with error message when generateText throws Error', async () => {
+    mockGenerateText.mockRejectedValue(new Error('API rate limit'));
+
+    const result = await resolveMergeConflict(baseConfig());
+
+    expect(result.success).toBe(false);
+    expect(result.text).toBe('');
+    expect(result.error).toBe('API rate limit');
+  });
+
+  it('returns failure with string coercion when non-Error is thrown', async () => {
+    mockGenerateText.mockRejectedValue('connection refused');
+
+    const result = await resolveMergeConflict(baseConfig());
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('connection refused');
+  });
+
+  it('returns failure when createSimpleClient throws', async () => {
+    mockCreateSimpleClient.mockRejectedValue(new Error('No auth token'));
+
+    const result = await resolveMergeConflict(baseConfig());
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('No auth token');
+  });
+});
+
+// =============================================================================
+// createMergeResolverFn
+// =============================================================================
+
+describe('createMergeResolverFn', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreateSimpleClient.mockResolvedValue(makeMockClient());
+  });
+
+  it('returns an async function', () => {
+    const fn = createMergeResolverFn();
+    expect(typeof fn).toBe('function');
+  });
+
+  it('returned function resolves to the resolved text on success', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'merged content' });
+
+    const fn = createMergeResolverFn();
+    const result = await fn('system context', 'conflict block');
+
+    expect(result).toBe('merged content');
+  });
+
+  it('returned function resolves to empty string when LLM returns empty', async () => {
+    mockGenerateText.mockResolvedValue({ text: '   ' });
+
+    const fn = createMergeResolverFn();
+    const result = await fn('system', 'conflict');
+
+    expect(result).toBe('');
+  });
+
+  it('returned function resolves to empty string on error (does not throw)', async () => {
+    mockGenerateText.mockRejectedValue(new Error('timeout'));
+
+    const fn = createMergeResolverFn();
+    const result = await fn('system', 'conflict');
+
+    expect(result).toBe('');
+  });
+
+  it('uses provided modelShorthand and thinkingLevel', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'resolved' });
+
+    const fn = createMergeResolverFn('sonnet', 'medium');
+    await fn('sys', 'user');
+
+    const clientArgs = mockCreateSimpleClient.mock.calls[0][0];
+    expect(clientArgs.modelShorthand).toBe('sonnet');
+    expect(clientArgs.thinkingLevel).toBe('medium');
+  });
+
+  it('defaults to haiku and low when no arguments given', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'resolved' });
+
+    const fn = createMergeResolverFn();
+    await fn('sys', 'user');
+
+    const clientArgs = mockCreateSimpleClient.mock.calls[0][0];
+    expect(clientArgs.modelShorthand).toBe('haiku');
+    expect(clientArgs.thinkingLevel).toBe('low');
+  });
+
+  it('passes system and user arguments as systemPrompt and userPrompt', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'resolved' });
+
+    const fn = createMergeResolverFn();
+    await fn('the system prompt', 'the conflict text');
+
+    const clientArgs = mockCreateSimpleClient.mock.calls[0][0];
+    expect(clientArgs.systemPrompt).toBe('the system prompt');
+    const generateArgs = mockGenerateText.mock.calls[0][0];
+    expect(generateArgs.prompt).toBe('the conflict text');
   });
 });

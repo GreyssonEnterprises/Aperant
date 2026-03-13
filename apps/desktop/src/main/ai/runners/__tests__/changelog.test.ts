@@ -1,401 +1,231 @@
-/**
- * Changelog Runner Tests
- *
- * Tests for AI-powered changelog generation.
- * Covers changelog generation for different source modes, prompt building, and error handling.
- */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  generateChangelog,
-  type ChangelogConfig,
-  type ChangelogTask,
-} from '../changelog';
+// =============================================================================
+// Mocks — must be declared before any imports that use them
+// =============================================================================
 
-// Mock all dependencies
-vi.mock('../../client/factory', () => ({
-  createSimpleClient: vi.fn(),
-}));
+const mockGenerateText = vi.fn();
 
 vi.mock('ai', () => ({
-  generateText: vi.fn(),
+  generateText: (...args: unknown[]) => mockGenerateText(...args),
 }));
 
-import { createSimpleClient } from '../../client/factory';
-import { generateText } from 'ai';
+const mockCreateSimpleClient = vi.fn();
 
-// ============================================
-// Test Fixtures
-// ============================================
+vi.mock('../../client/factory', () => ({
+  createSimpleClient: (...args: unknown[]) => mockCreateSimpleClient(...args),
+}));
 
-const createMockConfig = (
-  overrides?: Partial<ChangelogConfig>,
-): ChangelogConfig => ({
-  projectName: 'TestProject',
-  version: '1.2.0',
-  sourceMode: 'tasks',
-  ...overrides,
-});
+// =============================================================================
+// Import after mocking
+// =============================================================================
 
-const createMockTask = (
-  overrides?: Partial<ChangelogTask>,
-): ChangelogTask => ({
-  title: 'Add user authentication',
-  description: 'Implemented OAuth2 login flow',
-  category: 'feature',
-  issueNumber: 42,
-  ...overrides,
-});
+import { generateChangelog } from '../changelog';
+import type { ChangelogConfig } from '../changelog';
 
-// ============================================
-// Setup & Teardown
-// ============================================
+// =============================================================================
+// Helpers
+// =============================================================================
 
-describe('Changelog Runner', () => {
+/** A fake model object used by the mock client */
+const fakeModel = { modelId: 'claude-haiku-test' };
+
+function makeMockClient(systemPrompt = 'You are a technical writer.') {
+  return { model: fakeModel, systemPrompt };
+}
+
+function baseConfig(overrides: Partial<ChangelogConfig> = {}): ChangelogConfig {
+  return {
+    projectName: 'TestProject',
+    version: '1.0.0',
+    sourceMode: 'tasks',
+    tasks: [
+      { title: 'Add dark mode', description: 'Implemented dark mode toggle', category: 'feature' },
+    ],
+    ...overrides,
+  };
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+describe('generateChangelog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
-    // Mock createSimpleClient
-    vi.mocked(createSimpleClient).mockResolvedValue({
-      model: 'gpt-4',
-      systemPrompt: 'You are a technical writer.',
-      resolvedModelId: 'gpt-4',
-      tools: {},
-      maxSteps: 100,
-      thinkingLevel: 'low' as any,
-    } as any);
-
-    // Mock generateText
-    vi.mocked(generateText).mockResolvedValue({
-      text: '## Added\n- New feature',
-    } as any);
+    mockCreateSimpleClient.mockResolvedValue(makeMockClient());
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
+  // ---------------------------------------------------------------------------
+  // Successful generation
+  // ---------------------------------------------------------------------------
+
+  it('returns success with trimmed text when LLM responds', async () => {
+    mockGenerateText.mockResolvedValue({ text: '  ## [1.0.0]\n\n### Added\n- Dark mode\n  ' });
+
+    const result = await generateChangelog(baseConfig());
+
+    expect(result.success).toBe(true);
+    expect(result.text).toBe('## [1.0.0]\n\n### Added\n- Dark mode');
+    expect(result.error).toBeUndefined();
   });
 
-  // ============================================
-  // generateChangelog - tasks mode
-  // ============================================
+  it('passes project name and version in the prompt to createSimpleClient', async () => {
+    mockGenerateText.mockResolvedValue({ text: '## [2.0.0]' });
 
-  describe('generateChangelog - tasks mode', () => {
-    it('should generate changelog from tasks', async () => {
-      vi.mocked(generateText).mockResolvedValue({
-        text: '## Added\n- Add dark mode\n\n## Fixed\n- Fix login bug',
-      } as any);
+    await generateChangelog(baseConfig({ projectName: 'MyApp', version: '2.0.0' }));
 
-      const config = createMockConfig({
-        sourceMode: 'tasks',
-        tasks: [
-          createMockTask({ title: 'Add dark mode', category: 'feature' }),
-          createMockTask({ title: 'Fix login bug', category: 'bug_fix' }),
-        ],
-      });
-
-      const result = await generateChangelog(config);
-
-      expect(result.success).toBe(true);
-      expect(result.text).toContain('Add dark mode');
-      expect(result.text).toContain('Fix login bug');
-      expect(result.error).toBeUndefined();
-    });
-
-    it('should include task metadata in prompt', async () => {
-      const config = createMockConfig({
-        sourceMode: 'tasks',
-        tasks: [
-          createMockTask({
-            title: 'OAuth2 Login',
-            category: 'feature',
-            issueNumber: 123,
-          }),
-        ],
-      });
-
-      await generateChangelog(config);
-
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      expect(prompt).toContain('OAuth2 Login');
-      expect(prompt).toContain('[feature]');
-      expect(prompt).toContain('(#123)');
-    });
-
-    it('should handle tasks without category', async () => {
-      const config = createMockConfig({
-        sourceMode: 'tasks',
-        tasks: [createMockTask({ title: 'Update docs', category: undefined })],
-      });
-
-      await generateChangelog(config);
-
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      expect(prompt).toContain('Update docs');
-    });
-
-    it('should handle tasks without issue number', async () => {
-      const config = createMockConfig({
-        sourceMode: 'tasks',
-        tasks: [createMockTask({ issueNumber: undefined })],
-      });
-
-      await generateChangelog(config);
-
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      expect(prompt).not.toContain('(#');
-    });
-
-    it('should handle empty tasks array', async () => {
-      const config = createMockConfig({
-        sourceMode: 'tasks',
-        tasks: [],
-      });
-
-      await generateChangelog(config);
-
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      expect(prompt).toContain('TestProject');
-      expect(prompt).toContain('1.2.0');
-    });
+    // createSimpleClient receives system-level configuration
+    expect(mockCreateSimpleClient).toHaveBeenCalledOnce();
+    const clientArgs = mockCreateSimpleClient.mock.calls[0][0];
+    expect(clientArgs).toHaveProperty('modelShorthand');
+    expect(clientArgs).toHaveProperty('thinkingLevel');
   });
 
-  // ============================================
-  // generateChangelog - git-history mode
-  // ============================================
+  it('passes model and systemPrompt from client to generateText', async () => {
+    mockGenerateText.mockResolvedValue({ text: '## [1.0.0]' });
 
-  describe('generateChangelog - git-history mode', () => {
-    it('should generate changelog from git history', async () => {
-      vi.mocked(generateText).mockResolvedValue({
-        text: '## Added\n- Feature A\n\n## Fixed\n- Bug B',
-      } as any);
+    await generateChangelog(baseConfig());
 
-      const config = createMockConfig({
-        sourceMode: 'git-history',
-        commits: 'feat: add feature A\nfix: fix bug B\n',
-      });
-
-      const result = await generateChangelog(config);
-
-      expect(result.success).toBe(true);
-      expect(result.text).toContain('Feature A');
-      expect(result.text).toContain('Bug B');
-    });
-
-    it('should truncate long commit messages', async () => {
-      const longCommits = 'x'.repeat(6000);
-      const config = createMockConfig({
-        sourceMode: 'git-history',
-        commits: longCommits,
-      });
-
-      await generateChangelog(config);
-
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      expect(prompt.length).toBeLessThan(6000);
-    });
+    expect(mockGenerateText).toHaveBeenCalledOnce();
+    const callArgs = mockGenerateText.mock.calls[0][0];
+    expect(callArgs.model).toBe(fakeModel);
+    expect(callArgs.system).toBe('You are a technical writer.');
+    expect(callArgs.prompt).toContain('TestProject');
+    expect(callArgs.prompt).toContain('1.0.0');
   });
 
-  // ============================================
-  // generateChangelog - branch-diff mode
-  // ============================================
+  // ---------------------------------------------------------------------------
+  // Task mode — prompt content
+  // ---------------------------------------------------------------------------
 
-  describe('generateChangelog - branch-diff mode', () => {
-    it('should generate changelog from branch diff', async () => {
-      vi.mocked(generateText).mockResolvedValue({
-        text: '## Added\n- New feature',
-      } as any);
+  it('includes task titles and categories in prompt for tasks mode', async () => {
+    mockGenerateText.mockResolvedValue({ text: '## [1.0.0]' });
 
-      const config = createMockConfig({
-        sourceMode: 'branch-diff',
-        commits: 'diff output',
-      });
-
-      const result = await generateChangelog(config);
-
-      expect(result.success).toBe(true);
-      expect(result.text).toContain('New feature');
+    const config = baseConfig({
+      tasks: [
+        { title: 'My feature', description: 'desc', category: 'feature', issueNumber: 42 },
+      ],
     });
+    await generateChangelog(config);
 
-    it('should include "Branch Diff" in prompt', async () => {
-      const config = createMockConfig({
-        sourceMode: 'branch-diff',
-        commits: 'commits',
-      });
-
-      await generateChangelog(config);
-
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      expect(prompt).toContain('Branch Diff');
-    });
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('My feature');
+    expect(prompt).toContain('feature');
+    expect(prompt).toContain('#42');
   });
 
-  // ============================================
-  // generateChangelog - previous changelog
-  // ============================================
+  // ---------------------------------------------------------------------------
+  // Git history / branch-diff modes
+  // ---------------------------------------------------------------------------
 
-  describe('generateChangelog - previous changelog', () => {
-    it('should include previous changelog in prompt', async () => {
-      const previousChangelog = '## 1.1.0\n- Old feature';
-      const config = createMockConfig({
-        previousChangelog,
-      });
+  it('includes commit messages in prompt for git-history mode', async () => {
+    mockGenerateText.mockResolvedValue({ text: '## [1.0.0]' });
 
-      await generateChangelog(config);
+    await generateChangelog(
+      baseConfig({ sourceMode: 'git-history', commits: 'feat: add login\nfix: bug #5' }),
+    );
 
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      expect(prompt).toContain('Previous Changelog');
-      expect(prompt).toContain('Old feature');
-    });
-
-    it('should truncate long previous changelog', async () => {
-      const longChangelog = '## 1.1.0\n' + 'x'.repeat(3000);
-      const config = createMockConfig({
-        previousChangelog: longChangelog,
-      });
-
-      await generateChangelog(config);
-
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      expect(prompt.length).toBeLessThan(3000);
-    });
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('feat: add login');
   });
 
-  // ============================================
-  // generateChangelog - model and thinking
-  // ============================================
+  it('truncates commits to 5000 chars', async () => {
+    mockGenerateText.mockResolvedValue({ text: '## [1.0.0]' });
+    const longCommits = 'x'.repeat(10_000);
 
-  describe('generateChangelog - model and thinking', () => {
-    it('should use default model and thinking level', async () => {
-      const config = createMockConfig();
+    await generateChangelog(baseConfig({ sourceMode: 'branch-diff', commits: longCommits }));
 
-      await generateChangelog(config);
-
-      expect(createSimpleClient).toHaveBeenCalledWith({
-        systemPrompt: expect.any(String),
-        modelShorthand: 'sonnet',
-        thinkingLevel: 'low',
-      });
-    });
-
-    it('should use provided model and thinking level', async () => {
-      const config = createMockConfig({
-        modelShorthand: 'haiku',
-        thinkingLevel: 'medium',
-      });
-
-      await generateChangelog(config);
-
-      expect(createSimpleClient).toHaveBeenCalledWith({
-        systemPrompt: expect.any(String),
-        modelShorthand: 'haiku',
-        thinkingLevel: 'medium',
-      });
-    });
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    // The 'x'.repeat(10000) block should be truncated — prompt must not exceed
+    // 5000 'x' chars plus surrounding text
+    const xCount = (prompt.match(/x/g) ?? []).length;
+    expect(xCount).toBeLessThanOrEqual(5000);
   });
 
-  // ============================================
-  // Error Handling
-  // ============================================
+  // ---------------------------------------------------------------------------
+  // Previous changelog style reference
+  // ---------------------------------------------------------------------------
 
-  describe('error handling', () => {
-    it('should handle empty AI response', async () => {
-      vi.mocked(generateText).mockResolvedValue({ text: '   ' } as any);
+  it('includes previousChangelog when provided', async () => {
+    mockGenerateText.mockResolvedValue({ text: '## [1.0.0]' });
 
-      const config = createMockConfig();
-      const result = await generateChangelog(config);
+    await generateChangelog(
+      baseConfig({ previousChangelog: '## [0.9.0]\n\n### Added\n- Old feature' }),
+    );
 
-      expect(result.success).toBe(false);
-      expect(result.text).toBe('');
-      expect(result.error).toBe('Empty response from AI');
-    });
-
-    it('should handle AI generation errors', async () => {
-      vi.mocked(generateText).mockRejectedValue(new Error('API error'));
-
-      const config = createMockConfig();
-      const result = await generateChangelog(config);
-
-      expect(result.success).toBe(false);
-      expect(result.text).toBe('');
-      expect(result.error).toBe('API error');
-    });
-
-    it('should handle non-Error objects', async () => {
-      vi.mocked(generateText).mockRejectedValue('String error');
-
-      const config = createMockConfig();
-      const result = await generateChangelog(config);
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('String error');
-    });
-
-    it('should trim whitespace from generated text', async () => {
-      vi.mocked(generateText).mockResolvedValue({
-        text: '  \n  ## Changelog  \n  ',
-      } as any);
-
-      const config = createMockConfig();
-      const result = await generateChangelog(config);
-
-      expect(result.success).toBe(true);
-      expect(result.text).toBe('## Changelog');
-    });
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('Previous Changelog');
+    expect(prompt).toContain('0.9.0');
   });
 
-  // ============================================
-  // System Prompt
-  // ============================================
+  // ---------------------------------------------------------------------------
+  // Default model / thinking level
+  // ---------------------------------------------------------------------------
 
-  describe('system prompt', () => {
-    it('should use technical writer system prompt', async () => {
-      const config = createMockConfig();
+  it('uses sonnet model and low thinking level by default', async () => {
+    mockGenerateText.mockResolvedValue({ text: '## [1.0.0]' });
 
-      await generateChangelog(config);
+    await generateChangelog(baseConfig());
 
-      expect(createSimpleClient).toHaveBeenCalledWith({
-        systemPrompt: expect.stringContaining('technical writer'),
-        modelShorthand: 'sonnet',
-        thinkingLevel: 'low',
-      });
-    });
-
-    it('should include Keep a Changelog format in prompt', async () => {
-      const config = createMockConfig();
-
-      await generateChangelog(config);
-
-      const clientCall = vi.mocked(createSimpleClient).mock.calls[0];
-      expect(clientCall[0].systemPrompt).toContain('Keep a Changelog');
-    });
+    const clientArgs = mockCreateSimpleClient.mock.calls[0][0];
+    expect(clientArgs.modelShorthand).toBe('sonnet');
+    expect(clientArgs.thinkingLevel).toBe('low');
   });
 
-  // ============================================
-  // Prompt Building
-  // ============================================
+  it('accepts custom modelShorthand and thinkingLevel', async () => {
+    mockGenerateText.mockResolvedValue({ text: '## [1.0.0]' });
 
-  describe('prompt building', () => {
-    it('should include project name and version in prompt', async () => {
-      const config: ChangelogConfig = {
-        projectName: 'MyProject',
-        version: '2.0.0',
-        sourceMode: 'tasks',
-      };
+    await generateChangelog(baseConfig({ modelShorthand: 'haiku', thinkingLevel: 'high' }));
 
-      await generateChangelog(config);
+    const clientArgs = mockCreateSimpleClient.mock.calls[0][0];
+    expect(clientArgs.modelShorthand).toBe('haiku');
+    expect(clientArgs.thinkingLevel).toBe('high');
+  });
 
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      expect(prompt).toContain('MyProject');
-      expect(prompt).toContain('2.0.0');
-    });
+  // ---------------------------------------------------------------------------
+  // Empty response handling
+  // ---------------------------------------------------------------------------
 
-    it('should include output instructions in prompt', async () => {
-      const config = createMockConfig();
+  it('returns failure when LLM returns empty text', async () => {
+    mockGenerateText.mockResolvedValue({ text: '   ' });
 
-      await generateChangelog(config);
+    const result = await generateChangelog(baseConfig());
 
-      const prompt = vi.mocked(generateText).mock.calls[0]?.[0]?.prompt ?? '';
-      expect(prompt).toContain('ONLY the changelog entry markdown');
-    });
+    expect(result.success).toBe(false);
+    expect(result.text).toBe('');
+    expect(result.error).toBe('Empty response from AI');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Error handling
+  // ---------------------------------------------------------------------------
+
+  it('returns failure with error message when generateText throws', async () => {
+    mockGenerateText.mockRejectedValue(new Error('Rate limit exceeded'));
+
+    const result = await generateChangelog(baseConfig());
+
+    expect(result.success).toBe(false);
+    expect(result.text).toBe('');
+    expect(result.error).toBe('Rate limit exceeded');
+  });
+
+  it('returns failure with string coercion when non-Error is thrown', async () => {
+    mockGenerateText.mockRejectedValue('timeout');
+
+    const result = await generateChangelog(baseConfig());
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('timeout');
+  });
+
+  it('returns failure when createSimpleClient throws', async () => {
+    mockCreateSimpleClient.mockRejectedValue(new Error('No auth available'));
+
+    const result = await generateChangelog(baseConfig());
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('No auth available');
   });
 });

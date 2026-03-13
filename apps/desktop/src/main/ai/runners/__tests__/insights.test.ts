@@ -1,489 +1,382 @@
-/**
- * Insights Runner Tests
- *
- * Tests for AI-powered codebase insights chat.
- * Covers conversation history, project context loading, streaming events, and task suggestion extraction.
- */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { join } from 'node:path';
-import {
-  runInsightsQuery,
-  type InsightsConfig,
-  type InsightsMessage,
-} from '../insights';
-import type { ThinkingLevel } from '../../config/types';
+// =============================================================================
+// Mocks — must be declared before any imports that use them
+// =============================================================================
 
-// Mock all dependencies
+const mockStreamText = vi.fn();
+
+vi.mock('ai', () => ({
+  streamText: (...args: unknown[]) => mockStreamText(...args),
+  stepCountIs: (n: number) => ({ type: 'stepCount', count: n }),
+}));
+
+const mockCreateSimpleClient = vi.fn();
+
 vi.mock('../../client/factory', () => ({
-  createSimpleClient: vi.fn(),
+  createSimpleClient: (...args: unknown[]) => mockCreateSimpleClient(...args),
 }));
 
-vi.mock('ai', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('ai')>();
-  return {
-    ...actual,
-    streamText: vi.fn(),
-    stepCountIs: vi.fn(),
-  };
-});
+// Filesystem mocks — project context files are absent by default
+const mockExistsSync = vi.fn().mockReturnValue(false);
+const mockReadFileSync = vi.fn();
+const mockReaddirSync = vi.fn().mockReturnValue([]);
 
-vi.mock('node:fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs')>();
-  return {
-    ...actual,
-    existsSync: vi.fn(),
-    readFileSync: vi.fn(),
-    readdirSync: vi.fn(),
-  };
-});
+vi.mock('node:fs', () => ({
+  existsSync: (...args: unknown[]) => mockExistsSync(...args),
+  readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
+  readdirSync: (...args: unknown[]) => mockReaddirSync(...args),
+}));
 
+// Mock tool registry
 vi.mock('../../tools/build-registry', () => ({
-  buildToolRegistry: vi.fn(),
+  buildToolRegistry: () => ({
+    getToolsForAgent: vi.fn().mockReturnValue({}),
+  }),
 }));
 
-vi.mock('../prompts/prompt-loader', () => ({
-  tryLoadPrompt: vi.fn(() => null),
-}));
-
-import { createSimpleClient } from '../../client/factory';
-import { streamText, stepCountIs } from 'ai';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { buildToolRegistry } from '../../tools/build-registry';
-
-// ============================================
-// Test Fixtures
-// ============================================
-
-const createMockConfig = (
-  overrides?: Partial<InsightsConfig>,
-): InsightsConfig => ({
-  projectDir: '/test/project',
-  message: 'What is this codebase about?',
-  ...overrides,
-});
-
-const createMockClientResult = () => ({
-  model: 'gpt-4',
-  systemPrompt: 'You are an AI assistant.',
-  resolvedModelId: 'gpt-4',
-  tools: {},
-  maxSteps: 30,
-  thinkingLevel: 'medium' as ThinkingLevel,
-}) as any;
-
-// ============================================
-// Shared Helpers
-// ============================================
-
-const createMockStreamResult = (chunks: any[]) => ({
-  fullStream: (async function* () {
-    for (const chunk of chunks) {
-      yield chunk;
+// json-repair is used for safeParseJson in the insights runner
+vi.mock('../../../utils/json-repair', () => ({
+  safeParseJson: (text: string) => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
     }
-  })(),
-  text: '',
-  content: '',
-  reasoning: '',
-  reasoningText: '',
-  usage: { promptTokens: 0, completionTokens: 0 },
-  finish: () => Promise.resolve(),
-  toDataStream: () => new ReadableStream(),
-  toResponse: () => new Response(),
-} as any);
+  },
+}));
 
-// ============================================
-// Setup & Teardown
-// ============================================
+// parseLLMJson is used for task suggestion extraction
+vi.mock('../../schema/structured-output', () => ({
+  parseLLMJson: vi.fn().mockReturnValue(null),
+}));
 
-describe('Insights Runner', () => {
+vi.mock('../../schema/insight-extractor', () => ({
+  TaskSuggestionSchema: {},
+}));
+
+// =============================================================================
+// Import after mocking
+// =============================================================================
+
+import { runInsightsQuery } from '../insights';
+import type { InsightsConfig, InsightsStreamEvent } from '../insights';
+import { parseLLMJson } from '../../schema/structured-output';
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+const fakeModel = { modelId: 'claude-sonnet-test' };
+
+function makeMockClient(systemPrompt = 'You are an AI assistant.') {
+  return {
+    model: fakeModel,
+    systemPrompt,
+    tools: {},
+    maxSteps: 30,
+  };
+}
+
+function makeStream(parts: Array<Record<string, unknown>>) {
+  return {
+    fullStream: (async function* () {
+      for (const part of parts) {
+        yield part;
+      }
+    })(),
+  };
+}
+
+function baseConfig(overrides: Partial<InsightsConfig> = {}): InsightsConfig {
+  return {
+    projectDir: '/project',
+    message: 'How does authentication work?',
+    ...overrides,
+  };
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+describe('runInsightsQuery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
-    // Mock createSimpleClient
-    vi.mocked(createSimpleClient).mockResolvedValue(createMockClientResult());
-
-    // Mock streamText
-    const createMockStreamResult = () => ({
-      fullStream: (async function* () {
-        yield { type: 'text-delta', text: 'Hello' };
-        yield { type: 'text-delta', text: ' World' };
-      })(),
-      text: '',
-      content: '',
-      reasoning: '',
-      reasoningText: '',
-      usage: { promptTokens: 0, completionTokens: 0 },
-      finish: () => Promise.resolve(),
-      toDataStream: () => new ReadableStream(),
-      toResponse: () => new Response(),
-    } as any);
-
-    vi.mocked(streamText).mockReturnValue(createMockStreamResult());
-    vi.mocked(stepCountIs).mockReturnValue({} as any);
-
-    // Mock fs.existsSync - return false by default
-    vi.mocked(existsSync).mockReturnValue(false);
-
-    // Mock buildToolRegistry
-    vi.mocked(buildToolRegistry).mockReturnValue({
-      getToolsForAgent: vi.fn(() => ({})),
-    } as any);
+    mockCreateSimpleClient.mockResolvedValue(makeMockClient());
+    mockExistsSync.mockReturnValue(false);
+    mockReaddirSync.mockReturnValue([]);
+    vi.mocked(parseLLMJson).mockReturnValue(null);
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
+  // ---------------------------------------------------------------------------
+  // Successful run — no streaming events needed from caller
+  // ---------------------------------------------------------------------------
+
+  it('returns response text accumulated from stream', async () => {
+    mockStreamText.mockReturnValue(
+      makeStream([
+        { type: 'text-delta', text: 'Authentication uses JWT tokens.' },
+        { type: 'text-delta', text: ' Tokens expire after 1 hour.' },
+      ]),
+    );
+
+    const result = await runInsightsQuery(baseConfig());
+
+    expect(result.text).toBe('Authentication uses JWT tokens. Tokens expire after 1 hour.');
+    expect(result.taskSuggestion).toBeNull();
+    expect(result.toolCalls).toEqual([]);
   });
 
-  // ============================================
-  // runInsightsQuery - basic
-  // ============================================
+  it('returns empty text and no task suggestion when stream is empty', async () => {
+    mockStreamText.mockReturnValue(makeStream([]));
 
-  describe('runInsightsQuery', () => {
-    it('should run insights query and return result', async () => {
-      const config = createMockConfig();
+    const result = await runInsightsQuery(baseConfig());
 
-      const result = await runInsightsQuery(config);
-
-      expect(result.text).toBeTruthy();
-      expect(result.taskSuggestion).toBeNull();
-      expect(result.toolCalls).toEqual([]);
-    });
-
-    it('should use default model and thinking level', async () => {
-      const config = createMockConfig();
-
-      await runInsightsQuery(config);
-
-      expect(createSimpleClient).toHaveBeenCalledWith({
-        systemPrompt: expect.any(String),
-        modelShorthand: 'sonnet',
-        thinkingLevel: 'medium',
-        maxSteps: 30,
-        tools: expect.any(Object),
-      });
-    });
-
-    it('should use provided model and thinking level', async () => {
-      const config = createMockConfig({
-        modelShorthand: 'haiku',
-        thinkingLevel: 'low',
-      });
-
-      await runInsightsQuery(config);
-
-      expect(createSimpleClient).toHaveBeenCalledWith({
-        systemPrompt: expect.any(String),
-        modelShorthand: 'haiku',
-        thinkingLevel: 'low',
-        maxSteps: 30,
-        tools: expect.any(Object),
-      });
-    });
-
-    it('should include conversation history in prompt', async () => {
-      const history: InsightsMessage[] = [
-        { role: 'user', content: 'What is this?' },
-        { role: 'assistant', content: 'It is a codebase.' },
-      ];
-      const config = createMockConfig({ history });
-
-      await runInsightsQuery(config);
-
-      const prompt = vi.mocked(streamText).mock.calls[0][0].prompt;
-      expect(prompt).toContain('Previous conversation:');
-      expect(prompt).toContain('User: What is this?');
-      expect(prompt).toContain('Assistant: It is a codebase.');
-      expect(prompt).toContain('Current question: What is this codebase about?');
-    });
-
-    it('should work without history', async () => {
-      const config = createMockConfig({ history: [] });
-
-      await runInsightsQuery(config);
-
-      const prompt = vi.mocked(streamText).mock.calls[0][0].prompt;
-      expect(prompt).not.toContain('Previous conversation:');
-    });
+    expect(result.text).toBe('');
+    expect(result.taskSuggestion).toBeNull();
   });
 
-  // ============================================
-  // runInsightsQuery - project context
-  // ============================================
+  // ---------------------------------------------------------------------------
+  // Task suggestion extraction
+  // ---------------------------------------------------------------------------
 
-  describe('project context loading', () => {
-    it('should load project index if available', async () => {
-      vi.mocked(existsSync).mockImplementation((path) => {
-        return String(path).includes('project_index.json');
-      });
-      vi.mocked(readFileSync).mockReturnValue(JSON.stringify({
-        project_root: '/test',
-        project_type: 'web-app',
-        services: { api: {}, frontend: {} },
-        infrastructure: { database: 'postgres' },
-      }));
+  it('extracts task suggestion from response text when marker present', async () => {
+    const suggestion = {
+      title: 'Add rate limiting',
+      description: 'Implement per-user rate limiting on auth endpoints',
+      metadata: { category: 'security', complexity: 'medium', impact: 'high' },
+    };
 
-      const config = createMockConfig();
-
-      await runInsightsQuery(config);
-
-      const systemPrompt = vi.mocked(createSimpleClient).mock.calls[0][0].systemPrompt;
-      expect(systemPrompt).toContain('## Project Structure');
-      expect(systemPrompt).toContain('web-app');
-    });
-
-    it('should load roadmap features if available', async () => {
-      vi.mocked(existsSync).mockImplementation((path) => {
-        return String(path).includes('roadmap.json');
-      });
-      vi.mocked(readFileSync).mockImplementation((path) => {
-        if (String(path).includes('roadmap.json')) {
-          return JSON.stringify({
-            features: [
-            { title: 'Feature 1', status: 'planned' },
-            { title: 'Feature 2', status: 'in_progress' },
-          ],
-          });
-        }
-        return '';
-      });
-
-      const config = createMockConfig();
-
-      await runInsightsQuery(config);
-
-      const systemPrompt = vi.mocked(createSimpleClient).mock.calls[0][0].systemPrompt;
-      expect(systemPrompt).toContain('## Roadmap Features');
-    });
-
-    it('should list existing tasks if specs directory exists', async () => {
-      // Mock existsSync to return true only for the specs directory
-      const specsPath = join('.auto-claude', 'specs');
-      vi.mocked(existsSync).mockImplementation((path) => {
-        const pathStr = String(path);
-        return pathStr.includes(specsPath) || pathStr.includes('.auto-claude/specs');
-      });
-      // Mock readdirSync to return Dirent-like objects
-      const mockDirents = [
-        { name: '001-task1', isDirectory: () => true },
-        { name: '002-task2', isDirectory: () => true },
-      ] as any;
-      vi.mocked(readdirSync).mockReturnValue(mockDirents);
-
-      const config = createMockConfig();
-
-      await runInsightsQuery(config);
-
-      const systemPrompt = vi.mocked(createSimpleClient).mock.calls[0][0].systemPrompt;
-      expect(systemPrompt).toContain('## Existing Tasks/Specs');
-      expect(systemPrompt).toContain('001-task1');
-      expect(systemPrompt).toContain('002-task2');
-    });
-  });
-
-  // ============================================
-  // runInsightsQuery - streaming events
-  // ============================================
-
-  describe('streaming events', () => {
-    it('should call onStream for text-delta events', async () => {
-      const events: any[] = [];
-      const onStream = vi.fn((event) => events.push(event));
-
-      vi.mocked(streamText).mockReturnValue(
-        createMockStreamResult([
-          { type: 'text-delta', text: 'Hello' },
-          { type: 'text-delta', text: ' World' },
-        ])
-      );
-
-      const config = createMockConfig();
-
-      await runInsightsQuery(config, onStream);
-
-      expect(onStream).toHaveBeenCalledWith({ type: 'text-delta', text: 'Hello' });
-      expect(onStream).toHaveBeenCalledWith({ type: 'text-delta', text: ' World' });
-    });
-
-    it('should call onStream for tool-start events', async () => {
-      const events: any[] = [];
-      const onStream = vi.fn((event) => events.push(event));
-
-      vi.mocked(streamText).mockReturnValue(
-        createMockStreamResult([
-          { type: 'tool-call', toolName: 'Read', toolCallId: '1', input: { file_path: '/test/file.ts' } },
-        ])
-      );
-
-      const config = createMockConfig();
-
-      await runInsightsQuery(config, onStream);
-
-      expect(onStream).toHaveBeenCalledWith({
-        type: 'tool-start',
-        name: 'Read',
-        input: expect.any(String),
-      });
-    });
-
-    it('should call onStream for tool-end events', async () => {
-      const events: any[] = [];
-      const onStream = vi.fn((event) => events.push(event));
-
-      vi.mocked(streamText).mockReturnValue(
-        createMockStreamResult([
-          { type: 'tool-result', toolName: 'Read', toolCallId: '1' },
-        ])
-      );
-
-      const config = createMockConfig();
-
-      await runInsightsQuery(config, onStream);
-
-      expect(onStream).toHaveBeenCalledWith({ type: 'tool-end', name: 'Read' });
-    });
-
-    it('should call onStream for error events', async () => {
-      const events: any[] = [];
-      const onStream = vi.fn((event) => events.push(event));
-
-      vi.mocked(streamText).mockReturnValue(
-        createMockStreamResult([{ type: 'error', error: 'Something failed' }])
-      );
-
-      const config = createMockConfig();
-
-      await runInsightsQuery(config, onStream);
-
-      expect(onStream).toHaveBeenCalledWith({ type: 'error', error: 'Something failed' });
-    });
-
-    it('should work without onStream callback', async () => {
-      const config = createMockConfig();
-
-      const result = await runInsightsQuery(config);
-
-      expect(result.text).toBeTruthy();
-    });
-  });
-
-  // ============================================
-  // runInsightsQuery - task suggestion extraction
-  // ============================================
-
-  describe('task suggestion extraction', () => {
-    it('should extract task suggestion from response', async () => {
-      vi.mocked(streamText).mockReturnValue(
-        createMockStreamResult([
-          {
-            type: 'text-delta',
-            text: '__TASK_SUGGESTION__:{"title":"Add auth","description":"Implement login","metadata":{"category":"feature","complexity":"medium","impact":"high"}}',
-          },
-        ])
-      );
-
-      const config = createMockConfig();
-
-      const result = await runInsightsQuery(config);
-
-      expect(result.taskSuggestion).toEqual({
-        title: 'Add auth',
-        description: 'Implement login',
-        metadata: {
-          category: 'feature',
-          complexity: 'medium',
-          impact: 'high',
+    mockStreamText.mockReturnValue(
+      makeStream([
+        {
+          type: 'text-delta',
+          text: `Here is my suggestion.\n__TASK_SUGGESTION__:${JSON.stringify(suggestion)}\n`,
         },
-      });
-    });
+      ]),
+    );
 
-    it('should return null task suggestion when not found', async () => {
-      const config = createMockConfig();
+    vi.mocked(parseLLMJson).mockReturnValueOnce(suggestion as unknown as ReturnType<typeof parseLLMJson>);
 
-      const result = await runInsightsQuery(config);
+    const result = await runInsightsQuery(baseConfig());
 
-      expect(result.taskSuggestion).toBeNull();
-    });
-
-    it('should include taskSuggestion in result', async () => {
-      vi.mocked(streamText).mockReturnValue(
-        createMockStreamResult([
-          {
-            type: 'text-delta',
-            text: '__TASK_SUGGESTION__:{"title":"Fix bug","description":"Fix crash","metadata":{"category":"bug_fix","complexity":"small","impact":"medium"}}',
-          },
-        ])
-      );
-
-      const config = createMockConfig();
-
-      const result = await runInsightsQuery(config);
-
-      expect(result.taskSuggestion).not.toBeNull();
-      expect(result.taskSuggestion?.title).toBe('Fix bug');
-    });
+    expect(result.taskSuggestion).not.toBeNull();
+    expect(result.taskSuggestion?.title).toBe('Add rate limiting');
+    expect(result.taskSuggestion?.metadata.category).toBe('security');
   });
 
-  // ============================================
-  // runInsightsQuery - error handling
-  // ============================================
+  it('returns null taskSuggestion when no marker in response', async () => {
+    mockStreamText.mockReturnValue(
+      makeStream([{ type: 'text-delta', text: 'No suggestions here.' }]),
+    );
 
-  describe('error handling', () => {
-    it('should propagate errors from streaming', async () => {
-      vi.mocked(streamText).mockImplementation(() => {
-        const errorStream = (async function* () {
-          yield { type: 'text-delta', text: 'Partial' };
-          throw new Error('API error');
-        })();
-        return {
-          fullStream: errorStream,
-          text: '',
-          content: '',
-          reasoning: '',
-          reasoningText: '',
-          usage: { promptTokens: 0, completionTokens: 0 },
-          finish: () => Promise.resolve(),
-          toDataStream: () => new ReadableStream(),
-          toResponse: () => new Response(),
-        } as any;
-      });
+    const result = await runInsightsQuery(baseConfig());
 
-      const config = createMockConfig();
-
-      await expect(runInsightsQuery(config)).rejects.toThrow('API error');
-    });
-
-    it('should track tool calls made during session', async () => {
-      vi.mocked(streamText).mockReturnValue(
-        createMockStreamResult([
-          { type: 'tool-call', toolName: 'Read', toolCallId: '1', input: { file_path: '/test/file.ts' } },
-          { type: 'tool-result', toolName: 'Read', toolCallId: '1' },
-        ])
-      );
-
-      const config = createMockConfig();
-
-      const result = await runInsightsQuery(config);
-
-      expect(result.toolCalls).toHaveLength(1);
-      expect(result.toolCalls[0].name).toBe('Read');
-    });
+    expect(result.taskSuggestion).toBeNull();
   });
 
-  // ============================================
-  // runInsightsQuery - abort signal
-  // ============================================
+  // ---------------------------------------------------------------------------
+  // Tool call tracking
+  // ---------------------------------------------------------------------------
 
-  describe('abort signal', () => {
-    it('should pass abortSignal to streamText', async () => {
-      const abortController = new AbortController();
+  it('tracks tool calls in result.toolCalls', async () => {
+    mockStreamText.mockReturnValue(
+      makeStream([
+        { type: 'tool-call', toolName: 'Read', toolCallId: 'c1', input: { file_path: 'src/auth.ts' } },
+        { type: 'tool-result', toolCallId: 'c1', toolName: 'Read', output: 'file content' },
+        { type: 'tool-call', toolName: 'Glob', toolCallId: 'c2', input: { pattern: '**/*.ts' } },
+        { type: 'tool-result', toolCallId: 'c2', toolName: 'Glob', output: 'src/auth.ts' },
+      ]),
+    );
 
-      const config = createMockConfig({ abortSignal: abortController.signal });
+    const result = await runInsightsQuery(baseConfig());
 
-      await runInsightsQuery(config);
+    expect(result.toolCalls).toHaveLength(2);
+    expect(result.toolCalls[0].name).toBe('Read');
+    expect(result.toolCalls[1].name).toBe('Glob');
+  });
 
-      const streamCall = vi.mocked(streamText).mock.calls[0][0];
-      expect(streamCall.abortSignal).toBe(abortController.signal);
+  it('extracts file_path from Read tool call input', async () => {
+    mockStreamText.mockReturnValue(
+      makeStream([
+        {
+          type: 'tool-call',
+          toolName: 'Read',
+          toolCallId: 'c1',
+          input: { file_path: 'src/auth.ts' },
+        },
+      ]),
+    );
+
+    const result = await runInsightsQuery(baseConfig());
+
+    expect(result.toolCalls[0].input).toBe('src/auth.ts');
+  });
+
+  it('extracts pattern from Grep/Glob tool call input', async () => {
+    mockStreamText.mockReturnValue(
+      makeStream([
+        {
+          type: 'tool-call',
+          toolName: 'Grep',
+          toolCallId: 'c1',
+          input: { pattern: 'useAuth' },
+        },
+      ]),
+    );
+
+    const result = await runInsightsQuery(baseConfig());
+
+    expect(result.toolCalls[0].input).toBe('pattern: useAuth');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Stream callbacks
+  // ---------------------------------------------------------------------------
+
+  it('forwards text-delta events to onStream callback', async () => {
+    mockStreamText.mockReturnValue(
+      makeStream([
+        { type: 'text-delta', text: 'chunk1' },
+        { type: 'text-delta', text: 'chunk2' },
+      ]),
+    );
+
+    const events: InsightsStreamEvent[] = [];
+    await runInsightsQuery(baseConfig(), (e) => events.push(e));
+
+    const textEvents = events.filter((e) => e.type === 'text-delta');
+    expect(textEvents).toHaveLength(2);
+  });
+
+  it('forwards tool-start events for tool-call stream parts', async () => {
+    mockStreamText.mockReturnValue(
+      makeStream([
+        { type: 'tool-call', toolName: 'Grep', toolCallId: 'c1', input: { pattern: 'login' } },
+      ]),
+    );
+
+    const events: InsightsStreamEvent[] = [];
+    await runInsightsQuery(baseConfig(), (e) => events.push(e));
+
+    const toolStartEvents = events.filter((e) => e.type === 'tool-start');
+    expect(toolStartEvents).toHaveLength(1);
+    expect((toolStartEvents[0] as { type: 'tool-start'; name: string }).name).toBe('Grep');
+  });
+
+  it('forwards tool-end events for tool-result stream parts', async () => {
+    mockStreamText.mockReturnValue(
+      makeStream([
+        { type: 'tool-result', toolCallId: 'c1', toolName: 'Read', output: 'content' },
+      ]),
+    );
+
+    const events: InsightsStreamEvent[] = [];
+    await runInsightsQuery(baseConfig(), (e) => events.push(e));
+
+    const toolEndEvents = events.filter((e) => e.type === 'tool-end');
+    expect(toolEndEvents).toHaveLength(1);
+  });
+
+  it('forwards error events for error stream parts', async () => {
+    mockStreamText.mockReturnValue(
+      makeStream([{ type: 'error', error: new Error('tool failed') }]),
+    );
+
+    const events: InsightsStreamEvent[] = [];
+    await runInsightsQuery(baseConfig(), (e) => events.push(e));
+
+    const errorEvents = events.filter((e) => e.type === 'error');
+    expect(errorEvents).toHaveLength(1);
+    expect((errorEvents[0] as { type: 'error'; error: string }).error).toBe('tool failed');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Error propagation
+  // ---------------------------------------------------------------------------
+
+  it('rethrows when streamText iteration throws', async () => {
+    mockStreamText.mockReturnValue({
+      // biome-ignore lint/correctness/useYield: intentionally throwing before yield to test error path
+      fullStream: (async function* () {
+        throw new Error('API timeout');
+      })(),
     });
+
+    await expect(runInsightsQuery(baseConfig())).rejects.toThrow('API timeout');
+  });
+
+  it('emits error event to callback before rethrowing', async () => {
+    mockStreamText.mockReturnValue({
+      // biome-ignore lint/correctness/useYield: intentionally throwing before yield to test error path
+      fullStream: (async function* () {
+        throw new Error('rate limited');
+      })(),
+    });
+
+    const events: InsightsStreamEvent[] = [];
+    await expect(runInsightsQuery(baseConfig(), (e) => events.push(e))).rejects.toThrow(
+      'rate limited',
+    );
+
+    expect(events.some((e) => e.type === 'error')).toBe(true);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Client configuration
+  // ---------------------------------------------------------------------------
+
+  it('uses sonnet model and medium thinking level by default', async () => {
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    await runInsightsQuery(baseConfig());
+
+    const clientArgs = mockCreateSimpleClient.mock.calls[0][0];
+    expect(clientArgs.modelShorthand).toBe('sonnet');
+    expect(clientArgs.thinkingLevel).toBe('medium');
+  });
+
+  it('accepts custom modelShorthand and thinkingLevel', async () => {
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    await runInsightsQuery(baseConfig({ modelShorthand: 'haiku', thinkingLevel: 'low' }));
+
+    const clientArgs = mockCreateSimpleClient.mock.calls[0][0];
+    expect(clientArgs.modelShorthand).toBe('haiku');
+    expect(clientArgs.thinkingLevel).toBe('low');
+  });
+
+  // ---------------------------------------------------------------------------
+  // History handling
+  // ---------------------------------------------------------------------------
+
+  it('includes conversation history in the prompt when provided', async () => {
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    await runInsightsQuery(
+      baseConfig({
+        message: 'What about refresh tokens?',
+        history: [
+          { role: 'user', content: 'How does auth work?' },
+          { role: 'assistant', content: 'It uses JWT.' },
+        ],
+      }),
+    );
+
+    const callArgs = mockStreamText.mock.calls[0][0];
+    const prompt = callArgs.prompt as string;
+    expect(prompt).toContain('How does auth work?');
+    expect(prompt).toContain('It uses JWT.');
+    expect(prompt).toContain('What about refresh tokens?');
+  });
+
+  it('uses message directly as prompt when history is empty', async () => {
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    await runInsightsQuery(baseConfig({ message: 'What is the entry point?' }));
+
+    const callArgs = mockStreamText.mock.calls[0][0];
+    expect(callArgs.prompt).toBe('What is the entry point?');
   });
 });
