@@ -6,3 +6,6 @@ export { ReviewFindings } from './ReviewFindings';
 export { FindingItem } from './FindingItem';
 export { FindingsSummary } from './FindingsSummary';
 export { SeverityGroupHeader } from './SeverityGroupHeader';
+export { MRFilterBar } from './MRFilterBar';
+export { MRStatusIndicator, CompactMRStatusIndicator } from './StatusIndicator';
+export { MRLogs } from './MRLogs';
