@@ -143,21 +143,25 @@ export function useGitLabMRFiltering(
 
       // Status filter (multi-select)
       if (filters.statuses.length > 0) {
-        const reviewInfo = getReviewStateForMR(mr.iid);
-        const computedStatus = getMRComputedStatus(reviewInfo);
+        // 'all' acts as a wildcard - include all MRs when 'all' is selected
+        const activeStatuses = filters.statuses.filter(s => s !== 'all');
+        if (activeStatuses.length > 0) {
+          const reviewInfo = getReviewStateForMR(mr.iid);
+          const computedStatus = getMRComputedStatus(reviewInfo);
 
-        // Check if MR matches any of the selected statuses
-        const matchesStatus = filters.statuses.some(status => {
-          // Special handling: 'posted' should match any posted state
-          if (status === 'posted') {
-            const hasPosted = reviewInfo?.result?.hasPostedFindings;
-            return hasPosted;
+          // Check if MR matches any of the selected statuses
+          const matchesStatus = activeStatuses.some(status => {
+            // Special handling: 'posted' should match any posted state
+            if (status === 'posted') {
+              const hasPosted = reviewInfo?.result?.hasPostedFindings;
+              return hasPosted;
+            }
+            return computedStatus === status;
+          });
+
+          if (!matchesStatus) {
+            return false;
           }
-          return computedStatus === status;
-        });
-
-        if (!matchesStatus) {
-          return false;
         }
       }
 
