@@ -204,8 +204,8 @@ export function useGitLabMRFiltering(
     setFiltersState(prev => ({ ...prev, searchQuery: query }));
   }, []);
 
-  const setContributors = useCallback((contributors: string[]) => {
-    setFiltersState(prev => ({ ...prev, contributors }));
+  const setContributors = useCallback((selected: string[]) => {
+    setFiltersState(prev => ({ ...prev, contributors: selected }));
   }, []);
 
   const setStatuses = useCallback((statuses: GitLabMRStatusFilter[]) => {

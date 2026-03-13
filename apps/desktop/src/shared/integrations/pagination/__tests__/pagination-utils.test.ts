@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateHasMore, appendWithoutDuplicates } from '../pagination-utils';
+import { calculateHasMore, appendWithoutDuplicates, getNextPage, resetPagination } from '../pagination-utils';
 
 describe('pagination-utils', () => {
   it('should calculate hasMore correctly', () => {
@@ -26,5 +26,17 @@ describe('pagination-utils', () => {
     const newItems = [{ id: 1 }, { id: 2 }];
     const result = appendWithoutDuplicates(existing, newItems, 'id');
     expect(result).toHaveLength(2);
+  });
+
+  it('should get next page', () => {
+    expect(getNextPage(1)).toBe(2);
+    expect(getNextPage(5)).toBe(6);
+    expect(getNextPage(0)).toBe(1);
+  });
+
+  it('should reset pagination', () => {
+    const result = resetPagination();
+    expect(result.currentPage).toBe(1);
+    expect(result.hasMore).toBe(true);
   });
 });
