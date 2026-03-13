@@ -310,11 +310,15 @@ export function useGitLabMRs(projectId?: string, options: UseGitLabMRsOptions = 
 
     try {
       const result = await window.electronAPI.deleteGitLabMRReview(projectId, mrIid, noteId);
-      if (result.success) {
+      if (result.success && result.data?.deleted) {
         // Clear review from store
         useMRReviewStore.getState().clearMRReview(projectId, mrIid);
+        return true;
       }
-      return result.success;
+      if (!result.success) {
+        setError(result.error || 'Failed to delete review');
+      }
+      return false;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete review');
       return false;

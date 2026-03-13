@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useInvestigationStore } from '../investigation-store';
-import type { GitLabInvestigationStatus, GitLabInvestigationResult } from '../../../../shared/types';
+import type { GitLabInvestigationStatus, GitLabInvestigationResult } from '@shared/types';
 
 describe('investigation-store', () => {
   beforeEach(() => {
