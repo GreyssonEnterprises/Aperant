@@ -35,7 +35,14 @@ const createMockToolContext = (): ToolContext => ({
   cwd: '/test/cwd',
   projectDir: '/test/project',
   specDir: '/test/spec',
-  securityProfile: 'default',
+  securityProfile: {
+    baseCommands: new Set(),
+    stackCommands: new Set(),
+    scriptCommands: new Set(),
+    customCommands: new Set(),
+    customScripts: { shellScripts: [] },
+    getAllAllowedCommands: () => new Set(),
+  },
 });
 
 const createMockAgentClientConfig = (

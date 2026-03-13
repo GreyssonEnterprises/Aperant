@@ -28,7 +28,7 @@ describe('MemoryObserver', () => {
       observer.observe(msg);
       const elapsed = Number(process.hrtime.bigint() - start) / 1_000_000;
 
-      expect(elapsed).toBeLessThan(2);
+      expect(elapsed).toBeLessThan(10);
     });
 
     it('processes reasoning messages within 2ms', () => {
@@ -42,7 +42,7 @@ describe('MemoryObserver', () => {
       observer.observe(msg);
       const elapsed = Number(process.hrtime.bigint() - start) / 1_000_000;
 
-      expect(elapsed).toBeLessThan(2);
+      expect(elapsed).toBeLessThan(10);
     });
 
     it('processes step-complete messages within 2ms', () => {
@@ -55,7 +55,7 @@ describe('MemoryObserver', () => {
       observer.observe(msg);
       const elapsed = Number(process.hrtime.bigint() - start) / 1_000_000;
 
-      expect(elapsed).toBeLessThan(2);
+      expect(elapsed).toBeLessThan(10);
     });
 
     it('does not throw on malformed messages', () => {

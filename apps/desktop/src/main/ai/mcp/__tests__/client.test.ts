@@ -177,7 +177,13 @@ describe('MCP Client', () => {
       vi.mocked(createMCPClient).mockResolvedValue({
         tools: vi.fn().mockResolvedValue(mockTools),
         close: vi.fn().mockResolvedValue(undefined),
-      });
+        listTools: vi.fn().mockResolvedValue([]),
+        toolsFromDefinitions: vi.fn().mockResolvedValue({}),
+        listResources: vi.fn().mockResolvedValue([]),
+        readResource: vi.fn().mockResolvedValue(''),
+        listPrompts: vi.fn().mockResolvedValue([]),
+        getPrompt: vi.fn().mockResolvedValue({ messages: [] }),
+      } as any);
 
       const config = createMockServerConfig();
       const result = await createMcpClient(config);
@@ -555,7 +561,13 @@ describe('MCP Client', () => {
       vi.mocked(createMCPClient).mockResolvedValue({
         tools: vi.fn().mockRejectedValue(new Error('Tools fetch failed')),
         close: vi.fn().mockResolvedValue(undefined),
-      });
+        listTools: vi.fn().mockResolvedValue([]),
+        toolsFromDefinitions: vi.fn().mockResolvedValue({}),
+        listResources: vi.fn().mockResolvedValue([]),
+        readResource: vi.fn().mockResolvedValue(''),
+        listPrompts: vi.fn().mockResolvedValue([]),
+        getPrompt: vi.fn().mockResolvedValue({ messages: [] }),
+      } as any);
 
       const config = createMockServerConfig();
 
