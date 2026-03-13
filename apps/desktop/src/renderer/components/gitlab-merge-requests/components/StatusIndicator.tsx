@@ -163,8 +163,13 @@ export function MRStatusIndicator({
 }: MRStatusIndicatorProps) {
   const { t } = useTranslation('common');
 
-  // Don't render if no status data is available
-  if (!checksStatus && !reviewsStatus && !mergeStatus) {
+  // Check if any renderable status data is available
+  const showChecks = Boolean(checksStatus && checksStatus !== 'none');
+  const showReviews = Boolean(reviewsStatus && reviewsStatus !== 'none');
+  const showMerge = Boolean(mergeStatus);
+
+  // Don't render if no renderable status data is available
+  if (!showChecks && !showReviews && !showMerge) {
     return null;
   }
 
@@ -174,9 +179,9 @@ export function MRStatusIndicator({
   return (
     <div className={cn('flex items-center gap-2', className)}>
       {/* CI Status */}
-      {checksStatus && checksStatus !== 'none' && (
+      {showChecks && (
         <div className="flex items-center gap-1" title={t(`mrStatus.ci.${checksStatus}`)}>
-          <CIStatusIcon status={checksStatus} />
+          <CIStatusIcon status={checksStatus!} />
           {!compact && (
             <span className="text-xs text-muted-foreground">
               {t(`mrStatus.ci.${checksStatus}`)}
@@ -186,11 +191,11 @@ export function MRStatusIndicator({
       )}
 
       {/* Review Status */}
-      {reviewsStatus && reviewsStatus !== 'none' && (
+      {showReviews && (
         compact ? (
-          <ReviewStatusBadge status={reviewsStatus} className="px-1.5 py-0" />
+          <ReviewStatusBadge status={reviewsStatus!} className="px-1.5 py-0" />
         ) : (
-          <ReviewStatusBadge status={reviewsStatus} />
+          <ReviewStatusBadge status={reviewsStatus!} />
         )
       )}
 
