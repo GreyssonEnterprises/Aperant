@@ -79,7 +79,7 @@ export default defineConfig({
           'ai/agent/worker': resolve(__dirname, 'src/main/ai/agent/worker.ts'),
         },
         // Only node-pty needs to be external (native module rebuilt by electron-builder)
-        external: ['@lydell/node-pty']
+        external: ['@lydell/node-pty', '@libsql/client']
       }
     }
   },
