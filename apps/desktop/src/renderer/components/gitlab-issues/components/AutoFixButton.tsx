@@ -8,10 +8,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Wand2, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '../../ui/button';
-import { Progress } from '../../ui/progress';
-import type { GitLabIssue } from '../../../../shared/types';
-import type { GitLabAutoFixConfig, GitLabAutoFixProgress, GitLabAutoFixQueueItem } from '../../../../shared/types';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import type { GitLabIssue, GitLabAutoFixConfig, GitLabAutoFixProgress, GitLabAutoFixQueueItem } from '@shared/types';
 
 interface GitLabAutoFixButtonProps {
   issue: GitLabIssue;
@@ -63,8 +62,8 @@ export function GitLabAutoFixButton({
     );
 
     const cleanupError = window.electronAPI.onGitLabAutoFixError?.(
-      (eventProjectId: string, error: string) => {
-        if (eventProjectId === projectId) {
+      (eventProjectId: string, issueIid: number, error: string) => {
+        if (eventProjectId === projectId && issueIid === issue.iid) {
           setError(error);
           setProgress(null);
           setIsStarting(false);

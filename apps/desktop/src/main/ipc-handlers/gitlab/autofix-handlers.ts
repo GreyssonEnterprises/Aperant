@@ -304,9 +304,10 @@ function sendProgress(
 function sendError(
   mainWindow: BrowserWindow,
   projectId: string,
+  issueIid: number,
   error: string
 ): void {
-  mainWindow.webContents.send(IPC_CHANNELS.GITLAB_AUTOFIX_ERROR, projectId, error);
+  mainWindow.webContents.send(IPC_CHANNELS.GITLAB_AUTOFIX_ERROR, projectId, issueIid, error);
 }
 
 /**
@@ -498,7 +499,7 @@ export function registerAutoFixHandlers(
         });
       } catch (error) {
         debugLog('Auto-fix failed', { issueIid, error: error instanceof Error ? error.message : error });
-        sendError(mainWindow, projectId, error instanceof Error ? error.message : 'Failed to start auto-fix');
+        sendError(mainWindow, projectId, issueIid, error instanceof Error ? error.message : 'Failed to start auto-fix');
       }
     }
   );

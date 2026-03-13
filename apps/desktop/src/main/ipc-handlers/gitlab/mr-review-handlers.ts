@@ -1257,11 +1257,15 @@ export function registerMRReviewHandlers(
    */
   ipcMain.handle(
     IPC_CHANNELS.GITLAB_MR_MEMORY_GET,
-    async (_event, projectId: string, mrIid: number): Promise<IPCResult<any[]>> => {
+    async (_event, projectId: string, mrIid: number): Promise<IPCResult<unknown[]>> => {
       debugLog('memoryGet handler called', { projectId, mrIid });
 
       // TODO: Implement memory retrieval from Graphiti memory system
-      return { success: true, data: [] };
+      return {
+        success: false,
+        error: 'Memory feature not yet implemented',
+        code: 'NOT_IMPLEMENTED'
+      } as IPCResult<unknown[]>;
     }
   );
 
@@ -1270,11 +1274,15 @@ export function registerMRReviewHandlers(
    */
   ipcMain.handle(
     IPC_CHANNELS.GITLAB_MR_MEMORY_SEARCH,
-    async (_event, projectId: string, query: string): Promise<IPCResult<any[]>> => {
+    async (_event, projectId: string, query: string): Promise<IPCResult<unknown[]>> => {
       debugLog('memorySearch handler called', { projectId, query });
 
       // TODO: Implement memory search from Graphiti memory system
-      return { success: true, data: [] };
+      return {
+        success: false,
+        error: 'Memory feature not yet implemented',
+        code: 'NOT_IMPLEMENTED'
+      } as IPCResult<unknown[]>;
     }
   );
 
