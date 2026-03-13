@@ -133,7 +133,7 @@ export async function runPreflightCheck(projectId: string): Promise<void> {
 
   try {
     const result = await window.electronAPI.runReleasePreflightCheck(projectId, version);
-    if (result.success && result.data && typeof result.data === 'object') {
+    if (result.success && result.data && typeof result.data === 'object' && !Array.isArray(result.data)) {
       store.setPreflightStatus(result.data as ReleasePreflightStatus);
     } else {
       store.setError(result.error || 'Failed to run pre-flight checks');

@@ -318,7 +318,7 @@ function SortDropdown({
   options: typeof SORT_OPTIONS;
   title: string;
 }) {
-  const { t } = useTranslation('common');
+  const { t } = useTranslation('gitlab');
   const [isOpen, setIsOpen] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
 
@@ -435,7 +435,7 @@ export function MRFilterBar({
   onSortChange,
   onClearFilters,
 }: MRFilterBarProps) {
-  const { t } = useTranslation('common');
+  const { t } = useTranslation('gitlab');
 
   // Get status option by value
   const getStatusOption = (value: GitLabMRStatusFilter) =>
@@ -558,7 +558,7 @@ export function MRFilterBar({
             onClick={onClearFilters}
             className="h-8 px-2 lg:px-3 text-muted-foreground hover:text-foreground ml-auto"
           >
-            <span className="hidden lg:inline mr-2">{t('mrReview.reset')}</span>
+            <span className="hidden lg:inline mr-2">{t('mrFiltering.reset')}</span>
             <X className="h-4 w-4" />
           </Button>
         )}
