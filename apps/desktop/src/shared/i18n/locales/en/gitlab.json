@@ -274,6 +274,7 @@
       "largest": "Largest"
     },
     "logs": {
+      "mrLabel": "MR #{{iid}}",
       "agentActivity": "Agent Activity",
       "showMore": "Show {{count}} more",
       "hideMore": "Hide {{count}} more",

@@ -284,6 +284,7 @@
       "largest": "Plus grand"
     },
     "logs": {
+      "mrLabel": "MR n°{{iid}}",
       "agentActivity": "Activité de l'agent",
       "showMore": "Afficher {{count}} autres",
       "hideMore": "Masquer {{count}} autres",

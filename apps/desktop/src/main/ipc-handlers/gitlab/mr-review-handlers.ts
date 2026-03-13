@@ -1353,8 +1353,9 @@ export function registerMRReviewHandlers(
 
         try {
           const stateParam = state === 'all' ? undefined : state;
+          // Over-fetch by 1 to reliably determine if there are more pages
           const queryParams = new URLSearchParams({
-            per_page: '20',
+            per_page: '21',
             page: String(page),
             ...(stateParam && { state: stateParam })
           });
@@ -1365,14 +1366,16 @@ export function registerMRReviewHandlers(
             `/projects/${encodedProject}/merge_requests?${queryParams.toString()}`
           ) as any[];
 
-          // Check if there might be more MRs if the returned count matches the page size
-          const hasMore = mrs.length === 20;
+          // If we got 21 items, there's definitely more. Otherwise we're at the end.
+          const hasMore = mrs.length > 20;
+          // Only return the requested page size (20 items)
+          const returnMrs = hasMore ? mrs.slice(0, 20) : mrs;
 
           return {
             success: true,
             data: {
-              mrs,
-              hasMore
+            mrs: returnMrs,
+            hasMore
             }
           };
         } catch (error) {

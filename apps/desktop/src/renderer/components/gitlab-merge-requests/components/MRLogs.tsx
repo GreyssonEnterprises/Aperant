@@ -191,7 +191,7 @@ export function MRLogs({ mrIid, logs, isLoading, isStreaming = false }: MRLogsPr
             {/* Logs header */}
             <div className="flex items-center justify-between mb-4">
               <div className="text-sm text-muted-foreground flex items-center gap-2">
-                MR #{mrIid}
+                {t('gitlab:mrReview.logs.mrLabel', { iid: mrIid })}
                 {logs.is_followup && <Badge variant="outline" className="text-xs">{t('gitlab:mrReview.logs.followup')}</Badge>}
                 {isStreaming && (
                   <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-500 border-blue-500/30 flex items-center gap-1">
@@ -202,7 +202,13 @@ export function MRLogs({ mrIid, logs, isLoading, isStreaming = false }: MRLogsPr
               </div>
               <div className="text-xs text-muted-foreground flex items-center gap-1">
                 <Clock className="h-3 w-3" />
-                {new Date(logs.updated_at).toLocaleString()}
+                {new Date(logs.updated_at).toLocaleString(undefined, {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
               </div>
             </div>
 
@@ -440,7 +446,7 @@ function OrchestratorActivitySection({ entries, isExpanded, onToggle }: Orchestr
           {entries.map((entry, idx) => (
             <div key={`activity-${entry.timestamp}-${idx}`} className="flex items-start gap-2 text-[10px] text-muted-foreground/80 py-0.5">
               <span className="text-muted-foreground/50 tabular-nums shrink-0">
-                {new Date(entry.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                {new Date(entry.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
               </span>
               <span className="break-words">{entry.content}</span>
             </div>
@@ -577,7 +583,7 @@ function LogEntry({ entry }: LogEntryProps) {
   const formatTime = (timestamp: string) => {
     try {
       const date = new Date(timestamp);
-      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     } catch {
       return '';
     }
@@ -670,12 +676,12 @@ function LogEntry({ entry }: LogEntryProps) {
             {isExpanded ? (
               <>
                 <ChevronDown className="h-2.5 w-2.5" />
-                <span>Less</span>
+                <span>{t('gitlab:mrReview.logs.less')}</span>
               </>
             ) : (
               <>
                 <ChevronRight className="h-2.5 w-2.5" />
-                <span>More</span>
+                <span>{t('gitlab:mrReview.logs.more')}</span>
               </>
             )}
           </button>
