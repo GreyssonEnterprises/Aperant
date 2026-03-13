@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { join } from 'node:path';
 import { computeContentHash } from '../types';
 
 // Mock fs and child_process BEFORE importing the module under test
@@ -88,7 +89,7 @@ describe('FileEvolutionTracker', () => {
     it('should initialize with provided paths', () => {
       expect(tracker).toBeDefined();
       expect(tracker.storageDir).toBe(mockStorageDir);
-      expect(tracker.baselinesDir).toBe(mockStorageDir + '/baselines');
+      expect(tracker.baselinesDir).toBe(join(mockStorageDir, 'baselines'));
     });
 
     it('should use default storage path if not provided', () => {
@@ -180,7 +181,7 @@ describe('FileEvolutionTracker', () => {
       tracker.captureBaselines('task-1', ['src/test.ts']);
 
       expect(mockWriteFileSync).toHaveBeenCalledWith(
-        expect.stringContaining('baselines/task-1/'),
+        expect.stringContaining(join('baselines', 'task-1')),
         expect.any(String),
         'utf8',
       );
