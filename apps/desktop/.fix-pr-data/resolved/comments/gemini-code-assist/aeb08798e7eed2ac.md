@@ -7,7 +7,7 @@
 **Original ID:** 2930224290
 **Created:** None
 **Severity:** CRITICAL
-**Status:** PENDING
+**Status:** SKIPPED
 
 ---
 
@@ -25,12 +25,6 @@ To fix this, you should probably pass the raw GitLab merge status string (e.g., 
 
 ## Implementation Notes
 
-*Status: PENDING - Not yet verified or implemented*
+*Status: SKIPPED*
 
-### Verification Checklist
-
-- [ ] Read file at comment location
-- [ ] Verify if issue is already fixed
-- [ ] Implement fix if needed
-- [ ] Re-verify after implementation
-
+**Resolution:** FALSE POSITIVE: Code is correct - mergeStatus prop is typed as string | null (raw GitLab status), not MergeableState. Component correctly derives both mergeKey and mergeableState from the raw input via mergeKeyMap and gitlabToMergeableState.

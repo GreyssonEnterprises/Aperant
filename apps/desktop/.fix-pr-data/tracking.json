@@ -1,12 +1,12 @@
 {
   "version": "2.0",
   "pr_number": 1942,
-  "last_updated": "2026-03-13T14:54:45.113681",
+  "last_updated": "2026-03-13T14:56:17.118433",
   "stats": {
     "total": 110,
-    "resolved": 73,
-    "pending": 6,
-    "skipped": 31
+    "resolved": 75,
+    "pending": 0,
+    "skipped": 35
   },
   "items": {
     "github-advanced-security:comment_2930203243": {
@@ -37,9 +37,11 @@
       "severity": "CRITICAL",
       "suggested_fix": null,
       "language": "typescript",
-      "status": "pending",
+      "status": "skipped",
       "created_at": null,
-      "updated_at": null
+      "updated_at": null,
+      "resolution_note": "FALSE POSITIVE: Code is correct - mergeStatus prop is typed as string | null (raw GitLab status), not MergeableState. Component correctly derives both mergeKey and mergeableState from the raw input via mergeKeyMap and gitlabToMergeableState.",
+      "resolved_at": "2026-03-13T14:55:56.721404"
     },
     "gemini-code-assist:comment_2930224293": {
       "id": "696a203d246f4fb1",
@@ -52,9 +54,11 @@
       "severity": "MEDIUM",
       "suggested_fix": null,
       "language": "typescript",
-      "status": "pending",
+      "status": "skipped",
       "created_at": null,
-      "updated_at": null
+      "updated_at": null,
+      "resolution_note": "FALSE POSITIVE: Code at line 1190-1191 uses BrowserWindow.fromWebContents(event.sender) which is MORE robust than getAllWindows()[0]. The comment explicitly acknowledges this: 'more robust than getAllWindows()[0]'",
+      "resolved_at": "2026-03-13T14:56:13.976665"
     },
     "gemini-code-assist:comment_2930224298": {
       "id": "550c5ed484bfd8c8",
@@ -67,9 +71,11 @@
       "severity": "MEDIUM",
       "suggested_fix": null,
       "language": "typescript",
-      "status": "pending",
+      "status": "skipped",
       "created_at": null,
-      "updated_at": null
+      "updated_at": null,
+      "resolution_note": "FALSE POSITIVE: Comment 'Over-fetch by 1 to reliably determine if there are more pages' at line 1396 IS accurate - code DOES fetch 21 items (per_page: '21') and checks hasMore = mrs.length > 20",
+      "resolved_at": "2026-03-13T14:55:59.952492"
     },
     "gemini-code-assist:comment_2930224307": {
       "id": "b4930b4ccedb1ec8",
@@ -82,9 +88,11 @@
       "severity": "MEDIUM",
       "suggested_fix": null,
       "language": "typescript",
-      "status": "pending",
+      "status": "skipped",
       "created_at": null,
-      "updated_at": null
+      "updated_at": null,
+      "resolution_note": "FALSE POSITIVE: Code at line 89 already uses proper type: Promise<IPCResult<Record<number, GitLabMRReviewResult | null>>> - NOT Record<number, any>",
+      "resolved_at": "2026-03-13T14:56:17.117710"
     },
     "coderabbitai:comment_2930292927": {
       "id": "cc9ad779af24bb5a",
@@ -1408,9 +1416,12 @@
       "severity": "HIGH",
       "suggested_fix": null,
       "language": "typescript",
-      "status": "pending",
+      "status": "resolved",
       "created_at": null,
-      "updated_at": null
+      "updated_at": null,
+      "resolution_note": "Replaced relative import '../issues-store' with path alias '@/stores/gitlab/issues-store'",
+      "fix_commit": "91930f342f27e5f4a9f7b5be83c2d97de4ee35d7",
+      "resolved_at": "2026-03-13T14:55:23.265661"
     },
     "coderabbitai:comment_2930643804": {
       "id": "e33ab85488b5fcaa",
@@ -1423,9 +1434,12 @@
       "severity": "HIGH",
       "suggested_fix": null,
       "language": "typescript",
-      "status": "pending",
+      "status": "resolved",
       "created_at": null,
-      "updated_at": null
+      "updated_at": null,
+      "resolution_note": "Replaced relative imports '../sync-status-store' with path alias '@/stores/gitlab/sync-status-store'",
+      "fix_commit": "91930f342f27e5f4a9f7b5be83c2d97de4ee35d7",
+      "resolved_at": "2026-03-13T14:55:26.328093"
     },
     "coderabbitai:comment_2930643807": {
       "id": "513f1bedc99a2084",
