@@ -95,8 +95,8 @@ export function GitLabBatchReviewWizard({
       // Select all validated batches by default
       const validatedIds = new Set(
         analysisResult.proposedBatches
-          .filter(b => b.validated)
-          .map((_, idx) => idx)
+          .map((b, idx) => b.validated ? idx : -1)
+          .filter(idx => idx !== -1)
       );
       setSelectedBatchIds(validatedIds);
       // If no batches, auto-select all single issues

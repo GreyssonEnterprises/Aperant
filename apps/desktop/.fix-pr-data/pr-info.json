@@ -1,0 +1,16 @@
+{
+  "author": {
+    "id": "U_kgDOC3quTQ",
+    "is_bot": false,
+    "login": "StillKnotKnown",
+    "name": "StillKnotKnown"
+  },
+  "baseRefName": "develop",
+  "headRefName": "feat-gitlab-parity",
+  "number": 1942,
+  "reviewDecision": "REVIEW_REQUIRED",
+  "state": "OPEN",
+  "title": "feat: add GitLab feature parity",
+  "url": "https://github.com/AndyMik90/Aperant/pull/1942",
+  "repo": "AndyMik90/Aperant"
+}
