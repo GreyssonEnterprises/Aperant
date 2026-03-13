@@ -18,7 +18,7 @@ import { randomUUID } from 'crypto';
 import { IPC_CHANNELS, MODEL_ID_MAP, DEFAULT_FEATURE_MODELS, DEFAULT_FEATURE_THINKING } from '../../../shared/constants';
 import { getGitLabConfig, gitlabFetch, encodeProjectPath } from './utils';
 import { readSettingsFile } from '../../settings-utils';
-import type { Project, AppSettings } from '../../../shared/types';
+import type { Project, AppSettings, IPCResult } from '../../../shared/types';
 import type {
   MRReviewResult,
   MRReviewProgress,
@@ -1122,9 +1122,13 @@ export function registerMRReviewHandlers(
         // Start new polling interval
         const interval = setInterval(async () => {
           // Emit status update to renderer
-          if (mainWindow) {
-            const { token, instanceUrl } = getGitLabConfig(project);
-            const encodedProject = encodeProjectPath(project.projectPathWithNamespace);
+          const window = getMainWindow();
+          if (window) {
+            const config = await getGitLabConfig(project);
+            if (!config) return;
+
+            const { token, instanceUrl } = config;
+            const encodedProject = encodeProjectPath(config.project);
 
             try {
               const mrData = await gitlabFetch(
@@ -1137,7 +1141,7 @@ export function registerMRReviewHandlers(
                 updated_at?: string;
               };
 
-              mainWindow.webContents.send('gitlab:mr:statusUpdate', {
+              window.webContents.send('gitlab:mr:statusUpdate', {
                 projectId,
                 mrIid,
                 state: mrData.state,
