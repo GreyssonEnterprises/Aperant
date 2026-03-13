@@ -2,7 +2,7 @@
  * Unit tests for GitLab issues store
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useIssuesStore } from '../issues-store';
+import { useIssuesStore } from '@/stores/gitlab/issues-store';
 import type { GitLabIssue } from '@shared/types';
 
 /**

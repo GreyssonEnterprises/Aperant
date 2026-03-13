@@ -1,12 +1,12 @@
 {
   "version": "2.0",
   "pr_number": 1942,
-  "last_updated": "2026-03-13T14:52:27.610074",
+  "last_updated": "2026-03-13T14:54:45.113681",
   "stats": {
     "total": 110,
-    "resolved": 72,
-    "pending": 8,
-    "skipped": 30
+    "resolved": 73,
+    "pending": 6,
+    "skipped": 31
   },
   "items": {
     "github-advanced-security:comment_2930203243": {
@@ -663,9 +663,11 @@
       "severity": "MEDIUM",
       "suggested_fix": "Review the code at the location below. A potential bug has been identified by an AI\nagent.\nVerify if this is a real issue. If it is, propose a fix; if not, explain why it's not\nvalid.\n\nLocation: apps/desktop/src/main/ipc-handlers/gitlab/mr-review-handlers.ts#L1074\n\nPotential issue: The `needsDiscussion` variable is incorrectly calculated using the\n`mrData.discussion_locked` property. According to GitLab's API, `discussion_locked` is a\npermission setting that prevents comments, not an indicator of unresolved discussions\nthat block a merge. This results in an inverted logic: when discussions are open for\ncomments (`discussion_locked: false`), `needsDiscussion` becomes `true`, incorrectly\nsuggesting unresolved discussions. Conversely, when discussions are locked, it\nincorrectly suggests they are resolved. While this field is not currently used in the\nUI, it will lead to incorrect merge readiness checks once implemented, potentially\nblocking valid merges or showing misleading warnings.",
       "language": "typescript",
-      "status": "pending",
+      "status": "skipped",
       "created_at": null,
-      "updated_at": null
+      "updated_at": null,
+      "resolution_note": "FALSE POSITIVE: Code correctly uses detailedStatus === 'discussions_not_resolved' || mrData.blocking_discussions_resolved === false at line 1094 - NOT using discussion_locked",
+      "resolved_at": "2026-03-13T14:54:45.112908"
     },
     "coderabbitai:comment_2930418362": {
       "id": "877d2775a0f391ae",
@@ -1681,9 +1683,12 @@
       "severity": "MEDIUM",
       "suggested_fix": "Review the code at the location below. A potential bug has been identified by an AI\nagent.\nVerify if this is a real issue. If it is, propose a fix; if not, explain why it's not\nvalid.\n\nLocation:\napps/desktop/src/renderer/components/gitlab-merge-requests/hooks/useGitLabMRFiltering.ts#L73-L80\n\nPotential issue: The logic to determine if a GitLab Merge Request is\n\"ready_for_followup\" is flawed. It calculates `hasCommitsAfterPosting` by checking\n`hasNewCommits && hasPosted`. This is semantically incorrect because it doesn't\ndistinguish between new commits that existed before a review was posted and those added\nafter. Unlike the GitHub implementation which uses a dedicated `hasCommitsAfterPosting`\nfield, this logic will incorrectly flag an MR as needing follow-up if a review is posted\non an MR that already has new commits. This results in misleading status assignments for\nusers.",
       "language": "typescript",
-      "status": "pending",
+      "status": "resolved",
       "created_at": null,
-      "updated_at": null
+      "updated_at": null,
+      "resolution_note": "Added hasCommitsAfterPosting field to GitLabNewCommitsCheck type and updated backend to compare commit timestamps vs review posted time. Updated useGitLabMRFiltering to use the new field.",
+      "fix_commit": "4ef1dbd702e56314ba013855685978d67f865e63",
+      "resolved_at": "2026-03-13T14:54:41.953655"
     },
     "github-advanced-security:review_3942883343": {
       "id": "71546855d6279ef7",
