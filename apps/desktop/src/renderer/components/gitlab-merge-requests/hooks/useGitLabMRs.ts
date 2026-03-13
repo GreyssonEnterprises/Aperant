@@ -50,6 +50,15 @@ interface UseGitLabMRsResult {
     error: string | null;
     newCommitsCheck: GitLabNewCommitsCheck | null;
   } | null;
+  listMoreMRs: (page?: number) => Promise<boolean>;
+  deleteReview: (mrIid: number, noteId: number) => Promise<boolean>;
+  checkMergeReadiness: (mrIid: number) => Promise<{
+    canMerge: boolean;
+    hasConflicts: boolean;
+    needsDiscussion: boolean;
+    pipelineStatus?: string;
+  } | null>;
+  getLogs: (mrIid: number) => Promise<string[] | null>;
 }
 
 export function useGitLabMRs(projectId?: string, options: UseGitLabMRsOptions = {}): UseGitLabMRsResult {
@@ -62,7 +71,6 @@ export function useGitLabMRs(projectId?: string, options: UseGitLabMRsOptions = 
   const [projectPath, setProjectPath] = useState<string | null>(null);
 
   // Get MR review state from the global store
-  const _mrReviews = useMRReviewStore((state) => state.mrReviews);
   const getMRReviewState = useMRReviewStore((state) => state.getMRReviewState);
   const getActiveMRReviews = useMRReviewStore((state) => state.getActiveMRReviews);
 
@@ -279,6 +287,63 @@ export function useGitLabMRs(projectId?: string, options: UseGitLabMRsOptions = 
     }
   }, [projectId]);
 
+  // NEW: Additional methods for feature parity
+  const listMoreMRs = useCallback(async (page: number = 2): Promise<boolean> => {
+    if (!projectId || !window.electronAPI.listMoreGitLabMRs) return false;
+
+    try {
+      const result = await window.electronAPI.listMoreGitLabMRs(projectId, stateFilter, page);
+      if (result.success && result.data) {
+        setMergeRequests(prev => [...prev, ...result.data.mrs]);
+        return result.data.hasMore;
+      }
+      return false;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load more MRs');
+      return false;
+    }
+  }, [projectId, stateFilter]);
+
+  const deleteReview = useCallback(async (mrIid: number, noteId: number): Promise<boolean> => {
+    if (!projectId || !window.electronAPI.deleteGitLabMRReview) return false;
+
+    try {
+      const result = await window.electronAPI.deleteGitLabMRReview(projectId, mrIid, noteId);
+      if (result.success) {
+        // Clear review from store
+        useMRReviewStore.getState().clearMRReview(projectId, mrIid);
+      }
+      return result.success;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete review');
+      return false;
+    }
+  }, [projectId]);
+
+  const checkMergeReadiness = useCallback(async (mrIid: number) => {
+    if (!projectId || !window.electronAPI.checkGitLabMRMergeReadiness) return null;
+
+    try {
+      const result = await window.electronAPI.checkGitLabMRMergeReadiness(projectId, mrIid);
+      return result.success ? result.data : null;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to check merge readiness');
+      return null;
+    }
+  }, [projectId]);
+
+  const getLogs = useCallback(async (mrIid: number): Promise<string[] | null> => {
+    if (!projectId || !window.electronAPI.getGitLabMRLogs) return null;
+
+    try {
+      const result = await window.electronAPI.getGitLabMRLogs(projectId, mrIid);
+      return result.success ? result.data : null;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to get logs');
+      return null;
+    }
+  }, [projectId]);
+
   return {
     mergeRequests,
     isLoading,
@@ -303,5 +368,9 @@ export function useGitLabMRs(projectId?: string, options: UseGitLabMRsOptions = 
     assignMR,
     approveMR,
     getReviewStateForMR,
+    listMoreMRs,
+    deleteReview,
+    checkMergeReadiness,
+    getLogs,
   };
 }
