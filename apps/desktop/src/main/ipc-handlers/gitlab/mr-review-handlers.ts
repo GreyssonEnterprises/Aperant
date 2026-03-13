@@ -1216,7 +1216,7 @@ export function registerMRReviewHandlers(
                 updated_at?: string;
               };
 
-              callingWindow.webContents.send('gitlab:mr:statusUpdate', {
+              callingWindow.webContents.send(IPC_CHANNELS.GITLAB_MR_STATUS_UPDATE, {
                 projectId,
                 mrIid,
                 state: mrData.state,
@@ -1373,7 +1373,7 @@ export function registerMRReviewHandlers(
             token,
             instanceUrl,
             `/projects/${encodedProject}/merge_requests?${queryParams.toString()}`
-          ) as any[];
+          ) as GitLabMergeRequest[];
 
           // If we got 21 items, there's definitely more. Otherwise we're at the end.
           const hasMore = mrs.length > 20;

@@ -5,7 +5,7 @@
  * Mirrors github sync status patterns.
  */
 import { create } from 'zustand';
-import type { GitLabSyncStatus } from '../../../shared/types';
+import type { GitLabSyncStatus } from '@shared/types';
 
 interface SyncStatusState {
   // Sync status

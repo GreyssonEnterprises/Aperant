@@ -388,7 +388,7 @@ function createWindow(): void {
     // Clear GitLab MR polling intervals for all projects
     import('./ipc-handlers/gitlab/mr-review-handlers').then(({ clearPollingForProject }) => {
       const { projectStore } = require('./project-store');
-      const projects = projectStore.getAllProjects();
+      const projects = projectStore.getProjects();
       for (const project of projects) {
         clearPollingForProject(project.id);
       }

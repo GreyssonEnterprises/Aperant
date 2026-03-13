@@ -349,6 +349,7 @@ export const IPC_CHANNELS = {
   GITLAB_MR_REVIEW_PROGRESS: 'gitlab:mr:reviewProgress',
   GITLAB_MR_REVIEW_COMPLETE: 'gitlab:mr:reviewComplete',
   GITLAB_MR_REVIEW_ERROR: 'gitlab:mr:reviewError',
+  GITLAB_MR_STATUS_UPDATE: 'gitlab:mr:statusUpdate',
 
   // GitLab Auto-Fix operations
   GITLAB_AUTOFIX_START: 'gitlab:autofix:start',

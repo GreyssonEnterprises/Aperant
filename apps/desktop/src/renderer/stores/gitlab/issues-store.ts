@@ -7,8 +7,8 @@
  * Note: Pagination support will be added with IPC handlers (Task 8)
  */
 import { create } from 'zustand';
-import type { GitLabIssue } from '../../../shared/types';
-import type { GitLabFilterState } from '../../../shared/integrations/types/base-types';
+import type { GitLabIssue } from '@shared/types';
+import type { GitLabFilterState } from '@shared/integrations/types/base-types';
 
 // GitLab issues don't have 'merged' state (only MRs do), so create a specific type
 export type IssueFilterState = Exclude<GitLabFilterState, 'merged'>;
@@ -65,7 +65,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
 
   setLoading: (isLoading) => set({ isLoading }),
 
-  setError: (error) => set({ error, isLoading: false }),
+  setError: (error) => set({ error }),
 
   selectIssue: (selectedIssueIid) => set({ selectedIssueIid }),
 
@@ -75,7 +75,8 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
     issues: [],
     selectedIssueIid: null,
     error: null,
-    currentRequestToken: null
+    currentRequestToken: null,
+    isLoading: false
   }),
 
   setCurrentRequestToken: (currentRequestToken) => set({ currentRequestToken }),

@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useIssuesStore } from '../issues-store';
-import type { GitLabIssue } from '../../../../shared/types';
+import type { GitLabIssue } from '@shared/types';
 
 /**
  * Mock factory for GitLab issues

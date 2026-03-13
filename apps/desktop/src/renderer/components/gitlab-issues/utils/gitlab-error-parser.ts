@@ -65,9 +65,9 @@ function parseGitLabErrorMessage(message: string): ParsedGitLabError {
       case 401:
         return { code: GitLabErrorCode.AUTHENTICATION_FAILED, recoverable: true };
       case 403:
-        return { code: GitLabErrorCode.INSUFFICIENT_PERMISSIONS, recoverable: true };
+        return { code: GitLabErrorCode.INSUFFICIENT_PERMISSIONS, recoverable: false };
       case 404:
-        return { code: GitLabErrorCode.PROJECT_NOT_FOUND, recoverable: true };
+        return { code: GitLabErrorCode.PROJECT_NOT_FOUND, recoverable: false };
       case 409:
         return { code: GitLabErrorCode.CONFLICT, recoverable: false };
       case 429:
@@ -92,27 +92,32 @@ function parseGitLabErrorMessage(message: string): ParsedGitLabError {
     };
   }
 
-  // Network errors
-  if (lowerMessage.includes('network') || lowerMessage.includes('connect') || lowerMessage.includes('timeout')) {
+  // Network errors - use specific phrases to avoid false positives
+  if (lowerMessage.includes('network') ||
+      lowerMessage.includes('connection refused') ||
+      lowerMessage.includes('connection failed') ||
+      lowerMessage.includes('unable to connect') ||
+      lowerMessage.includes('connect timeout') ||
+      lowerMessage.includes('timeout')) {
     return {
       code: GitLabErrorCode.NETWORK_ERROR,
       recoverable: true
     };
   }
 
-  // Project not found (404)
+  // Project not found (404) - not recoverable
   if (/\b404\b/.test(message) || lowerMessage.includes('not found')) {
     return {
       code: GitLabErrorCode.PROJECT_NOT_FOUND,
-      recoverable: true
+      recoverable: false
     };
   }
 
-  // Permission denied (403)
+  // Permission denied (403) - not recoverable
   if (/\b403\b/.test(message) || lowerMessage.includes('forbidden') || lowerMessage.includes('permission denied')) {
     return {
       code: GitLabErrorCode.INSUFFICIENT_PERMISSIONS,
-      recoverable: true
+      recoverable: false
     };
   }
 

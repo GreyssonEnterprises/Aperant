@@ -45,21 +45,21 @@ function ReviewStatusBadge({ status, className }: ReviewStatusBadgeProps) {
       return (
         <Badge variant="success" className={cn('gap-1', className)}>
           <CheckCircle2 className="h-3 w-3" />
-          {t('mrStatus.review.approved')}
+          {t('prStatus.review.approved')}
         </Badge>
       );
     case 'changes_requested':
       return (
         <Badge variant="destructive" className={cn('gap-1', className)}>
           <AlertTriangle className="h-3 w-3" />
-          {t('mrStatus.review.changesRequested')}
+          {t('prStatus.review.changesRequested')}
         </Badge>
       );
     case 'pending':
       return (
         <Badge variant="warning" className={cn('gap-1', className)}>
           <Circle className="h-3 w-3" />
-          {t('mrStatus.review.pending')}
+          {t('prStatus.review.pending')}
         </Badge>
       );
     default:
@@ -119,10 +119,21 @@ export interface MRStatusIndicatorProps {
  * Used alongside the existing MRStatusFlow dots component to provide
  * real-time MR status from GitLab's API polling.
  */
+// Comprehensive merge status mapping for all GitLab detailed_merge_status values
 const mergeKeyMap: Record<string, string> = {
   can_be_merged: 'ready',
   cannot_be_merged: 'conflict',
   checking: 'checking',
+  // Additional GitLab merge status values
+  policies: 'blocked',
+  merge_when_pipeline_succeeds: 'merging',
+  pipeline_failed: 'conflict',
+  pipeline_success: 'ready',
+  cant_be_merged: 'conflict',
+  blocked: 'blocked',
+  unchecked: 'checking',
+  web_ide: 'checking',
+  // Safe default for unknown statuses
 };
 
 // Map GitLab merge status to MergeableState for the icon
@@ -130,6 +141,16 @@ const gitlabToMergeableState: Record<string, MergeableState> = {
   can_be_merged: 'clean',
   cannot_be_merged: 'dirty',
   checking: 'blocked',
+  // Additional GitLab merge status values
+  policies: 'blocked',
+  merge_when_pipeline_succeeds: 'clean',
+  pipeline_failed: 'dirty',
+  pipeline_success: 'clean',
+  cant_be_merged: 'dirty',
+  blocked: 'blocked',
+  unchecked: 'blocked',
+  web_ide: 'blocked',
+  // Safe default
 };
 
 export function MRStatusIndicator({

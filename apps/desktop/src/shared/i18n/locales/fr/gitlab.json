@@ -305,7 +305,13 @@
       "failed": "Échoué",
       "contextGathering": "Collecte du contexte",
       "aiAnalysis": "Analyse IA",
-      "synthesis": "Synthèse"
+      "synthesis": "Synthèse",
+      "filesRead": "{{count}} fichier lu",
+      "filesRead_plural": "{{count}} fichiers lus",
+      "searches": "{{count}} recherche",
+      "searches_plural": "{{count}} recherches",
+      "other": "{{count}} autre",
+      "operations": "{{count}} opérations"
     }
   }
 }

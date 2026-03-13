@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useSyncStatusStore } from '../sync-status-store';
 import { checkGitLabConnection } from '../sync-status-store';
-import type { GitLabSyncStatus } from '../../../../shared/types';
+import type { GitLabSyncStatus } from '@shared/types';
 
 // Mock electronAPI
 const mockElectronAPI = {

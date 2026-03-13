@@ -47,6 +47,21 @@ interface MRLogsProps {
   isStreaming?: boolean;
 }
 
+// Type guard to check if logs is the expected PRLogs structure or a plain string array
+function isStructuredLogs(logs: unknown): logs is PRLogs {
+  return (
+    typeof logs === 'object' &&
+    logs !== null &&
+    'is_followup' in logs &&
+    'updated_at' in logs &&
+    'phases' in logs
+  );
+}
+
+// TODO: The GITLAB_MR_GET_LOGS IPC handler returns string[] but this component expects PRLogs.
+// Add a transformation to convert string[] to PRLogs structure in the handler or a data layer.
+// For now, handle both formats defensively.
+
 // Helper function to get phase labels with translation
 function getPhaseLabel(phase: GitLabMRLogPhase, t: (key: string) => string): string {
   return t(`gitlab:mrReview.logs.${phase}Gathering`);
@@ -155,6 +170,11 @@ export function MRLogs({ mrIid, logs, isLoading, isStreaming = false }: MRLogsPr
   const [expandedPhases, setExpandedPhases] = useState<Set<GitLabMRLogPhase>>(new Set(['analysis']));
   const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
 
+  // Handle both structured PRLogs and plain string[] formats
+  // TODO: Remove this fallback when GITLAB_MR_GET_LOGS returns structured PRLogs
+  const isStructured = logs && isStructuredLogs(logs);
+  const logsAsArray = Array.isArray(logs) ? logs : null;
+
   const togglePhase = (phase: GitLabMRLogPhase) => {
     setExpandedPhases(prev => {
       const next = new Set(prev);
@@ -186,6 +206,19 @@ export function MRLogs({ mrIid, logs, isLoading, isStreaming = false }: MRLogsPr
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
+        ) : logsAsArray ? (
+          // Fallback for string[] format (current IPC handler return type)
+          // TODO: Remove when GITLAB_MR_GET_LOGS returns structured PRLogs
+          <>
+            <div className="text-sm text-muted-foreground mb-4">
+              {t('gitlab:mrReview.logs.mrLabel', { iid: mrIid })}
+            </div>
+            <div className="space-y-1 text-xs font-mono text-muted-foreground">
+              {logsAsArray.map((log, idx) => (
+                <div key={idx} className="py-0.5">{log}</div>
+              ))}
+            </div>
+          </>
         ) : logs ? (
           <>
             {/* Logs header */}
@@ -405,17 +438,23 @@ interface OrchestratorActivitySectionProps {
 }
 
 function OrchestratorActivitySection({ entries, isExpanded, onToggle }: OrchestratorActivitySectionProps) {
-  const { t } = useTranslation(['common']);
+  const { t } = useTranslation(['gitlab']);
 
   const readCount = entries.filter(e => e.content.startsWith('Reading ')).length;
   const searchCount = entries.filter(e => e.content.startsWith('Searching for ')).length;
   const otherCount = entries.length - readCount - searchCount;
 
   const summaryParts: string[] = [];
-  if (readCount > 0) summaryParts.push(`${readCount} file${readCount > 1 ? 's' : ''} read`);
-  if (searchCount > 0) summaryParts.push(`${searchCount} search${searchCount > 1 ? 'es' : ''}`);
-  if (otherCount > 0) summaryParts.push(`${otherCount} other`);
-  const summary = summaryParts.join(', ') || `${entries.length} operations`;
+  if (readCount > 0) {
+    summaryParts.push(t('gitlab:mrReview.logs.filesRead', { count: readCount }));
+  }
+  if (searchCount > 0) {
+    summaryParts.push(t('gitlab:mrReview.logs.searches', { count: searchCount }));
+  }
+  if (otherCount > 0) {
+    summaryParts.push(t('gitlab:mrReview.logs.other', { count: otherCount }));
+  }
+  const summary = summaryParts.join(', ') || t('gitlab:mrReview.logs.operations', { count: entries.length });
 
   return (
     <div className="rounded-md border border-border/50 bg-secondary/10 overflow-hidden">

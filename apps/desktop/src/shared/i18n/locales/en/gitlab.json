@@ -295,7 +295,13 @@
       "failed": "Failed",
       "contextGathering": "Context Gathering",
       "aiAnalysis": "AI Analysis",
-      "synthesis": "Synthesis"
+      "synthesis": "Synthesis",
+      "filesRead": "{{count}} file read",
+      "filesRead_plural": "{{count}} files read",
+      "searches": "{{count}} search",
+      "searches_plural": "{{count}} searches",
+      "other": "{{count}} other",
+      "operations": "{{count}} operations"
     }
   }
 }
