@@ -498,3 +498,304 @@ describe('RecoveryManager stuck tracking', () => {
     expect(parsed.stuckSubtasks.filter((id) => id === 'task-dup')).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// loadAttemptHistory edge cases
+// ---------------------------------------------------------------------------
+
+describe('RecoveryManager.loadAttemptHistory', () => {
+  let manager: RecoveryManager;
+
+  beforeEach(() => {
+    mockReadFile.mockReset();
+    mockWriteFile.mockReset().mockResolvedValue(undefined);
+    manager = createManager();
+  });
+
+  it('returns empty history when file read fails', async () => {
+    mockReadFile.mockRejectedValueOnce(new Error('File not found'));
+
+    const history = await manager['loadAttemptHistory']();
+
+    expect(history.subtasks).toEqual({});
+    expect(history.stuckSubtasks).toEqual([]);
+    expect(mockWriteFile).toHaveBeenCalledWith(
+      ATTEMPT_HISTORY_PATH,
+      expect.stringContaining('"subtasks": {}'),
+      'utf-8',
+    );
+  });
+
+  it('returns empty history when JSON parsing returns null', async () => {
+    // safeParseJson returns null for invalid JSON
+    mockReadFile.mockResolvedValueOnce('invalid json {{{');
+
+    const history = await manager['loadAttemptHistory']();
+
+    expect(history.subtasks).toEqual({});
+    expect(history.stuckSubtasks).toEqual([]);
+    expect(mockWriteFile).toHaveBeenCalled();
+  });
+
+  it('returns existing history when file is valid', async () => {
+    const existingHistory = makeHistory({ 'task-1': [] });
+    mockReadFile.mockResolvedValueOnce(existingHistory);
+
+    const history = await manager['loadAttemptHistory']();
+
+    expect(history.subtasks).toHaveProperty('task-1');
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseCheckpoint edge cases
+// ---------------------------------------------------------------------------
+
+describe('parseCheckpoint utility', () => {
+  // Import the parseCheckpoint function to test it directly
+  // Since it's a private utility, we'll test it indirectly through loadCheckpoint
+  // But we can also test the behavior by creating malformed checkpoint files
+
+  let manager: RecoveryManager;
+
+  beforeEach(() => {
+    mockReadFile.mockReset();
+    manager = createManager();
+  });
+
+  it('returns null when spec_id is missing', async () => {
+    const content = `
+# Build Progress Checkpoint
+phase: coding
+last_completed_subtask: subtask-1
+total_subtasks: 5
+completed_subtasks: 1
+stuck_subtasks: none
+is_complete: false
+`;
+    mockReadFile.mockResolvedValueOnce(content);
+    const result = await manager.loadCheckpoint();
+    expect(result).toBeNull();
+  });
+
+  it('returns null when phase is missing', async () => {
+    const content = `
+# Build Progress Checkpoint
+spec_id: 001
+last_completed_subtask: subtask-1
+total_subtasks: 5
+completed_subtasks: 1
+stuck_subtasks: none
+is_complete: false
+`;
+    mockReadFile.mockResolvedValueOnce(content);
+    const result = await manager.loadCheckpoint();
+    expect(result).toBeNull();
+  });
+
+  it('returns null when both spec_id and phase are missing', async () => {
+    const content = `
+# Build Progress Checkpoint
+last_completed_subtask: subtask-1
+total_subtasks: 5
+`;
+    mockReadFile.mockResolvedValueOnce(content);
+    const result = await manager.loadCheckpoint();
+    expect(result).toBeNull();
+  });
+
+  it('parses valid checkpoint with all fields', async () => {
+    const content = `
+# Build Progress Checkpoint
+spec_id: 001
+phase: coding
+last_completed_subtask: subtask-3
+total_subtasks: 5
+completed_subtasks: 3
+stuck_subtasks: subtask-1, subtask-2
+is_complete: false
+`;
+    mockReadFile.mockResolvedValueOnce(content);
+    const result = await manager.loadCheckpoint();
+    expect(result).not.toBeNull();
+    expect(result?.specId).toBe('001');
+    expect(result?.phase).toBe('coding');
+    expect(result?.lastCompletedSubtaskId).toBe('subtask-3');
+    expect(result?.totalSubtasks).toBe(5);
+    expect(result?.completedSubtasks).toBe(3);
+    expect(result?.stuckSubtasks).toEqual(['subtask-1', 'subtask-2']);
+    expect(result?.isComplete).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// simpleHash utility
+// ---------------------------------------------------------------------------
+
+describe('simpleHash utility (via recordAttempt)', () => {
+  let manager: RecoveryManager;
+
+  beforeEach(() => {
+    mockReadFile.mockReset();
+    mockWriteFile.mockReset().mockResolvedValue(undefined);
+    manager = createManager();
+  });
+
+  it('produces consistent hashes for identical strings', async () => {
+    const sameError = 'test error message';
+
+    // We'll verify this by checking circular fix detection
+    // which relies on consistent hashing
+    let storedHistory = makeHistory({});
+
+    mockReadFile.mockImplementation(() => Promise.resolve(storedHistory));
+    mockWriteFile.mockImplementation((_path: string, content: string) => {
+      storedHistory = content;
+      return Promise.resolve();
+    });
+
+    // Record the same error 3 times
+    await manager.recordAttempt('test-task', sameError);
+    await manager.recordAttempt('test-task', sameError);
+    await manager.recordAttempt('test-task', sameError);
+
+    // Now check if it's detected as circular fix
+    const isCircular = await manager.isCircularFix('test-task');
+    expect(isCircular).toBe(true);
+  });
+
+  it('produces different hashes for different strings', async () => {
+    let storedHistory = makeHistory({});
+
+    mockReadFile.mockImplementation(() => Promise.resolve(storedHistory));
+    mockWriteFile.mockImplementation((_path: string, content: string) => {
+      storedHistory = content;
+      return Promise.resolve();
+    });
+
+    await manager.recordAttempt('test-task', 'error message one');
+    await manager.recordAttempt('test-task', 'error message two');
+
+    const parsed = JSON.parse(storedHistory);
+    const attempts = parsed.subtasks['test-task'];
+
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0].errorHash).not.toBe(attempts[1].errorHash);
+  });
+
+  it('normalizes input (case-insensitive, trimmed)', async () => {
+    let storedHistory = makeHistory({});
+
+    mockReadFile.mockImplementation(() => Promise.resolve(storedHistory));
+    mockWriteFile.mockImplementation((_path: string, content: string) => {
+      storedHistory = content;
+      return Promise.resolve();
+    });
+
+    await manager.recordAttempt('test-task', 'Error Message');
+    await manager.recordAttempt('test-task', '  error message  ');
+
+    const parsed = JSON.parse(storedHistory);
+    const attempts = parsed.subtasks['test-task'];
+
+    // Same error after normalization should produce same hash
+    expect(attempts[0].errorHash).toBe(attempts[1].errorHash);
+  });
+
+  it('produces same hash for identical errors (circular fix detection)', async () => {
+    const sameError = 'SyntaxError: Unexpected token';
+
+    let storedHistory = makeHistory({});
+
+    mockReadFile.mockImplementation(() => Promise.resolve(storedHistory));
+    mockWriteFile.mockImplementation((_path: string, content: string) => {
+      storedHistory = content;
+      return Promise.resolve();
+    });
+
+    await manager.recordAttempt('test-task', sameError);
+    await manager.recordAttempt('test-task', sameError);
+    await manager.recordAttempt('test-task', sameError);
+
+    const parsed = JSON.parse(storedHistory);
+    const attempts = parsed.subtasks['test-task'];
+
+    expect(attempts).toHaveLength(3);
+    expect(attempts[0].errorHash).toBe(attempts[1].errorHash);
+    expect(attempts[1].errorHash).toBe(attempts[2].errorHash);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// recordAttempt error truncation
+// ---------------------------------------------------------------------------
+
+describe('RecoveryManager.recordAttempt', () => {
+  let manager: RecoveryManager;
+
+  beforeEach(() => {
+    mockReadFile.mockReset();
+    mockWriteFile.mockReset().mockResolvedValue(undefined);
+    manager = createManager();
+  });
+
+  it('truncates long error messages to 500 characters', async () => {
+    let capturedError: string | undefined;
+
+    mockReadFile.mockResolvedValue(makeHistory({}));
+    mockWriteFile.mockImplementation((_path: string, content: string) => {
+      const parsed = JSON.parse(content);
+      const attempt = parsed.subtasks['test-task']?.[0];
+      capturedError = attempt?.error;
+      return Promise.resolve();
+    });
+
+    const longError = 'x'.repeat(1000);
+    await manager.recordAttempt('test-task', longError);
+
+    expect(capturedError).toHaveLength(500);
+  });
+
+  it('caps stored attempts at MAX_ATTEMPTS_PER_SUBTASK', async () => {
+    let storedHistory = makeHistory({});
+
+    // Use stateful mocks that persist across calls
+    mockReadFile.mockImplementation(() => Promise.resolve(storedHistory));
+    mockWriteFile.mockImplementation((_path: string, content: string) => {
+      storedHistory = content;
+      return Promise.resolve();
+    });
+
+    // Record 60 attempts (MAX_ATTEMPTS_PER_SUBTASK is 50)
+    for (let i = 0; i < 60; i++) {
+      await manager.recordAttempt('test-task', `error ${i}`);
+    }
+
+    const parsed = JSON.parse(storedHistory);
+    const storedAttempts = parsed.subtasks['test-task'] || [];
+
+    // Should be capped at 50
+    expect(storedAttempts).toHaveLength(50);
+  });
+
+  it('stores attempt with correct structure', async () => {
+    let capturedAttempt: unknown;
+
+    mockReadFile.mockResolvedValue(makeHistory({}));
+    mockWriteFile.mockImplementation((_path: string, content: string) => {
+      const parsed = JSON.parse(content);
+      capturedAttempt = parsed.subtasks['test-task']?.[0];
+      return Promise.resolve();
+    });
+
+    await manager.recordAttempt('test-task', 'test error');
+
+    expect(capturedAttempt).toMatchObject({
+      error: 'test error',
+      failureType: 'unknown',
+    });
+    expect(capturedAttempt).toHaveProperty('timestamp');
+    expect(capturedAttempt).toHaveProperty('errorHash');
+  });
+});

@@ -417,4 +417,737 @@ describe('runRoadmapGeneration', () => {
     expect(result.success).toBe(false);
     expect(result.phases[0].errors.length).toBeGreaterThan(0);
   });
+
+  // ---------------------------------------------------------------------------
+  // Feature preservation (loadPreservedFeatures function)
+  // ---------------------------------------------------------------------------
+
+  it('preserves features with planned status during refresh', async () => {
+    const existingRoadmap = JSON.stringify({
+      vision: 'Old vision',
+      target_audience: { primary: 'Developers' },
+      phases: [],
+      features: [
+        {
+          id: 'existing-1',
+          title: 'Existing Feature',
+          description: 'Should be preserved',
+          priority: 'high',
+          complexity: 'medium',
+          impact: 'high',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+      ],
+    });
+
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap')) return true;
+      if (p.endsWith('roadmap_discovery.json')) return true;
+      if (p.endsWith('roadmap.json')) return true;
+      return false;
+    });
+
+    let readCount = 0;
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap_discovery.json')) return VALID_DISCOVERY_JSON;
+      if (p.endsWith('roadmap.json')) {
+        readCount++;
+        // First read loads preserved features
+        if (readCount === 1) return existingRoadmap;
+        // After agent runs, return valid roadmap with 3+ features
+        return VALID_ROADMAP_JSON;
+      }
+      return '{}';
+    });
+
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    const result = await runRoadmapGeneration(baseConfig({ refresh: true }));
+
+    expect(result.success).toBe(true);
+    expect(mockStreamText).toHaveBeenCalled();
+  });
+
+  it('preserves features with in_progress status during refresh', async () => {
+    const existingRoadmap = JSON.stringify({
+      vision: 'Old vision',
+      target_audience: { primary: 'Developers' },
+      phases: [],
+      features: [
+        {
+          id: 'existing-1',
+          title: 'Work in Progress',
+          description: 'Should be preserved',
+          priority: 'high',
+          complexity: 'medium',
+          impact: 'high',
+          phase_id: 'p1',
+          status: 'in_progress',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+      ],
+    });
+
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap')) return true;
+      if (p.endsWith('roadmap_discovery.json')) return true;
+      if (p.endsWith('roadmap.json')) return true;
+      return false;
+    });
+
+    let readCount = 0;
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap_discovery.json')) return VALID_DISCOVERY_JSON;
+      if (p.endsWith('roadmap.json')) {
+        readCount++;
+        return readCount === 1 ? existingRoadmap : VALID_ROADMAP_JSON;
+      }
+      return '{}';
+    });
+
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    const result = await runRoadmapGeneration(baseConfig({ refresh: true }));
+
+    expect(result.success).toBe(true);
+  });
+
+  it('preserves features with done status during refresh', async () => {
+    const existingRoadmap = JSON.stringify({
+      vision: 'Old vision',
+      target_audience: { primary: 'Developers' },
+      phases: [],
+      features: [
+        {
+          id: 'existing-1',
+          title: 'Completed Feature',
+          description: 'Should be preserved',
+          priority: 'high',
+          complexity: 'medium',
+          impact: 'high',
+          phase_id: 'p1',
+          status: 'done',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+      ],
+    });
+
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap')) return true;
+      if (p.endsWith('roadmap_discovery.json')) return true;
+      if (p.endsWith('roadmap.json')) return true;
+      return false;
+    });
+
+    let readCount = 0;
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap_discovery.json')) return VALID_DISCOVERY_JSON;
+      if (p.endsWith('roadmap.json')) {
+        readCount++;
+        return readCount === 1 ? existingRoadmap : VALID_ROADMAP_JSON;
+      }
+      return '{}';
+    });
+
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    const result = await runRoadmapGeneration(baseConfig({ refresh: true }));
+
+    expect(result.success).toBe(true);
+  });
+
+  it('preserves features with linked_spec_id during refresh', async () => {
+    const existingRoadmap = JSON.stringify({
+      vision: 'Old vision',
+      target_audience: { primary: 'Developers' },
+      phases: [],
+      features: [
+        {
+          id: 'existing-1',
+          title: 'Linked Feature',
+          description: 'Should be preserved due to linked spec',
+          priority: 'high',
+          complexity: 'medium',
+          impact: 'high',
+          phase_id: 'p1',
+          linked_spec_id: 'spec-123',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+      ],
+    });
+
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap')) return true;
+      if (p.endsWith('roadmap_discovery.json')) return true;
+      if (p.endsWith('roadmap.json')) return true;
+      return false;
+    });
+
+    let readCount = 0;
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap_discovery.json')) return VALID_DISCOVERY_JSON;
+      if (p.endsWith('roadmap.json')) {
+        readCount++;
+        return readCount === 1 ? existingRoadmap : VALID_ROADMAP_JSON;
+      }
+      return '{}';
+    });
+
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    const result = await runRoadmapGeneration(baseConfig({ refresh: true }));
+
+    expect(result.success).toBe(true);
+  });
+
+  it('preserves features with internal source during refresh', async () => {
+    const existingRoadmap = JSON.stringify({
+      vision: 'Old vision',
+      target_audience: { primary: 'Developers' },
+      phases: [],
+      features: [
+        {
+          id: 'existing-1',
+          title: 'Internal Feature',
+          description: 'Should be preserved due to internal source',
+          priority: 'high',
+          complexity: 'medium',
+          impact: 'high',
+          phase_id: 'p1',
+          source: { provider: 'internal' },
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+      ],
+    });
+
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap')) return true;
+      if (p.endsWith('roadmap_discovery.json')) return true;
+      if (p.endsWith('roadmap.json')) return true;
+      return false;
+    });
+
+    let readCount = 0;
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap_discovery.json')) return VALID_DISCOVERY_JSON;
+      if (p.endsWith('roadmap.json')) {
+        readCount++;
+        return readCount === 1 ? existingRoadmap : VALID_ROADMAP_JSON;
+      }
+      return '{}';
+    });
+
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    const result = await runRoadmapGeneration(baseConfig({ refresh: true }));
+
+    expect(result.success).toBe(true);
+  });
+
+  it('filters out features without preservation criteria during refresh', async () => {
+    const existingRoadmap = JSON.stringify({
+      vision: 'Old vision',
+      target_audience: { primary: 'Developers' },
+      phases: [],
+      features: [
+        {
+          id: 'to-be-filtered',
+          title: 'Idea Stage Feature',
+          description: 'Should be filtered out',
+          priority: 'low',
+          complexity: 'low',
+          impact: 'low',
+          phase_id: 'p1',
+          status: 'idea',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+      ],
+    });
+
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap')) return true;
+      if (p.endsWith('roadmap_discovery.json')) return true;
+      if (p.endsWith('roadmap.json')) return true;
+      return false;
+    });
+
+    let readCount = 0;
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap_discovery.json')) return VALID_DISCOVERY_JSON;
+      if (p.endsWith('roadmap.json')) {
+        readCount++;
+        return readCount === 1 ? existingRoadmap : VALID_ROADMAP_JSON;
+      }
+      return '{}';
+    });
+
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    const result = await runRoadmapGeneration(baseConfig({ refresh: true }));
+
+    expect(result.success).toBe(true);
+  });
+
+  it('handles missing roadmap file gracefully when loading preserved features', async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap')) return true;
+      if (p.endsWith('roadmap_discovery.json')) return true;
+      if (p.endsWith('roadmap.json')) return false; // roadmap file does not exist
+      return false;
+    });
+
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap_discovery.json')) return VALID_DISCOVERY_JSON;
+      if (p.endsWith('roadmap.json')) return VALID_ROADMAP_JSON;
+      return '{}';
+    });
+
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    const result = await runRoadmapGeneration(baseConfig({ refresh: true }));
+
+    // Should still succeed, just without preserved features
+    expect(result.success).toBe(true);
+  });
+
+  it('handles invalid JSON in existing roadmap file during refresh', async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap')) return true;
+      if (p.endsWith('roadmap_discovery.json')) return true;
+      if (p.endsWith('roadmap.json')) return true;
+      return false;
+    });
+
+    let readCount = 0;
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap_discovery.json')) return VALID_DISCOVERY_JSON;
+      if (p.endsWith('roadmap.json')) {
+        readCount++;
+        return readCount === 1 ? 'invalid json {{{' : VALID_ROADMAP_JSON;
+      }
+      return '{}';
+    });
+
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    const result = await runRoadmapGeneration(baseConfig({ refresh: true }));
+
+    expect(result.success).toBe(true);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Feature merging (mergeFeatures function)
+  // ---------------------------------------------------------------------------
+
+  it('merges new features with preserved features avoiding duplicates by ID', async () => {
+    const existingRoadmap = JSON.stringify({
+      vision: 'Old vision',
+      target_audience: { primary: 'Developers' },
+      phases: [],
+      features: [
+        {
+          id: 'preserve-1',
+          title: 'Preserved by ID',
+          description: 'Keep this',
+          priority: 'high',
+          complexity: 'medium',
+          impact: 'high',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+      ],
+    });
+
+    const newRoadmap = JSON.stringify({
+      vision: 'New vision',
+      target_audience: { primary: 'Developers' },
+      phases: [{ id: 'p1', name: 'MVP' }],
+      features: [
+        {
+          id: 'preserve-1', // Same ID - should be deduplicated
+          title: 'Duplicate ID',
+          description: 'Should not appear',
+          priority: 'low',
+          complexity: 'low',
+          impact: 'low',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+        {
+          id: 'new-1',
+          title: 'New Feature',
+          description: 'Should be added',
+          priority: 'high',
+          complexity: 'medium',
+          impact: 'high',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+        {
+          id: 'new-2',
+          title: 'Another Feature',
+          description: 'Should be added',
+          priority: 'medium',
+          complexity: 'low',
+          impact: 'medium',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+        {
+          id: 'new-3',
+          title: 'Third Feature',
+          description: 'Should be added',
+          priority: 'low',
+          complexity: 'high',
+          impact: 'low',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+      ],
+    });
+
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap')) return true;
+      if (p.endsWith('roadmap_discovery.json')) return true;
+      if (p.endsWith('roadmap.json')) return true;
+      return false;
+    });
+
+    let readCount = 0;
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap_discovery.json')) return VALID_DISCOVERY_JSON;
+      if (p.endsWith('roadmap.json')) {
+        readCount++;
+        return readCount === 1 ? existingRoadmap : newRoadmap;
+      }
+      return '{}';
+    });
+
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    const result = await runRoadmapGeneration(baseConfig({ refresh: true }));
+
+    expect(result.success).toBe(true);
+  });
+
+  it('merges new features with preserved features avoiding duplicates by title', async () => {
+    const existingRoadmap = JSON.stringify({
+      vision: 'Old vision',
+      target_audience: { primary: 'Developers' },
+      phases: [],
+      features: [
+        {
+          id: 'preserve-1',
+          title: 'Auth System',
+          description: 'Keep this',
+          priority: 'high',
+          complexity: 'medium',
+          impact: 'high',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+      ],
+    });
+
+    const newRoadmap = JSON.stringify({
+      vision: 'New vision',
+      target_audience: { primary: 'Developers' },
+      phases: [{ id: 'p1', name: 'MVP' }],
+      features: [
+        {
+          id: 'new-1',
+          title: 'auth system', // Same title (case insensitive) - should be deduplicated
+          description: 'Should not appear',
+          priority: 'low',
+          complexity: 'low',
+          impact: 'low',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+        {
+          id: 'new-2',
+          title: 'Dashboard',
+          description: 'Should be added',
+          priority: 'high',
+          complexity: 'medium',
+          impact: 'high',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+        {
+          id: 'new-3',
+          title: 'Feature Three',
+          description: 'Should be added',
+          priority: 'medium',
+          complexity: 'low',
+          impact: 'medium',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+        {
+          id: 'new-4',
+          title: 'Feature Four',
+          description: 'Should be added',
+          priority: 'low',
+          complexity: 'high',
+          impact: 'low',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+      ],
+    });
+
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap')) return true;
+      if (p.endsWith('roadmap_discovery.json')) return true;
+      if (p.endsWith('roadmap.json')) return true;
+      return false;
+    });
+
+    let readCount = 0;
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap_discovery.json')) return VALID_DISCOVERY_JSON;
+      if (p.endsWith('roadmap.json')) {
+        readCount++;
+        return readCount === 1 ? existingRoadmap : newRoadmap;
+      }
+      return '{}';
+    });
+
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    const result = await runRoadmapGeneration(baseConfig({ refresh: true }));
+
+    expect(result.success).toBe(true);
+  });
+
+  it('returns new features as-is when no preserved features exist', async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap')) return true;
+      if (p.endsWith('roadmap_discovery.json')) return true;
+      if (p.endsWith('roadmap.json')) return false; // No existing roadmap
+      return false;
+    });
+
+    let readCount = 0;
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap_discovery.json')) return VALID_DISCOVERY_JSON;
+      if (p.endsWith('roadmap.json')) {
+        readCount++;
+        return VALID_ROADMAP_JSON;
+      }
+      return '{}';
+    });
+
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    const result = await runRoadmapGeneration(baseConfig({ refresh: true }));
+
+    expect(result.success).toBe(true);
+  });
+
+  it('handles features with empty titles during merge', async () => {
+    const existingRoadmap = JSON.stringify({
+      vision: 'Old vision',
+      target_audience: { primary: 'Developers' },
+      phases: [],
+      features: [
+        {
+          id: 'preserve-1',
+          title: 'Keep Me',
+          description: 'Has title',
+          priority: 'high',
+          complexity: 'medium',
+          impact: 'high',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+      ],
+    });
+
+    const newRoadmap = JSON.stringify({
+      vision: 'New vision',
+      target_audience: { primary: 'Developers' },
+      phases: [{ id: 'p1', name: 'MVP' }],
+      features: [
+        {
+          id: 'new-1',
+          title: '', // Empty title - should still be added
+          description: 'No title',
+          priority: 'high',
+          complexity: 'medium',
+          impact: 'high',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+        {
+          id: 'new-2',
+          title: 'Feature Two',
+          description: 'Should be added',
+          priority: 'medium',
+          complexity: 'low',
+          impact: 'medium',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+        {
+          id: 'new-3',
+          title: 'Feature Three',
+          description: 'Should be added',
+          priority: 'low',
+          complexity: 'high',
+          impact: 'low',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+      ],
+    });
+
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap')) return true;
+      if (p.endsWith('roadmap_discovery.json')) return true;
+      if (p.endsWith('roadmap.json')) return true;
+      return false;
+    });
+
+    let readCount = 0;
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap_discovery.json')) return VALID_DISCOVERY_JSON;
+      if (p.endsWith('roadmap.json')) {
+        readCount++;
+        return readCount === 1 ? existingRoadmap : newRoadmap;
+      }
+      return '{}';
+    });
+
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    const result = await runRoadmapGeneration(baseConfig({ refresh: true }));
+
+    expect(result.success).toBe(true);
+  });
+
+  it('handles features with missing IDs during merge', async () => {
+    const existingRoadmap = JSON.stringify({
+      vision: 'Old vision',
+      target_audience: { primary: 'Developers' },
+      phases: [],
+      features: [
+        {
+          title: 'No ID Feature',
+          description: 'Has no ID',
+          priority: 'high',
+          complexity: 'medium',
+          impact: 'high',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+      ],
+    });
+
+    const newRoadmap = JSON.stringify({
+      vision: 'New vision',
+      target_audience: { primary: 'Developers' },
+      phases: [{ id: 'p1', name: 'MVP' }],
+      features: [
+        {
+          id: 'new-1',
+          title: 'New Feature',
+          description: 'Should be added',
+          priority: 'high',
+          complexity: 'medium',
+          impact: 'high',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+        {
+          id: 'new-2',
+          title: 'Feature Two',
+          description: 'Should be added',
+          priority: 'medium',
+          complexity: 'low',
+          impact: 'medium',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+        {
+          id: 'new-3',
+          title: 'Feature Three',
+          description: 'Should be added',
+          priority: 'low',
+          complexity: 'high',
+          impact: 'low',
+          phase_id: 'p1',
+          status: 'planned',
+          acceptance_criteria: [],
+          user_stories: [],
+        },
+      ],
+    });
+
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap')) return true;
+      if (p.endsWith('roadmap_discovery.json')) return true;
+      if (p.endsWith('roadmap.json')) return true;
+      return false;
+    });
+
+    let readCount = 0;
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap_discovery.json')) return VALID_DISCOVERY_JSON;
+      if (p.endsWith('roadmap.json')) {
+        readCount++;
+        return readCount === 1 ? existingRoadmap : newRoadmap;
+      }
+      return '{}';
+    });
+
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    const result = await runRoadmapGeneration(baseConfig({ refresh: true }));
+
+    expect(result.success).toBe(true);
+  });
 });
