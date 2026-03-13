@@ -1179,9 +1179,22 @@ export function registerMRReviewHandlers(
           return { success: false, error: 'Could not identify calling window' };
         }
 
+        // Clamp interval to safe range (1s to 60s)
+        const safeIntervalMs = Number.isFinite(intervalMs)
+          ? Math.min(60_000, Math.max(1_000, intervalMs))
+          : 5_000;
+
         // Start new polling interval
         const interval = setInterval(async () => {
           const pollKey = `${projectId}:${mrIid}`;
+
+          // Stop polling if window is destroyed
+          if (!callingWindow || callingWindow.isDestroyed()) {
+            clearInterval(interval);
+            statusPollingIntervals.delete(pollKey);
+            pollingInProgress.delete(pollKey);
+            return;
+          }
 
           // Prevent concurrent polls
           if (pollingInProgress.has(pollKey)) {
@@ -1191,14 +1204,18 @@ export function registerMRReviewHandlers(
           pollingInProgress.add(pollKey);
 
           try {
+            // Fetch current project to avoid stale config from closure
+            const currentProject = projectStore.getProject(projectId);
+            if (!currentProject) {
+              debugLog('Project not found during poll - stopping poller', { projectId });
+              clearInterval(interval);
+              statusPollingIntervals.delete(pollKey);
+              pollingInProgress.delete(pollKey);
+              return;
+            }
+
             // Emit status update to renderer
             if (callingWindow && !callingWindow.isDestroyed()) {
-              // Fetch current project to avoid stale config from closure
-              const currentProject = projectStore.getProject(projectId);
-              if (!currentProject) {
-                debugLog('Project not found during poll', { projectId });
-                return;
-              }
 
               const config = await getGitLabConfig(currentProject);
               if (!config) return;
@@ -1229,7 +1246,7 @@ export function registerMRReviewHandlers(
           } finally {
             pollingInProgress.delete(pollKey);
           }
-        }, intervalMs);
+        }, safeIntervalMs);
 
         statusPollingIntervals.set(pollKey, interval);
 
