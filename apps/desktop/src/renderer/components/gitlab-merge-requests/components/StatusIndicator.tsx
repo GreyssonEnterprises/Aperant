@@ -122,7 +122,10 @@ export interface MRStatusIndicatorProps {
 // Comprehensive merge status mapping for all GitLab detailed_merge_status values
 const mergeKeyMap: Record<string, string> = {
   can_be_merged: 'ready',
+  mergeable: 'ready',
   cannot_be_merged: 'conflict',
+  conflict: 'conflict',
+  need_rebase: 'conflict',
   checking: 'checking',
   // Additional GitLab merge status values
   policies: 'blocked',
@@ -133,13 +136,22 @@ const mergeKeyMap: Record<string, string> = {
   blocked: 'blocked',
   unchecked: 'checking',
   web_ide: 'checking',
+  ci_must_pass: 'blocked',
+  ci_still_running: 'blocked',
+  discussions_not_resolved: 'blocked',
+  draft_status: 'blocked',
+  not_open: 'blocked',
+  merge_request_blocked: 'blocked',
   // Safe default for unknown statuses
 };
 
 // Map GitLab merge status to MergeableState for the icon
 const gitlabToMergeableState: Record<string, MergeableState> = {
   can_be_merged: 'clean',
+  mergeable: 'clean',
   cannot_be_merged: 'dirty',
+  conflict: 'dirty',
+  need_rebase: 'dirty',
   checking: 'blocked',
   // Additional GitLab merge status values
   policies: 'blocked',
@@ -150,6 +162,12 @@ const gitlabToMergeableState: Record<string, MergeableState> = {
   blocked: 'blocked',
   unchecked: 'blocked',
   web_ide: 'blocked',
+  ci_must_pass: 'blocked',
+  ci_still_running: 'blocked',
+  discussions_not_resolved: 'blocked',
+  draft_status: 'blocked',
+  not_open: 'blocked',
+  merge_request_blocked: 'blocked',
   // Safe default
 };
 
