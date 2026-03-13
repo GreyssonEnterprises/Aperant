@@ -1365,7 +1365,7 @@ export function registerMRReviewHandlers(
             `/projects/${encodedProject}/merge_requests?${queryParams.toString()}`
           ) as any[];
 
-          // Check if there are more MRs by fetching one more item
+          // Check if there might be more MRs if the returned count matches the page size
           const hasMore = mrs.length === 20;
 
           return {

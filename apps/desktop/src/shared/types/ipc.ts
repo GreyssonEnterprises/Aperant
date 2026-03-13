@@ -171,7 +171,7 @@ export interface GitBranchDetail {
 
 // Electron API exposed via contextBridge
 // Import from preload to avoid duplication
-import type { ElectronAPI as PreloadElectronAPI } from '../../preload/api';
+import type { ElectronAPI as PreloadElectronAPI } from '@preload/api';
 
 // Re-export ElectronAPI type from preload
 export type ElectronAPI = PreloadElectronAPI;

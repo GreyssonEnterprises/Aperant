@@ -46,12 +46,11 @@ describe('issues-store', () => {
     expect(useIssuesStore.getState().issues).toHaveLength(1);
   });
 
-  it('should append issues without duplicates', () => {
+  it('should replace issues with new array', () => {
     const issue1 = createMockGitLabIssue({ iid: 1, title: 'Test 1' });
     const issue2 = createMockGitLabIssue({ iid: 2, title: 'Test 2' });
 
     useIssuesStore.getState().setIssues([issue1]);
-    // Note: appendIssues will be implemented when pagination support is added
     useIssuesStore.getState().setIssues([...useIssuesStore.getState().issues, issue2]);
 
     expect(useIssuesStore.getState().issues).toHaveLength(2);
