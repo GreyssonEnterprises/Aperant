@@ -17,11 +17,11 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '../../ui/button';
-import { Badge } from '../../ui/badge';
-import { Progress } from '../../ui/progress';
-import { ScrollArea } from '../../ui/scroll-area';
-import { Checkbox } from '../../ui/checkbox';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -29,15 +29,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../../ui/dialog';
+} from '@/components/ui/dialog';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '../../ui/collapsible';
+} from '@/components/ui/collapsible';
 import type {
   GitLabAnalyzePreviewResult,
-} from '../../../../shared/types';
+} from '@shared/types';
 
 // GitLabAnalyzePreviewProgress type definition
 export interface GitLabAnalyzePreviewProgress {
@@ -96,6 +96,8 @@ export function GitLabBatchReviewWizard({
   const [expandedBatchIds, setExpandedBatchIds] = useState<Set<number>>(new Set());
   // Current wizard step
   const [step, setStep] = useState<'intro' | 'analyzing' | 'review' | 'approving' | 'done'>('intro');
+  // Local error state for approval failures
+  const [approvalError, setApprovalError] = useState<string | null>(null);
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -218,8 +220,13 @@ export function GitLabBatchReviewWizard({
     // Combine batches and single issues
     const allBatches = [...selectedBatches, ...selectedSingleIssueBatches];
 
-    await onApproveBatches(allBatches);
-    setStep('done');
+    try {
+      await onApproveBatches(allBatches);
+      setStep('done');
+    } catch (error) {
+      setApprovalError(error instanceof Error ? error.message : String(error));
+      setStep('intro');
+    }
   }, [analysisResult, selectedBatchIds, selectedSingleIids, onApproveBatches]);
 
   const renderIntro = () => (
