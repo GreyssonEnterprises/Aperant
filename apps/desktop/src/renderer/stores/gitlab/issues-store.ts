@@ -10,7 +10,8 @@ import { create } from 'zustand';
 import type { GitLabIssue } from '../../../shared/types';
 import type { GitLabFilterState } from '../../../shared/integrations/types/base-types';
 
-export type IssueFilterState = GitLabFilterState;
+// GitLab issues don't have 'merged' state (only MRs do), so create a specific type
+export type IssueFilterState = Exclude<GitLabFilterState, 'merged'>;
 
 interface IssuesState {
   // Data
@@ -82,16 +83,12 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   getFilteredIssues: () => {
     const { issues, filterState } = get();
     if (filterState === 'all') return issues;
-    // Handle 'opened' vs 'open' normalization
-    if (filterState === 'opened') {
-      return issues.filter(issue => issue.state === 'opened' || issue.state === 'open');
-    }
     return issues.filter(issue => issue.state === filterState);
   },
 
   getOpenIssuesCount: () => {
     const { issues } = get();
-    return issues.filter(issue => issue.state === 'opened' || issue.state === 'open').length;
+    return issues.filter(issue => issue.state === 'opened').length;
   }
 }));
 

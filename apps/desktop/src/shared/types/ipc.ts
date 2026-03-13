@@ -170,6 +170,12 @@ export interface GitBranchDetail {
 // ============================================
 
 // Electron API exposed via contextBridge
+// Import from preload to avoid duplication
+import type { ElectronAPI as PreloadElectronAPI } from '../../preload/api';
+
+// Re-export ElectronAPI type from preload
+export type ElectronAPI = PreloadElectronAPI;
+
 // Tab state interface (persisted in main process)
 export interface TabState {
   openProjectIds: string[];
@@ -177,7 +183,9 @@ export interface TabState {
   tabOrder: string[];
 }
 
-export interface ElectronAPI {
+// Legacy: Keep the old interface for reference, but use the imported type above
+// This will be removed once all references are updated
+export interface ElectronAPILegacy {
   // Project operations
   addProject: (projectPath: string) => Promise<IPCResult<Project>>;
   removeProject: (projectId: string) => Promise<IPCResult>;

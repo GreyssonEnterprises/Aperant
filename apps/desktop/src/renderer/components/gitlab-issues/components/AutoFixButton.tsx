@@ -61,9 +61,9 @@ export function GitLabAutoFixButton({
     );
 
     const cleanupError = window.electronAPI.onGitLabAutoFixError?.(
-      (eventProjectId: string, errorData: { issueIid: number; error: string }) => {
-        if (eventProjectId === projectId && errorData.issueIid === issue.iid) {
-          setError(errorData.error);
+      (eventProjectId: string, error: string) => {
+        if (eventProjectId === projectId) {
+          setError(error);
           setProgress(null);
           setIsStarting(false);
         }

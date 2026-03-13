@@ -36,8 +36,13 @@ import {
 } from '../../ui/collapsible';
 import type {
   GitLabAnalyzePreviewResult,
-  GitLabAnalyzePreviewProgress,
 } from '../../../../shared/types';
+
+// GitLabAnalyzePreviewProgress type definition
+export interface GitLabAnalyzePreviewProgress {
+  message: string;
+  progress: number;
+}
 
 // Type alias for ProposedBatch to match the inline type in GitLabAnalyzePreviewResult
 export interface GitLabProposedBatch {
@@ -94,7 +99,7 @@ export function GitLabBatchReviewWizard({
   useEffect(() => {
     if (isOpen) {
       setSelectedBatchIds(new Set());
-      setSelectedSingleIssueIids(new Set());
+      setSelectedSingleIids(new Set());
       setExpandedBatchIds(new Set());
       setStep('intro');
     }
@@ -118,7 +123,7 @@ export function GitLabBatchReviewWizard({
         const singleIssueIids = new Set(
           analysisResult.singleIssues.map(issue => issue.iid)
         );
-        setSelectedSingleIssueIids(singleIssueIids);
+        setSelectedSingleIids(singleIssueIids);
       }
     } else if (analysisError) {
       setStep('intro');
@@ -145,7 +150,7 @@ export function GitLabBatchReviewWizard({
   }, []);
 
   const toggleSingleIssueSelection = useCallback((iid: number) => {
-    setSelectedSingleIssueIids(prev => {
+    setSelectedSingleIids(prev => {
       const next = new Set(prev);
       if (next.has(iid)) {
         next.delete(iid);
@@ -173,12 +178,12 @@ export function GitLabBatchReviewWizard({
     const allIds = new Set(analysisResult.proposedBatches.map((_, idx) => idx));
     setSelectedBatchIds(allIds);
     const allSingleIssues = new Set(analysisResult.singleIssues.map(issue => issue.iid));
-    setSelectedSingleIssueIids(allSingleIssues);
+    setSelectedSingleIids(allSingleIssues);
   }, [analysisResult]);
 
   const deselectAllBatches = useCallback(() => {
     setSelectedBatchIds(new Set());
-    setSelectedSingleIssueIids(new Set());
+    setSelectedSingleIids(new Set());
   }, []);
 
   const handleApprove = useCallback(async () => {

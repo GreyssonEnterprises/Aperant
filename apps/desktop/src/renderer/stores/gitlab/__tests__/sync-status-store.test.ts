@@ -51,7 +51,7 @@ describe('sync-status-store', () => {
   it('should clear sync status', () => {
     useSyncStatusStore.getState().setSyncStatus({
       connected: true,
-      projectPath: 'group/project'
+      projectPathWithNamespace: 'group/project'
     });
     useSyncStatusStore.getState().clearSyncStatus();
 

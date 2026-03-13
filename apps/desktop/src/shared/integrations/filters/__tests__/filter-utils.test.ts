@@ -5,11 +5,11 @@ import type { FilterState } from '../../types/base-types';
 describe('filter-utils', () => {
   interface TestItem {
     id: number;
-    state: 'open' | 'opened' | 'closed' | 'merged';
+    state: string; // Use string to accommodate different state formats
   }
 
   it('should filter by opened state', () => {
-    const items = [
+    const items: TestItem[] = [
       { id: 1, state: 'opened' },
       { id: 2, state: 'closed' },
       { id: 3, state: 'opened' }
@@ -20,7 +20,7 @@ describe('filter-utils', () => {
   });
 
   it('should normalize open/opened states (GitHub vs GitLab)', () => {
-    const items = [
+    const items: TestItem[] = [
       { id: 1, state: 'open' },      // GitHub format
       { id: 2, state: 'opened' },    // GitLab format
       { id: 3, state: 'closed' }
@@ -32,7 +32,7 @@ describe('filter-utils', () => {
   });
 
   it('should return all items for "all" filter', () => {
-    const items = [
+    const items: TestItem[] = [
       { id: 1, state: 'opened' },
       { id: 2, state: 'closed' }
     ];
@@ -48,7 +48,7 @@ describe('filter-utils', () => {
   });
 
   it('should filter by closed state', () => {
-    const items = [
+    const items: TestItem[] = [
       { id: 1, state: 'opened' },
       { id: 2, state: 'closed' },
       { id: 3, state: 'opened' }
@@ -59,7 +59,7 @@ describe('filter-utils', () => {
   });
 
   it('should filter by merged state', () => {
-    const items = [
+    const items: TestItem[] = [
       { id: 1, state: 'opened' },
       { id: 2, state: 'merged' },
       { id: 3, state: 'closed' }

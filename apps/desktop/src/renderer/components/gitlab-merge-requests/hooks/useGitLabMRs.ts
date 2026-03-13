@@ -294,8 +294,9 @@ export function useGitLabMRs(projectId?: string, options: UseGitLabMRsOptions = 
     try {
       const result = await window.electronAPI.listMoreGitLabMRs(projectId, stateFilter, page);
       if (result.success && result.data) {
-        setMergeRequests(prev => [...prev, ...result.data.mrs]);
-        return result.data.hasMore;
+        const { mrs, hasMore } = result.data;
+        setMergeRequests(prev => [...prev, ...mrs]);
+        return hasMore;
       }
       return false;
     } catch (err) {
@@ -325,7 +326,7 @@ export function useGitLabMRs(projectId?: string, options: UseGitLabMRsOptions = 
 
     try {
       const result = await window.electronAPI.checkGitLabMRMergeReadiness(projectId, mrIid);
-      return result.success ? result.data : null;
+      return result.success ? (result.data ?? null) : null;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to check merge readiness');
       return null;
@@ -337,7 +338,7 @@ export function useGitLabMRs(projectId?: string, options: UseGitLabMRsOptions = 
 
     try {
       const result = await window.electronAPI.getGitLabMRLogs(projectId, mrIid);
-      return result.success ? result.data : null;
+      return result.success ? (result.data ?? null) : null;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get logs');
       return null;

@@ -10,8 +10,7 @@
  * 6. Approve MR
  */
 
-import { ipcMain } from 'electron';
-import type { BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
@@ -986,7 +985,7 @@ export function registerMRReviewHandlers(
     async (_event, projectId: string, mrIid: number, noteId: number): Promise<IPCResult<{ deleted: boolean }>> => {
       debugLog('deleteReview handler called', { projectId, mrIid, noteId });
 
-      return withProjectOrNull(projectId, async (project) => {
+      const result = await withProjectOrNull(projectId, async (project) => {
         const config = await getGitLabConfig(project);
         if (!config) return { success: false, error: 'GitLab not configured' };
 
@@ -1008,6 +1007,11 @@ export function registerMRReviewHandlers(
           return { success: false, error: errorMessage };
         }
       });
+
+      if (result === null) {
+        return { success: false, error: 'Project not found' };
+      }
+      return result;
     }
   );
 
@@ -1024,7 +1028,7 @@ export function registerMRReviewHandlers(
     }>> => {
       debugLog('checkMergeReadiness handler called', { projectId, mrIid });
 
-      return withProjectOrNull(projectId, async (project) => {
+      const result = await withProjectOrNull(projectId, async (project) => {
         const config = await getGitLabConfig(project);
         if (!config) return { success: false, error: 'GitLab not configured' };
 
@@ -1064,6 +1068,11 @@ export function registerMRReviewHandlers(
           return { success: false, error: errorMessage };
         }
       });
+
+      if (result === null) {
+        return { success: false, error: 'Project not found' };
+      }
+      return result;
     }
   );
 
@@ -1075,7 +1084,7 @@ export function registerMRReviewHandlers(
     async (_event, projectId: string, mrIid: number): Promise<IPCResult<string[]>> => {
       debugLog('getLogs handler called', { projectId, mrIid });
 
-      return withProjectOrNull(projectId, async (project) => {
+      const result = await withProjectOrNull(projectId, async (project) => {
         const reviewPath = path.join(getGitLabDir(project), 'mr', `review_${mrIid}.json`);
         const logsPath = path.join(getGitLabDir(project), 'mr', `logs_${mrIid}.json`);
 
@@ -1098,6 +1107,11 @@ export function registerMRReviewHandlers(
           return { success: false, error: errorMessage };
         }
       });
+
+      if (result === null) {
+        return { success: false, error: 'Project not found' };
+      }
+      return result;
     }
   );
 
@@ -1111,7 +1125,7 @@ export function registerMRReviewHandlers(
     async (_event, projectId: string, mrIid: number, intervalMs: number = 5000): Promise<IPCResult<{ polling: boolean }>> => {
       debugLog('statusPollStart handler called', { projectId, mrIid, intervalMs });
 
-      return withProjectOrNull(projectId, async (project) => {
+      const result = await withProjectOrNull(projectId, async (project) => {
         const pollKey = `${projectId}:${mrIid}`;
 
         // Clear existing interval if any
@@ -1122,8 +1136,8 @@ export function registerMRReviewHandlers(
         // Start new polling interval
         const interval = setInterval(async () => {
           // Emit status update to renderer
-          const window = getMainWindow();
-          if (window) {
+          const mainWindow = BrowserWindow.getAllWindows()[0];
+          if (mainWindow) {
             const config = await getGitLabConfig(project);
             if (!config) return;
 
@@ -1141,7 +1155,7 @@ export function registerMRReviewHandlers(
                 updated_at?: string;
               };
 
-              window.webContents.send('gitlab:mr:statusUpdate', {
+              mainWindow.webContents.send('gitlab:mr:statusUpdate', {
                 projectId,
                 mrIid,
                 state: mrData.state,
@@ -1158,6 +1172,11 @@ export function registerMRReviewHandlers(
 
         return { success: true, data: { polling: true } };
       });
+
+      if (result === null) {
+        return { success: false, error: 'Project not found' };
+      }
+      return result;
     }
   );
 
@@ -1229,7 +1248,7 @@ export function registerMRReviewHandlers(
     async (_event, projectId: string, mrIids: number[]): Promise<IPCResult<Record<number, MRReviewResult | null>>> => {
       debugLog('getReviewsBatch handler called', { projectId, mrIids });
 
-      return withProjectOrNull(projectId, async (project) => {
+      const result = await withProjectOrNull(projectId, async (project) => {
         const results: Record<number, MRReviewResult | null> = {};
 
         for (const mrIid of mrIids) {
@@ -1239,6 +1258,11 @@ export function registerMRReviewHandlers(
 
         return { success: true, data: results };
       });
+
+      if (result === null) {
+        return { success: false, error: 'Project not found' };
+      }
+      return result;
     }
   );
 
@@ -1255,9 +1279,14 @@ export function registerMRReviewHandlers(
     ): Promise<IPCResult<{ mrs: any[]; hasMore: boolean }>> => {
       debugLog('listMore handler called', { projectId, state, page });
 
-      return withProjectOrNull(projectId, async (project) => {
-        const { token, instanceUrl } = getGitLabConfig(project);
-        const encodedProject = encodeProjectPath(project.projectPathWithNamespace);
+      const result = await withProjectOrNull(projectId, async (project) => {
+        const config = await getGitLabConfig(project);
+        if (!config) {
+          return { success: false, error: 'GitLab not configured' };
+        }
+
+        const { token, instanceUrl } = config;
+        const encodedProject = encodeProjectPath(config.project);
 
         try {
           const stateParam = state === 'all' ? undefined : state;
@@ -1289,6 +1318,11 @@ export function registerMRReviewHandlers(
           return { success: false, error: errorMessage };
         }
       });
+
+      if (result === null) {
+        return { success: false, error: 'Project not found' };
+      }
+      return result;
     }
   );
 
