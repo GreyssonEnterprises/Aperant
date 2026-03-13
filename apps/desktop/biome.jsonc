@@ -46,7 +46,7 @@
         "useNodejsImportProtocol": "off",
         "useImportType": "off",
         "useTemplate": "off",
-        "noNonNullAssertion": "off"
+        "noNonNullAssertion": "warn"
       },
       "suspicious": {
         "recommended": true,

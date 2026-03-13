@@ -158,6 +158,7 @@ export async function importGitLabIssues(
   try {
     const result = await window.electronAPI.importGitLabIssues(projectId, issueIids);
     if (result.success) {
+      store.setError(null); // Clear error on success
       return true;
     } else {
       store.setError(result.error || 'Failed to import GitLab issues');
