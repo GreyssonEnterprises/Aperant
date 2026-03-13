@@ -227,4 +227,222 @@ describe('generateCommitMessage', () => {
     const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
     expect(prompt).toContain('and 10 more files');
   });
+
+  // ---------------------------------------------------------------------------
+  // Spec context from requirements.json (lines 141, 144)
+  // ---------------------------------------------------------------------------
+
+  it('reads workflow_type from requirements.json to determine commit type', async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      const normalized = p.replace(/\\/g, '/');
+      if (normalized.includes('specs/001-add-feature')) return true;
+      return false;
+    });
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.includes('spec.md')) return '# Some Feature\n\n## Overview\nDescription here.';
+      if (p.includes('requirements.json')) return JSON.stringify({
+        feature: 'Add logging',
+        workflow_type: 'bug_fix',
+      });
+      return '{}';
+    });
+    mockGenerateText.mockResolvedValue({ text: 'fix: resolve logging issue' });
+
+    const result = await generateCommitMessage(baseConfig());
+
+    expect(result).toBe('fix: resolve logging issue');
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('Type: fix');
+  });
+
+  it('reads task_description from requirements.json when no overview in spec.md', async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      const normalized = p.replace(/\\/g, '/');
+      if (normalized.includes('specs/001-add-feature')) return true;
+      return false;
+    });
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.includes('spec.md')) return '# Feature\n\nNo overview section here.'; // No Overview section
+      if (p.includes('requirements.json')) return JSON.stringify({
+        feature: 'Add caching',
+        workflow_type: 'feature',
+        task_description: 'Implement Redis-based caching layer for API responses to improve performance',
+      });
+      return '{}';
+    });
+    mockGenerateText.mockResolvedValue({ text: 'feat: add caching' });
+
+    await generateCommitMessage(baseConfig());
+
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('Description: Implement Redis-based caching layer');
+  });
+
+  it('uses feature from requirements.json as title when spec.md has no title', async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      const normalized = p.replace(/\\/g, '/');
+      if (normalized.includes('specs/001-add-feature')) return true;
+      return false;
+    });
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.includes('spec.md')) return 'No header here'; // No # title
+      if (p.includes('requirements.json')) return JSON.stringify({
+        feature: 'Add payment processing',
+        workflow_type: 'feature',
+      });
+      return '{}';
+    });
+    mockGenerateText.mockResolvedValue({ text: 'feat: add payment processing' });
+
+    await generateCommitMessage(baseConfig());
+
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('Task: Add payment processing');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Spec context from implementation_plan.json (lines 156, 159)
+  // ---------------------------------------------------------------------------
+
+  it('reads githubIssueNumber from implementation_plan.json', async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      const normalized = p.replace(/\\/g, '/');
+      if (normalized.includes('specs/001-add-feature')) return true;
+      return false;
+    });
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.includes('spec.md')) return '# Feature';
+      if (p.includes('implementation_plan.json')) return JSON.stringify({
+        metadata: {
+          githubIssueNumber: 42,
+        },
+        feature: 'Issue linked feature',
+      });
+      return '{}';
+    });
+    mockGenerateText.mockResolvedValue({ text: 'feat: add feature\n\nFixes #42' });
+
+    const result = await generateCommitMessage(baseConfig());
+
+    expect(result).toContain('Fixes #42');
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('GitHub Issue: #42');
+  });
+
+  it('reads title from implementation_plan.json when spec.md and requirements.json have no title', async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      const normalized = p.replace(/\\/g, '/');
+      if (normalized.includes('specs/001-add-feature')) return true;
+      return false;
+    });
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.includes('spec.md')) return 'No title here';
+      if (p.includes('requirements.json')) return JSON.stringify({
+        workflow_type: 'feature',
+        // No feature field
+      });
+      if (p.includes('implementation_plan.json')) return JSON.stringify({
+        feature: 'Title from plan',
+        metadata: {},
+      });
+      return '{}';
+    });
+    mockGenerateText.mockResolvedValue({ text: 'feat: title from plan' });
+
+    await generateCommitMessage(baseConfig());
+
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('Task: Title from plan');
+  });
+
+  it('reads title field from implementation_plan.json as fallback', async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      const normalized = p.replace(/\\/g, '/');
+      if (normalized.includes('specs/001-add-feature')) return true;
+      return false;
+    });
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.includes('spec.md')) return 'No title';
+      if (p.includes('requirements.json')) return JSON.stringify({
+        workflow_type: 'feature',
+      });
+      if (p.includes('implementation_plan.json')) return JSON.stringify({
+        title: 'Title using title field',
+        metadata: {},
+      });
+      return '{}';
+    });
+    mockGenerateText.mockResolvedValue({ text: 'feat: title field' });
+
+    await generateCommitMessage(baseConfig());
+
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('Task: Title using title field');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Spec directory not found (auto-claude path fallback)
+  // ---------------------------------------------------------------------------
+
+  it('tries auto-claude path when .auto-claude path does not exist', async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      const normalized = p.replace(/\\/g, '/');
+      // .auto-claude path doesn't exist, auto-claude does
+      if (normalized.includes('.auto-claude/specs')) return false;
+      if (normalized.includes('auto-claude/specs/001-add-feature')) return true;
+      return false;
+    });
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.includes('spec.md')) return '# Alternative Path Feature';
+      return '{}';
+    });
+    mockGenerateText.mockResolvedValue({ text: 'feat: alternative path' });
+
+    await generateCommitMessage(baseConfig());
+
+    const prompt = mockGenerateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('Task: Alternative Path Feature');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Error handling in spec file reading
+  // ---------------------------------------------------------------------------
+
+  it('handles read errors gracefully when reading spec files', async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      const normalized = p.replace(/\\/g, '/');
+      if (normalized.includes('specs/001-add-feature')) return true;
+      return false;
+    });
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.includes('spec.md')) {
+        throw new Error('Permission denied');
+      }
+      return '{}';
+    });
+    mockGenerateText.mockResolvedValue({ text: 'chore: 001-add-feature' });
+
+    const result = await generateCommitMessage(baseConfig());
+
+    // Should fall back to specName as title
+    expect(result).toBe('chore: 001-add-feature');
+  });
+
+  it('handles invalid JSON in requirements.json gracefully', async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      const normalized = p.replace(/\\/g, '/');
+      if (normalized.includes('specs/001-add-feature')) return true;
+      return false;
+    });
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.includes('spec.md')) return '# Feature';
+      if (p.includes('requirements.json')) return 'invalid json {{{';
+      return '{}';
+    });
+    mockGenerateText.mockResolvedValue({ text: 'feat: feature' });
+
+    const result = await generateCommitMessage(baseConfig());
+
+    expect(result).toBe('feat: feature');
+  });
 });

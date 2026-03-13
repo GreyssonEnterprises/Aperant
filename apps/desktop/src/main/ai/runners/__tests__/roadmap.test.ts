@@ -1150,4 +1150,34 @@ describe('runRoadmapGeneration', () => {
 
     expect(result.success).toBe(true);
   });
+
+  // ---------------------------------------------------------------------------
+  // File read error handling (lines 314-318, 345)
+  // ---------------------------------------------------------------------------
+
+  it('handles ENOENT error when reading roadmap file', async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap')) return true;
+      if (p.endsWith('roadmap_discovery.json')) return true;
+      return false;
+    });
+
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p.endsWith('roadmap_discovery.json')) return VALID_DISCOVERY_JSON;
+      if (p.endsWith('roadmap.json')) {
+        const err: NodeJS.ErrnoException = new Error('File not found');
+        err.code = 'ENOENT';
+        throw err;
+      }
+      return '{}';
+    });
+
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    const result = await runRoadmapGeneration(baseConfig());
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Feature generation failed');
+    expect(result.phases[1].errors.length).toBeGreaterThan(0);
+  });
 });
