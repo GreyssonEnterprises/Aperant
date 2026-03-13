@@ -905,9 +905,9 @@ export function handleClaudeExit(
  */
 function ensureOnboardingComplete(configDir: string): void {
   try {
-    const expandedDir = configDir.startsWith('~')
-      ? configDir.replace(/^~/, os.homedir())
-      : configDir;
+    const expandedDir = path.resolve(
+      configDir.startsWith('~') ? configDir.replace(/^~/, os.homedir()) : configDir
+    );
     const claudeJsonPath = path.join(expandedDir, '.claude.json');
 
     if (!fs.existsSync(claudeJsonPath)) {
@@ -916,6 +916,10 @@ function ensureOnboardingComplete(configDir: string): void {
 
     const content = fs.readFileSync(claudeJsonPath, 'utf-8');
     const config = JSON.parse(content);
+
+    if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+      return; // Not a valid config object
+    }
 
     if (config.hasCompletedOnboarding === true) {
       return; // Already set

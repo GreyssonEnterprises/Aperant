@@ -32,8 +32,22 @@ function loadCreateClient(): (config: Config) => Client {
     // patched to include Resources/node_modules/ for extraResources packages.
     // In tests/dev: fall back to createRequire (deps are in normal node_modules).
     const req = globalThis.require ?? createRequire(import.meta.url);
-    const mod = req('@libsql/client/sqlite3');
-    _createClient = mod.createClient;
+    let mod: Record<string, unknown>;
+    try {
+      mod = req('@libsql/client/sqlite3');
+    } catch (err) {
+      throw new Error(
+        `Failed to load @libsql/client/sqlite3: ${(err as Error).message}. ` +
+        `Ensure native modules are available in Resources/node_modules/`
+      );
+    }
+    if (typeof mod.createClient !== 'function') {
+      throw new Error(
+        `@libsql/client/sqlite3 did not export createClient (got ${typeof mod.createClient}). ` +
+        `Check that native modules are available in Resources/node_modules/`
+      );
+    }
+    _createClient = mod.createClient as (config: Config) => Client;
   }
   return _createClient!;
 }

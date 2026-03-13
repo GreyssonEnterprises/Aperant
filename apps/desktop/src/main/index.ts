@@ -50,7 +50,7 @@ for (const envPath of possibleEnvPaths) {
 
 import { app, BrowserWindow, shell, nativeImage, session, screen, Menu, MenuItem } from 'electron';
 import { join } from 'path';
-import { accessSync, readFileSync, writeFileSync, rmSync } from 'fs';
+import { accessSync, readFileSync, writeFileSync, rmSync, cpSync } from 'fs';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { setupIpcHandlers } from './ipc-setup';
 import { AgentManager } from './agent';
@@ -81,11 +81,10 @@ import type { AppSettings, AuthFailureInfo } from '../shared/types';
   if (existsSync(oldUserData) && !existsSync(join(newUserData, '.migrated'))) {
     try {
       // Copy all files from old location to new (don't move — keeps old as backup)
-      const { cpSync: cpSyncFs } = require('fs') as typeof import('fs');
-      cpSyncFs(oldUserData, newUserData, { recursive: true, force: false, errorOnExist: false });
+      cpSync(oldUserData, newUserData, { recursive: true, force: false, errorOnExist: false });
       // Mark as migrated so we don't repeat
       writeFileSync(join(newUserData, '.migrated'), new Date().toISOString());
-      console.log('[main] Migrated userData from auto-claude-ui to aperant');
+      console.warn('[main] Migrated userData from auto-claude-ui to aperant');
     } catch (err) {
       console.warn('[main] userData migration failed (non-fatal):', err);
     }
