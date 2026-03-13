@@ -987,8 +987,11 @@ export function registerMRReviewHandlers(
       debugLog('deleteReview handler called', { projectId, mrIid, noteId });
 
       return withProjectOrNull(projectId, async (project) => {
-        const { token, instanceUrl } = getGitLabConfig(project);
-        const encodedProject = encodeProjectPath(project.projectPathWithNamespace);
+        const config = await getGitLabConfig(project);
+        if (!config) return { success: false, error: 'GitLab not configured' };
+
+        const { token, instanceUrl } = config;
+        const encodedProject = encodeProjectPath(config.project);
 
         try {
           await gitlabFetch(
@@ -1022,8 +1025,11 @@ export function registerMRReviewHandlers(
       debugLog('checkMergeReadiness handler called', { projectId, mrIid });
 
       return withProjectOrNull(projectId, async (project) => {
-        const { token, instanceUrl } = getGitLabConfig(project);
-        const encodedProject = encodeProjectPath(project.projectPathWithNamespace);
+        const config = await getGitLabConfig(project);
+        if (!config) return { success: false, error: 'GitLab not configured' };
+
+        const { token, instanceUrl } = config;
+        const encodedProject = encodeProjectPath(config.project);
 
         try {
           const mrData = await gitlabFetch(
