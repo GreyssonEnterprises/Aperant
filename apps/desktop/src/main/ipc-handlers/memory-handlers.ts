@@ -12,8 +12,12 @@ import { getOllamaExecutablePaths, getOllamaInstallCommand as getPlatformOllamaI
 import { IPC_CHANNELS } from '../../shared/constants';
 import type {
   IPCResult,
+  InfrastructureStatus,
+  MemoryValidationResult,
 } from '../../shared/types';
 import { openTerminalWithCommand } from './claude-code-handlers';
+import { getEmbeddingProvider } from './context/memory-service-factory';
+const { join } = path;
 
 /**
  * Ollama Service Status
@@ -542,6 +546,154 @@ export function registerMemoryHandlers(): void {
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Failed to pull model',
+        };
+      }
+    }
+  );
+
+  // ============================================
+  // Memory Infrastructure Handlers (LadybugDB - libSQL)
+  // ============================================
+
+  /**
+   * Get memory infrastructure status.
+   * Checks if the local libSQL database is available and returns status.
+   *
+   * @async
+   * @param {string} [dbPath] - Optional custom database path (for testing)
+   * @returns {Promise<IPCResult<InfrastructureStatus>>} Status with memory database info
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.INFRASTRUCTURE_GET_STATUS,
+    async (_, dbPath?: string): Promise<IPCResult<InfrastructureStatus>> => {
+      try {
+        const { getMemoryClient } = await import('../ai/memory/db');
+        const { existsSync } = await import('fs');
+
+        // Get default memory.db path from userData
+        const { app } = await import('electron');
+        const defaultPath = join(app.getPath('userData'), 'memory.db');
+        const checkPath = dbPath || defaultPath;
+
+        // Check if database file exists
+        const dbExists = existsSync(checkPath);
+
+        // Try to initialize the client to verify it's functional
+        await getMemoryClient();
+        const embeddingProvider = getEmbeddingProvider();
+
+        return {
+          success: true,
+          data: {
+            memory: {
+              kuzuInstalled: false, // Kuzu is no longer used, libSQL only
+              databasePath: checkPath,
+              databaseExists: dbExists,
+              databases: dbExists ? ['memory'] : [],
+              error: dbExists ? undefined : 'Database file not found',
+            },
+            ready: dbExists && embeddingProvider !== null,
+          },
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to get infrastructure status',
+        };
+      }
+    }
+  );
+
+  /**
+   * List available memory databases.
+   * Returns a list of database names available in the system.
+   *
+   * @async
+   * @param {string} [dbPath] - Optional custom database path (for testing)
+   * @returns {Promise<IPCResult<string[]>>} Array of database names
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.INFRASTRUCTURE_LIST_DATABASES,
+    async (_, dbPath?: string): Promise<IPCResult<string[]>> => {
+      try {
+        const { existsSync } = await import('fs');
+        const { app } = await import('electron');
+        const { join } = await import('path');
+
+        const defaultPath = join(app.getPath('userData'), 'memory.db');
+        const checkPath = dbPath || defaultPath;
+
+        const databases: string[] = [];
+        if (existsSync(checkPath)) {
+          databases.push('memory');
+        }
+
+        return { success: true, data: databases };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to list databases',
+        };
+      }
+    }
+  );
+
+  /**
+   * Test memory database connection.
+   * Verifies that a specific database can be connected to and queried.
+   *
+   * @async
+   * @param {string} [dbPath] - Optional custom database path
+   * @param {string} [database] - Database name to test (default: 'memory')
+   * @returns {Promise<IPCResult<MemoryValidationResult>>} Connection test result
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.INFRASTRUCTURE_TEST_CONNECTION,
+    async (_, dbPath?: string, database?: string): Promise<IPCResult<MemoryValidationResult>> => {
+      try {
+        const { getMemoryClient } = await import('../ai/memory/db');
+        const { existsSync } = await import('fs');
+        const { app } = await import('electron');
+        const { join } = await import('path');
+
+        const defaultPath = join(app.getPath('userData'), 'memory.db');
+        const checkPath = dbPath || defaultPath;
+        const dbName = database || 'memory';
+
+        // Check if database file exists
+        if (!existsSync(checkPath)) {
+          return {
+            success: true,
+            data: {
+              success: false,
+              message: `Database '${dbName}' not found at ${checkPath}`,
+            },
+          };
+        }
+
+        // Try to connect and run a simple query
+        const client = await getMemoryClient();
+        await client.execute('SELECT 1');
+
+        const embeddingProvider = getEmbeddingProvider();
+
+        return {
+          success: true,
+          data: {
+            success: true,
+            message: `Successfully connected to ${dbName} database`,
+            details: {
+              provider: embeddingProvider || 'none',
+            },
+          },
+        };
+      } catch (error) {
+        return {
+          success: true, // Return success with failure details in data
+          data: {
+            success: false,
+            message: error instanceof Error ? error.message : 'Connection test failed',
+          },
         };
       }
     }

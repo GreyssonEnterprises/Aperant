@@ -295,11 +295,11 @@ export const createProjectAPI = (): ProjectAPI => ({
 
   // Memory Infrastructure operations (LadybugDB - no Docker required)
   getMemoryInfrastructureStatus: (dbPath?: string) =>
-    ipcRenderer.invoke('infrastructure:getStatus', dbPath),
+    ipcRenderer.invoke(IPC_CHANNELS.INFRASTRUCTURE_GET_STATUS, dbPath),
 
   listMemoryDatabases: (dbPath?: string) =>
-    ipcRenderer.invoke('infrastructure:listDatabases', dbPath),
+    ipcRenderer.invoke(IPC_CHANNELS.INFRASTRUCTURE_LIST_DATABASES, dbPath),
 
   testMemoryConnection: (dbPath?: string, database?: string) =>
-    ipcRenderer.invoke('infrastructure:testConnection', dbPath, database)
+    ipcRenderer.invoke(IPC_CHANNELS.INFRASTRUCTURE_TEST_CONNECTION, dbPath, database)
 });
