@@ -6,7 +6,12 @@
  */
 
 import { useMemo, useState, useCallback } from 'react';
-import type { GitLabMergeRequest, GitLabMRReviewResult, GitLabNewCommitsCheck } from '../../../../shared/types';
+import type {
+  GitLabMergeRequest,
+  GitLabMRReviewResult,
+  GitLabMRReviewProgress,
+  GitLabNewCommitsCheck
+} from '../../../../shared/types';
 
 export type GitLabMRStatusFilter =
   | 'all'
@@ -89,7 +94,7 @@ export function useGitLabMRFiltering(
   mrs: GitLabMergeRequest[],
   getReviewStateForMR: (mrIid: number) => {
     isReviewing: boolean;
-    progress: GitLabMRReviewResult | null;
+    progress: GitLabMRReviewProgress | null;
     result: GitLabMRReviewResult | null;
     error: string | null;
     newCommitsCheck: GitLabNewCommitsCheck | null;
