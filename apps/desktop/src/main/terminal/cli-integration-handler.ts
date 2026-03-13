@@ -910,11 +910,17 @@ function ensureOnboardingComplete(configDir: string): void {
     );
     const claudeJsonPath = path.join(expandedDir, '.claude.json');
 
-    if (!fs.existsSync(claudeJsonPath)) {
-      return; // No .claude.json yet — Claude Code will create it during auth
+    // Read directly instead of existsSync + readFileSync to avoid TOCTOU race (CodeQL js/file-system-race)
+    let content: string;
+    try {
+      content = fs.readFileSync(claudeJsonPath, 'utf-8');
+    } catch (readErr) {
+      if ((readErr as NodeJS.ErrnoException).code === 'ENOENT') {
+        return; // No .claude.json yet — Claude Code will create it during auth
+      }
+      throw readErr;
     }
 
-    const content = fs.readFileSync(claudeJsonPath, 'utf-8');
     const config = JSON.parse(content);
 
     if (typeof config !== 'object' || config === null || Array.isArray(config)) {
