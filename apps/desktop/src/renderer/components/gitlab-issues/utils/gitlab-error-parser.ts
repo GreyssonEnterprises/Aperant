@@ -96,7 +96,7 @@ function parseGitLabErrorMessage(message: string): ParsedGitLabError {
   // Default error
   return {
     code: GitLabErrorCode.UNKNOWN,
-    recoverable: true,
+    recoverable: false,
     details: message
   };
 }

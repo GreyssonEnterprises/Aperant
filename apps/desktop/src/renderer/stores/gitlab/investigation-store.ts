@@ -8,7 +8,7 @@ import { create } from 'zustand';
 import type {
   GitLabInvestigationStatus,
   GitLabInvestigationResult
-} from '../../../shared/types';
+} from '@shared/types';
 
 interface InvestigationState {
   // Investigation state
