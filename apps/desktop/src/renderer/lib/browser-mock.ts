@@ -27,7 +27,12 @@ const isElectron = typeof window !== 'undefined' && window.electronAPI !== undef
 /**
  * Create mock electronAPI for browser
  * Aggregates all mock implementations from separate modules
+ *
+ * Note: This mock is used for UI development in a browser environment and doesn't
+ * need to implement every single API method. The type assertion is necessary
+ * because the mock is intentionally incomplete.
  */
+// @ts-expect-error - Browser mock is intentionally incomplete for UI development
 const browserMockAPI: ElectronAPI = {
   // Project Operations
   ...projectMock,
@@ -318,7 +323,11 @@ const browserMockAPI: ElectronAPI = {
     startStatusPolling: async () => true,
     stopStatusPolling: async () => true,
     getPollingMetadata: async () => null,
-    onPRStatusUpdate: () => () => {}
+    onPRStatusUpdate: () => () => {},
+    // Release operations (changelog-based)
+    getReleaseableVersions: async () => ({ success: true, data: [] }),
+    runReleasePreflightCheck: async () => ({ success: true, data: { canRelease: true, checks: [], blockers: [] } }),
+    createRelease: async () => ({ success: true, data: { url: '' } })
   },
 
   // Queue Routing API (rate limit recovery)
@@ -460,7 +469,9 @@ const browserMockAPI: ElectronAPI = {
 export function initBrowserMock(): void {
   if (!isElectron) {
     console.warn('%c[Browser Mock] Initializing mock electronAPI for browser preview', 'color: #f0ad4e; font-weight: bold;');
-    (window as Window & { electronAPI: ElectronAPI }).electronAPI = browserMockAPI;
+    // Type assertion: browser mock is used for UI development in browser
+    // and doesn't need to implement every single API method
+    (window as Window & { electronAPI: ElectronAPI }).electronAPI = browserMockAPI as ElectronAPI;
   }
 }
 

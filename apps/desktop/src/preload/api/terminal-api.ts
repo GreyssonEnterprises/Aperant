@@ -72,6 +72,9 @@ export interface TerminalAPI {
   removeTerminalWorktree: (projectPath: string, name: string, deleteBranch?: boolean) => Promise<IPCResult>;
   listOtherWorktrees: (projectPath: string) => Promise<IPCResult<OtherWorktreeInfo[]>>;
 
+  // Terminal Buffer Persistence
+  saveTerminalBuffer: (terminalId: string, serializedBuffer: string) => Promise<IPCResult>;
+
   // Terminal Event Listeners
   onTerminalOutput: (callback: (id: string, data: string) => void) => () => void;
   onTerminalExit: (callback: (id: string, exitCode: number) => void) => () => void;
@@ -212,6 +215,10 @@ export const createTerminalAPI = (): TerminalAPI => ({
 
   listOtherWorktrees: (projectPath: string): Promise<IPCResult<OtherWorktreeInfo[]>> =>
     ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_WORKTREE_LIST_OTHER, projectPath),
+
+  // Terminal Buffer Persistence
+  saveTerminalBuffer: (terminalId: string, serializedBuffer: string): Promise<IPCResult> =>
+    ipcRenderer.invoke('terminal:saveBuffer', terminalId, serializedBuffer),
 
   // Terminal Event Listeners
   onTerminalOutput: (

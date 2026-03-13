@@ -107,11 +107,25 @@ export async function loadProjectContext(projectId: string): Promise<void> {
 
   try {
     const result = await window.electronAPI.getProjectContext(projectId);
-    if (result.success && result.data) {
-      store.setProjectIndex(result.data.projectIndex);
-      store.setMemoryStatus(result.data.memoryStatus);
-      store.setMemoryState(result.data.memoryState);
-      store.setRecentMemories(result.data.recentMemories || []);
+    if (result.success && result.data && typeof result.data === 'object') {
+      const data = result.data as {
+        projectIndex?: unknown;
+        memoryStatus?: unknown;
+        memoryState?: unknown;
+        recentMemories?: unknown;
+      };
+      if (data.projectIndex && typeof data.projectIndex === 'object') {
+        store.setProjectIndex(data.projectIndex as ProjectIndex);
+      }
+      if (data.memoryStatus) {
+        store.setMemoryStatus(data.memoryStatus as MemorySystemStatus);
+      }
+      if (data.memoryState) {
+        store.setMemoryState(data.memoryState as MemorySystemState);
+      }
+      if (Array.isArray(data.recentMemories)) {
+        store.setRecentMemories(data.recentMemories as RendererMemory[]);
+      }
     } else {
       store.setIndexError(result.error || 'Failed to load project context');
     }
@@ -133,8 +147,8 @@ export async function refreshProjectIndex(projectId: string): Promise<void> {
 
   try {
     const result = await window.electronAPI.refreshProjectIndex(projectId);
-    if (result.success && result.data) {
-      store.setProjectIndex(result.data);
+    if (result.success && result.data && typeof result.data === 'object') {
+      store.setProjectIndex(result.data as ProjectIndex);
     } else {
       store.setIndexError(result.error || 'Failed to refresh project index');
     }
@@ -164,8 +178,8 @@ export async function searchMemories(
 
   try {
     const result = await window.electronAPI.searchMemories(projectId, query);
-    if (result.success && result.data) {
-      store.setSearchResults(result.data);
+    if (result.success && result.data && Array.isArray(result.data)) {
+      store.setSearchResults(result.data as ContextSearchResult[]);
     } else {
       store.setSearchResults([]);
     }
@@ -188,8 +202,8 @@ export async function loadRecentMemories(
 
   try {
     const result = await window.electronAPI.getRecentMemories(projectId, limit);
-    if (result.success && result.data) {
-      store.setRecentMemories(result.data);
+    if (result.success && result.data && Array.isArray(result.data)) {
+      store.setRecentMemories(result.data as RendererMemory[]);
     }
   } catch (_error) {
     // Silently fail - memories are optional

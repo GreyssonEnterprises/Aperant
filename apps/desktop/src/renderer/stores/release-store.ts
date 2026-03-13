@@ -95,12 +95,13 @@ export async function loadReleaseableVersions(projectId: string): Promise<void> 
 
   try {
     const result = await window.electronAPI.getReleaseableVersions(projectId);
-    if (result.success && result.data) {
-      store.setReleaseableVersions(result.data);
+    if (result.success && result.data && Array.isArray(result.data)) {
+      const versions = result.data as ReleaseableVersion[];
+      store.setReleaseableVersions(versions);
 
       // Auto-select first unreleased version if none selected
       if (!store.selectedVersion) {
-        const firstUnreleased = result.data.find((v: ReleaseableVersion) => !v.isReleased);
+        const firstUnreleased = versions.find((v: ReleaseableVersion) => !v.isReleased);
         if (firstUnreleased) {
           store.setSelectedVersion(firstUnreleased.version);
         }
@@ -132,8 +133,8 @@ export async function runPreflightCheck(projectId: string): Promise<void> {
 
   try {
     const result = await window.electronAPI.runReleasePreflightCheck(projectId, version);
-    if (result.success && result.data) {
-      store.setPreflightStatus(result.data);
+    if (result.success && result.data && typeof result.data === 'object') {
+      store.setPreflightStatus(result.data as ReleasePreflightStatus);
     } else {
       store.setError(result.error || 'Failed to run pre-flight checks');
     }

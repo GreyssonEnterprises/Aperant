@@ -156,7 +156,12 @@ export function GraphitiStep({ onNext, onBack, onSkip }: GraphitiStepProps) {
       setIsCheckingInfra(true);
       try {
         const result = await window.electronAPI.getMemoryInfrastructureStatus();
-        setKuzuAvailable(!!(result?.success && result?.data?.memory?.kuzuInstalled ));
+        if (result?.success && result?.data && typeof result.data === 'object') {
+          const data = result.data as { memory?: { kuzuInstalled?: boolean } };
+          setKuzuAvailable(!!data.memory?.kuzuInstalled);
+        } else {
+          setKuzuAvailable(false);
+        }
       } catch {
         setKuzuAvailable(false);
       } finally {
@@ -233,28 +238,18 @@ export function GraphitiStep({ onNext, onBack, onSkip }: GraphitiStepProps) {
     setValidationStatus({ database: null, provider: null });
 
     try {
-      // Get the API key for the current LLM provider
-      const apiKey = config.llmProvider === 'openai' ? config.openaiApiKey :
-                     config.llmProvider === 'anthropic' ? config.anthropicApiKey :
-                     config.llmProvider === 'google' ? config.googleApiKey :
-                     config.llmProvider === 'groq' ? config.groqApiKey :
-                     config.llmProvider === 'openrouter' ? config.openrouterApiKey :
-                     config.llmProvider === 'azure_openai' ? config.azureOpenaiApiKey :
-                     config.llmProvider === 'ollama' ? '' :  // Ollama doesn't need API key
-                     config.embeddingProvider === 'openai' ? config.openaiApiKey :
-                     config.embeddingProvider === 'openrouter' ? config.openrouterApiKey : '';
-
       const result = await window.electronAPI.testMemoryConnection(
         config.dbPath || undefined,
         config.database || 'auto_claude_memory'
       );
 
-      if (result?.success && result?.data) {
+      if (result?.success && result?.data && typeof result.data === 'object') {
+        const data = result.data as { success?: boolean; message?: string };
         setValidationStatus({
           database: {
             tested: true,
-            success: result.data.success,
-            message: result.data.message
+            success: data.success ?? false,
+            message: data.message || 'Connection test completed'
           },
           provider: {
             tested: true,
@@ -263,8 +258,8 @@ export function GraphitiStep({ onNext, onBack, onSkip }: GraphitiStepProps) {
           }
         });
 
-        if (!result.data.success) {
-          setError(`Database: ${result.data.message}`);
+        if (data.success === false) {
+          setError(`Database: ${data.message || 'Connection failed'}`);
         }
       } else {
         setError(result?.error || 'Failed to test connection');

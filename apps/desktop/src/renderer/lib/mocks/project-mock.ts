@@ -125,5 +125,33 @@ export const projectMock = {
   initializeGit: async () => ({
     success: true,
     data: { success: true }
+  }),
+
+  // Memory Infrastructure operations (LadybugDB)
+  getMemoryInfrastructureStatus: async () => ({
+    success: true,
+    data: {
+      memory: {
+        kuzuInstalled: true,
+        databasePath: '~/.auto-claude/graphs',
+        databaseExists: true,
+        databases: ['auto_claude_memory']
+      },
+      ready: true
+    }
+  }),
+
+  listMemoryDatabases: async () => ({
+    success: true,
+    data: ['auto_claude_memory', 'project_memory']
+  }),
+
+  testMemoryConnection: async () => ({
+    success: true,
+    data: {
+      success: true,
+      message: 'Connected to LadybugDB database (mock)',
+      details: { latencyMs: 5 }
+    }
   })
 };

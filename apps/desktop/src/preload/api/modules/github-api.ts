@@ -178,10 +178,28 @@ export interface GitHubAPI {
   /** AI-powered version suggestion based on commits since last release */
   suggestReleaseVersion: (projectId: string) => Promise<IPCResult<VersionSuggestion>>;
 
+  // Release operations (changelog-based)
+  getReleaseableVersions: (projectId: string) => Promise<IPCResult<unknown>>;
+  runReleasePreflightCheck: (projectId: string, version: string) => Promise<IPCResult<unknown>>;
+  createRelease: (options: {
+    projectId: string;
+    version: string;
+    body: string;
+    draft?: boolean;
+    prerelease?: boolean;
+  }) => Promise<IPCResult<unknown>>;
+
   // OAuth operations (gh CLI)
   checkGitHubCli: () => Promise<IPCResult<{ installed: boolean; version?: string }>>;
   checkGitHubAuth: () => Promise<IPCResult<{ authenticated: boolean; username?: string }>>;
-  startGitHubAuth: () => Promise<IPCResult<{ success: boolean; message?: string }>>;
+  startGitHubAuth: () => Promise<IPCResult<{
+    success: boolean;
+    message?: string;
+    deviceCode?: string;
+    authUrl?: string;
+    browserOpened?: boolean;
+    fallbackUrl?: string;
+  }>>;
   getGitHubToken: () => Promise<IPCResult<{ token: string }>>;
   getGitHubUser: () => Promise<IPCResult<{ username: string; name?: string }>>;
   listGitHubUserRepos: () => Promise<IPCResult<{ repos: Array<{ fullName: string; description: string | null; isPrivate: boolean }> }>>;
@@ -570,6 +588,22 @@ export const createGitHubAPI = (): GitHubAPI => ({
 
   suggestReleaseVersion: (projectId: string): Promise<IPCResult<VersionSuggestion>> =>
     invokeIpc(IPC_CHANNELS.RELEASE_SUGGEST_VERSION, projectId),
+
+  // Release operations (changelog-based)
+  getReleaseableVersions: (projectId: string): Promise<IPCResult<unknown>> =>
+    invokeIpc('release:getVersions', projectId),
+
+  runReleasePreflightCheck: (projectId: string, version: string): Promise<IPCResult<unknown>> =>
+    invokeIpc('release:preflightCheck', projectId, version),
+
+  createRelease: (options: {
+    projectId: string;
+    version: string;
+    body: string;
+    draft?: boolean;
+    prerelease?: boolean;
+  }): Promise<IPCResult<unknown>> =>
+    invokeIpc('release:create', options),
 
   // OAuth operations (gh CLI)
   checkGitHubCli: (): Promise<IPCResult<{ installed: boolean; version?: string }>> =>

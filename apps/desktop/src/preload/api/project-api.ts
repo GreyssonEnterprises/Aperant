@@ -46,6 +46,11 @@ export interface ProjectAPI {
   searchMemories: (projectId: string, query: string) => Promise<IPCResult<unknown>>;
   getRecentMemories: (projectId: string, limit?: number) => Promise<IPCResult<unknown>>;
 
+  // Memory Infrastructure operations (LadybugDB - no Docker required)
+  getMemoryInfrastructureStatus: (dbPath?: string) => Promise<IPCResult<unknown>>;
+  listMemoryDatabases: (dbPath?: string) => Promise<IPCResult<unknown>>;
+  testMemoryConnection: (dbPath?: string, database?: string) => Promise<IPCResult<unknown>>;
+
   // Memory Management
   verifyMemory: (memoryId: string) => Promise<IPCResult<void>>;
   pinMemory: (memoryId: string, pinned: boolean) => Promise<IPCResult<void>>;
@@ -284,5 +289,15 @@ export const createProjectAPI = (): ProjectAPI => ({
     ipcRenderer.invoke(IPC_CHANNELS.OLLAMA_LIST_EMBEDDING_MODELS, baseUrl),
 
   pullOllamaModel: (modelName: string, baseUrl?: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.OLLAMA_PULL_MODEL, modelName, baseUrl)
+    ipcRenderer.invoke(IPC_CHANNELS.OLLAMA_PULL_MODEL, modelName, baseUrl),
+
+  // Memory Infrastructure operations (LadybugDB - no Docker required)
+  getMemoryInfrastructureStatus: (dbPath?: string) =>
+    ipcRenderer.invoke('infrastructure:getStatus', dbPath),
+
+  listMemoryDatabases: (dbPath?: string) =>
+    ipcRenderer.invoke('infrastructure:listDatabases', dbPath),
+
+  testMemoryConnection: (dbPath?: string, database?: string) =>
+    ipcRenderer.invoke('infrastructure:testConnection', dbPath, database)
 });
