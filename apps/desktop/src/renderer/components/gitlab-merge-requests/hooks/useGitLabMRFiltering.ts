@@ -56,14 +56,14 @@ function getMRComputedStatus(
   }
 
   const result = reviewInfo.result;
-  const hasPosted = Boolean(result.reviewId) || Boolean(result.hasPostedFindings);
+  const hasPosted = Boolean(result.hasPostedFindings);
   // Use overallStatus from review result as source of truth, fallback to severity check
   const hasBlockingFindings =
     result.overallStatus === 'request_changes' ||
     result.findings?.some(f => f.severity === 'critical' || f.severity === 'high');
   const hasNewCommits = reviewInfo.newCommitsCheck?.hasNewCommits;
-  // Only count commits that happened AFTER findings were posted for follow-up status
-  const hasCommitsAfterPosting = reviewInfo.newCommitsCheck?.hasCommitsAfterPosting;
+  // For GitLab, check if new commits exist after review
+  const hasCommitsAfterPosting = hasNewCommits && hasPosted;
 
   // Check for ready for follow-up first (highest priority after posting)
   // Must have new commits that happened AFTER findings were posted
@@ -141,7 +141,7 @@ export function useGitLabMRFiltering(
         const matchesStatus = filters.statuses.some(status => {
           // Special handling: 'posted' should match any posted state
           if (status === 'posted') {
-            const hasPosted = reviewInfo?.result?.reviewId || reviewInfo?.result?.hasPostedFindings;
+            const hasPosted = reviewInfo?.result?.hasPostedFindings;
             return hasPosted;
           }
           return computedStatus === status;
@@ -172,14 +172,13 @@ export function useGitLabMRFiltering(
         case 'oldest':
           // Sort by createdAt ascending (oldest first)
           return aTime - bTime;
-        case 'largest': {
-          // Sort by total changes (additions + deletions) descending
-          const aChanges = (a.additions || 0) + (a.deletions || 0);
-          const bChanges = (b.additions || 0) + (b.deletions || 0);
-          if (bChanges !== aChanges) return bChanges - aChanges;
+        case 'largest':
+          // Sort by title length as a proxy for complexity (descending)
+          const aTitleLen = a.title.length;
+          const bTitleLen = b.title.length;
+          if (bTitleLen !== aTitleLen) return bTitleLen - aTitleLen;
           // Secondary sort by createdAt (newest first) for stable ordering
           return bTime - aTime;
-        }
         default:
           return 0;
       }

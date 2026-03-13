@@ -28,11 +28,17 @@ import { Badge } from '../../ui/badge';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '../../ui/collapsible';
 import { cn } from '../../../lib/utils';
 import type {
-  GitLabMRLogs,
-  GitLabMRLogPhase,
-  GitLabMRPhaseLog,
-  GitLabMRLogEntry
-} from '../../../../shared/types';
+  PRLogs,
+  PRLogPhase,
+  PRPhaseLog,
+  PRLogEntry
+} from '../../../../preload/api/modules/github-api';
+
+// Type aliases for GitLab compatibility
+type GitLabMRLogs = PRLogs;
+type GitLabMRLogPhase = PRLogPhase;
+type GitLabMRPhaseLog = PRPhaseLog;
+type GitLabMRLogEntry = PRLogEntry;
 
 interface MRLogsProps {
   mrIid: number;

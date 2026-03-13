@@ -2,7 +2,7 @@
  * BatchReviewWizard Component for GitLab Issues
  *
  * Stub component - implements the same pattern as GitHub's BatchReviewWizard
- * adapted for GitLab issues (using issueIid instead of issueNumber).
+ * adapted for GitLab issues (using iid instead of issueNumber).
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -37,8 +37,24 @@ import {
 import type {
   GitLabAnalyzePreviewResult,
   GitLabAnalyzePreviewProgress,
-  GitLabProposedBatch
 } from '../../../../shared/types';
+
+// Type alias for ProposedBatch to match the inline type in GitLabAnalyzePreviewResult
+export interface GitLabProposedBatch {
+  primaryIssue: number;
+  issues: Array<{
+    iid: number;
+    title: string;
+    labels: string[];
+    similarityToPrimary: number;
+  }>;
+  issueCount: number;
+  commonThemes: string[];
+  validated: boolean;
+  confidence: number;
+  reasoning: string;
+  theme: string;
+}
 
 interface GitLabBatchReviewWizardProps {
   isOpen: boolean;
@@ -68,7 +84,7 @@ export function GitLabBatchReviewWizard({
   // Track which batches are selected for approval
   const [selectedBatchIds, setSelectedBatchIds] = useState<Set<number>>(new Set());
   // Track which single issues are selected for approval
-  const [selectedSingleIssueIids, setSelectedSingleIssueIids] = useState<Set<number>>(new Set());
+  const [selectedSingleIids, setSelectedSingleIids] = useState<Set<number>>(new Set());
   // Track which batches are expanded
   const [expandedBatchIds, setExpandedBatchIds] = useState<Set<number>>(new Set());
   // Current wizard step
@@ -100,7 +116,7 @@ export function GitLabBatchReviewWizard({
       // If no batches, auto-select all single issues
       if (analysisResult.proposedBatches.length === 0 && analysisResult.singleIssues.length > 0) {
         const singleIssueIids = new Set(
-          analysisResult.singleIssues.map(issue => issue.issueIid)
+          analysisResult.singleIssues.map(issue => issue.iid)
         );
         setSelectedSingleIssueIids(singleIssueIids);
       }
@@ -128,13 +144,13 @@ export function GitLabBatchReviewWizard({
     });
   }, []);
 
-  const toggleSingleIssueSelection = useCallback((issueIid: number) => {
+  const toggleSingleIssueSelection = useCallback((iid: number) => {
     setSelectedSingleIssueIids(prev => {
       const next = new Set(prev);
-      if (next.has(issueIid)) {
-        next.delete(issueIid);
+      if (next.has(iid)) {
+        next.delete(iid);
       } else {
-        next.add(issueIid);
+        next.add(iid);
       }
       return next;
     });
@@ -156,7 +172,7 @@ export function GitLabBatchReviewWizard({
     if (!analysisResult) return;
     const allIds = new Set(analysisResult.proposedBatches.map((_, idx) => idx));
     setSelectedBatchIds(allIds);
-    const allSingleIssues = new Set(analysisResult.singleIssues.map(issue => issue.issueIid));
+    const allSingleIssues = new Set(analysisResult.singleIssues.map(issue => issue.iid));
     setSelectedSingleIssueIids(allSingleIssues);
   }, [analysisResult]);
 
@@ -175,11 +191,11 @@ export function GitLabBatchReviewWizard({
 
     // Convert selected single issues into batches (each single issue becomes a batch of 1)
     const selectedSingleIssueBatches: GitLabProposedBatch[] = analysisResult.singleIssues
-      .filter(issue => selectedSingleIssueIids.has(issue.issueIid))
+      .filter(issue => selectedSingleIids.has(issue.iid))
       .map(issue => ({
-        primaryIssueIid: issue.issueIid,
+        primaryIssue: issue.iid,
         issues: [{
-          issueIid: issue.issueIid,
+          iid: issue.iid,
           title: issue.title,
           labels: issue.labels,
           similarityToPrimary: 1.0
@@ -197,7 +213,7 @@ export function GitLabBatchReviewWizard({
 
     await onApproveBatches(allBatches);
     setStep('done');
-  }, [analysisResult, selectedBatchIds, selectedSingleIssueIids, onApproveBatches]);
+  }, [analysisResult, selectedBatchIds, selectedSingleIids, onApproveBatches]);
 
   const renderIntro = () => (
     <div className="flex flex-col items-center justify-center py-8 space-y-6">
@@ -303,21 +319,21 @@ export function GitLabBatchReviewWizard({
               <div className="grid grid-cols-2 gap-2">
                 {singleIssues.slice(0, 10).map((issue) => (
                   <div
-                    key={issue.issueIid}
-                    onClick={() => toggleSingleIssueSelection(issue.issueIid)}
+                    key={issue.iid}
+                    onClick={() => toggleSingleIssueSelection(issue.iid)}
                     className={`p-2 rounded border text-sm truncate cursor-pointer transition-colors ${
-                      selectedSingleIssueIids.has(issue.issueIid)
+                      selectedSingleIids.has(issue.iid)
                         ? 'border-primary bg-primary/5'
                         : 'border-border hover:bg-accent'
                     }`}
                   >
                     <Checkbox
-                      checked={selectedSingleIssueIids.has(issue.issueIid)}
+                      checked={selectedSingleIids.has(issue.iid)}
                       className="inline-block mr-2"
                       onClick={(e) => e.stopPropagation()}
-                      onCheckedChange={() => toggleSingleIssueSelection(issue.issueIid)}
+                      onCheckedChange={() => toggleSingleIssueSelection(issue.iid)}
                     />
-                    <span className="text-muted-foreground">#{issue.issueIid}</span>{' '}
+                    <span className="text-muted-foreground">#{issue.iid}</span>{' '}
                     {issue.title}
                   </div>
                 ))}
@@ -335,8 +351,8 @@ export function GitLabBatchReviewWizard({
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border">
           <div className="text-sm text-muted-foreground">
             {selectedCount} batch{selectedCount !== 1 ? 'es' : ''} selected ({totalIssuesInSelected} issues)
-            {selectedSingleIssueIids.size > 0 && (
-              <> + {selectedSingleIssueIids.size} single issue{selectedSingleIssueIids.size !== 1 ? 's' : ''}</>
+            {selectedSingleIids.size > 0 && (
+              <> + {selectedSingleIids.size} single issue{selectedSingleIids.size !== 1 ? 's' : ''}</>
             )}
           </div>
         </div>
@@ -405,7 +421,7 @@ export function GitLabBatchReviewWizard({
             </Button>
             <Button
               onClick={handleApprove}
-              disabled={(selectedBatchIds.size === 0 && selectedSingleIssueIids.size === 0) || isApproving}
+              disabled={(selectedBatchIds.size === 0 && selectedSingleIids.size === 0) || isApproving}
             >
               {isApproving ? (
                 <>
@@ -415,7 +431,7 @@ export function GitLabBatchReviewWizard({
               ) : (
                 <>
                   <Play className="h-4 w-4 mr-2" />
-                  Approve & Create ({selectedBatchIds.size + selectedSingleIssueIids.size} {selectedBatchIds.size + selectedSingleIssueIids.size === 1 ? 'batch' : 'batches'})
+                  Approve & Create ({selectedBatchIds.size + selectedSingleIids.size} {selectedBatchIds.size + selectedSingleIids.size === 1 ? 'batch' : 'batches'})
                 </>
               )}
             </Button>
@@ -507,12 +523,12 @@ function GitLabBatchCard({
             <div className="space-y-1 px-6">
               {batch.issues.map((issue) => (
                 <div
-                  key={issue.issueIid}
+                  key={issue.iid}
                   className="flex items-center justify-between text-sm py-1"
                 >
                   <div className="flex items-center gap-2 truncate">
                     <span className="text-muted-foreground">
-                      #{issue.issueIid}
+                      #{issue.iid}
                     </span>
                     <span className="truncate">{issue.title}</span>
                   </div>

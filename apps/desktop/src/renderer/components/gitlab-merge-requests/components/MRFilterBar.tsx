@@ -35,7 +35,7 @@ import {
   DropdownMenuTrigger,
 } from '../../ui/dropdown-menu';
 import { useTranslation } from 'react-i18next';
-import type { GitLabMRFilterState, GitLabMRStatusFilter, GitLabMRSortOption } from '../../hooks/useGitLabMRFiltering';
+import type { GitLabMRFilterState, GitLabMRStatusFilter, GitLabMRSortOption } from '../hooks/useGitLabMRFiltering';
 import { cn } from '../../../lib/utils';
 
 interface MRFilterBarProps {

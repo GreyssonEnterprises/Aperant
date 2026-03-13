@@ -2,6 +2,11 @@ import { CheckCircle2, Circle, XCircle, Loader2, AlertTriangle, GitMerge, HelpCi
 import { Badge } from '../../ui/badge';
 import { cn } from '../../../lib/utils';
 import type { ChecksStatus, ReviewsStatus, MergeableState } from '../../../../shared/types/pr-status';
+
+// Type aliases for GitLab compatibility - use the same types as GitHub
+type GitLabChecksStatus = ChecksStatus;
+type GitLabReviewsStatus = ReviewsStatus;
+type GitLabMergeableState = MergeableState;
 import { useTranslation } from 'react-i18next';
 
 /**
