@@ -1,13 +1,24 @@
 /**
  * Unit tests for GitLab sync status store
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useSyncStatusStore } from '../sync-status-store';
+import { checkGitLabConnection } from '../sync-status-store';
 import type { GitLabSyncStatus } from '../../../../shared/types';
+
+// Mock electronAPI
+const mockElectronAPI = {
+  checkGitLabConnection: vi.fn()
+};
+
+(globalThis as any).window = {
+  electronAPI: mockElectronAPI
+};
 
 describe('sync-status-store', () => {
   beforeEach(() => {
     useSyncStatusStore.getState().clearSyncStatus();
+    vi.clearAllMocks();
   });
 
   it('should initialize with empty state', () => {
@@ -57,5 +68,52 @@ describe('sync-status-store', () => {
 
     expect(useSyncStatusStore.getState().syncStatus).toBe(null);
     expect(useSyncStatusStore.getState().connectionError).toBe(null);
+  });
+
+  describe('checkGitLabConnection', () => {
+    it('should update store on successful connection', async () => {
+      mockElectronAPI.checkGitLabConnection.mockResolvedValue({
+        success: true,
+        data: {
+          connected: true,
+          projectPathWithNamespace: 'group/project'
+        }
+      });
+
+      const result = await checkGitLabConnection('project-123');
+
+      expect(result).toEqual({
+        connected: true,
+        projectPathWithNamespace: 'group/project'
+      });
+      expect(useSyncStatusStore.getState().syncStatus).toEqual({
+        connected: true,
+        projectPathWithNamespace: 'group/project'
+      });
+      expect(useSyncStatusStore.getState().connectionError).toBe(null);
+    });
+
+    it('should set error on failed connection', async () => {
+      mockElectronAPI.checkGitLabConnection.mockResolvedValue({
+        success: false,
+        error: 'Authentication failed'
+      });
+
+      const result = await checkGitLabConnection('project-123');
+
+      expect(result).toBe(null);
+      expect(useSyncStatusStore.getState().syncStatus).toBe(null);
+      expect(useSyncStatusStore.getState().connectionError).toBe('Authentication failed');
+    });
+
+    it('should set error on exception', async () => {
+      mockElectronAPI.checkGitLabConnection.mockRejectedValue(new Error('Network error'));
+
+      const result = await checkGitLabConnection('project-123');
+
+      expect(result).toBe(null);
+      expect(useSyncStatusStore.getState().syncStatus).toBe(null);
+      expect(useSyncStatusStore.getState().connectionError).toBe('Network error');
+    });
   });
 });
