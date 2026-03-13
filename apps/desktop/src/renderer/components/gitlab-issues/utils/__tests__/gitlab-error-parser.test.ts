@@ -22,7 +22,7 @@ describe('gitlab-error-parser', () => {
     const parsed = parseGitLabError(error);
 
     expect(parsed.code).toBe(GitLabErrorCode.INSUFFICIENT_PERMISSIONS);
-    expect(parsed.recoverable).toBe(true);
+    expect(parsed.recoverable).toBe(false);
   });
 
   it('should parse 404 not found errors', () => {
@@ -30,7 +30,7 @@ describe('gitlab-error-parser', () => {
     const parsed = parseGitLabError(error);
 
     expect(parsed.code).toBe(GitLabErrorCode.PROJECT_NOT_FOUND);
-    expect(parsed.recoverable).toBe(true);
+    expect(parsed.recoverable).toBe(false);
   });
 
   it('should parse 409 conflict errors', () => {
