@@ -126,10 +126,11 @@ describe('Commit Message Runner', () => {
 
   describe('spec context extraction', () => {
     it('should read spec.md for title', async () => {
+      const specPath = join('.auto-claude', 'specs', '001-add-feature');
       vi.mocked(existsSync).mockImplementation((path) => {
         const pathStr = String(path);
         // Return true for spec directory and spec.md file
-        return pathStr.includes('.auto-claude/specs/001-add-feature') || pathStr.includes('spec.md');
+        return pathStr.includes(specPath) || pathStr.includes('.auto-claude/specs/001-add-feature') || pathStr.includes('spec.md');
       });
       vi.mocked(readFileSync).mockImplementation((path) => {
         if (String(path).includes('spec.md')) {

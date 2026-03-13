@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { join, resolve } from 'node:path';
 import {
   runRoadmapGeneration,
   type RoadmapConfig,
@@ -249,7 +250,7 @@ describe('Roadmap Runner', () => {
       await runRoadmapGeneration(config);
 
       expect(mkdirSync).toHaveBeenCalledWith(
-        '/test/project/.auto-claude/roadmap',
+        resolve(join('/test/project', '.auto-claude', 'roadmap')),
         { recursive: true },
       );
     });

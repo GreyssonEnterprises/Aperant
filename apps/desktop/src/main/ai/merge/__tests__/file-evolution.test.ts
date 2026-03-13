@@ -368,7 +368,7 @@ describe('FileEvolutionTracker', () => {
       tracker.cleanupTask('task-1', true);
 
       expect(mockRmSync).toHaveBeenCalledWith(
-        expect.stringContaining('baselines/task-1'),
+        expect.stringContaining(join('baselines', 'task-1')),
         { recursive: true },
       );
     });
