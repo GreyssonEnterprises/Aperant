@@ -1,7 +1,7 @@
 /**
  * Unit tests for GitLab sync status store
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useSyncStatusStore } from '../sync-status-store';
 import { checkGitLabConnection } from '../sync-status-store';
 import type { GitLabSyncStatus } from '@shared/types';
@@ -11,14 +11,18 @@ const mockElectronAPI = {
   checkGitLabConnection: vi.fn()
 };
 
-(globalThis as any).window = {
-  electronAPI: mockElectronAPI
-};
-
 describe('sync-status-store', () => {
   beforeEach(() => {
+    vi.stubGlobal('window', {
+      ...(globalThis.window ?? {}),
+      electronAPI: mockElectronAPI
+    } as unknown as Window & typeof globalThis);
     useSyncStatusStore.getState().clearSyncStatus();
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('should initialize with empty state', () => {

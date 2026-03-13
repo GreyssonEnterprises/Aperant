@@ -52,11 +52,17 @@ export const useSyncStatusStore = create<SyncStatusState>((set, get) => ({
 /**
  * Check GitLab connection status
  */
+let latestConnectionRequestId = 0;
+
 export async function checkGitLabConnection(projectId: string): Promise<GitLabSyncStatus | null> {
   const store = useSyncStatusStore.getState();
+  const requestId = ++latestConnectionRequestId;
 
   try {
     const result = await window.electronAPI.checkGitLabConnection(projectId);
+    // Ignore stale responses
+    if (requestId !== latestConnectionRequestId) return null;
+
     // Only set sync status if actually connected (connected === true)
     if (result.success && result.data && result.data.connected === true) {
       store.setSyncStatus(result.data);
@@ -72,6 +78,8 @@ export async function checkGitLabConnection(projectId: string): Promise<GitLabSy
       return null;
     }
   } catch (error) {
+    // Ignore stale responses
+    if (requestId !== latestConnectionRequestId) return null;
     store.clearSyncStatus();
     store.setConnectionError(error instanceof Error ? error.message : 'Unknown error');
     return null;
