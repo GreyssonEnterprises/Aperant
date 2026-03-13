@@ -109,9 +109,9 @@ function verifyFileList(files, packageType) {
   const issues = [];
 
   // Check for app.asar (the bundled Electron application)
-  const appAsarFound = files.some(
-    (f) => f.includes('resources/app.asar') || f.includes('resources\\app.asar'),
-  );
+  // Use boundary-safe match to avoid false positives from resources/app.asar.unpacked
+  const appAsarPattern = /[\\/]resources[\\/]app\.asar$/;
+  const appAsarFound = files.some((f) => appAsarPattern.test(f.trim()));
   if (!appAsarFound) {
     issues.push(`app.asar not found in ${packageType} — the Electron app bundle is missing`);
   }
@@ -143,12 +143,12 @@ function verifyAppImage(appImagePath) {
 
   if (result.error) {
     logError(`Failed to execute bsdtar: ${result.error.message}`);
-    return { verified: false, reason: `Command execution failed: ${result.error.message}` };
+    return { verified: false, issues: [`Command execution failed: ${result.error.message}`] };
   }
 
   if (result.status !== 0) {
     logError(`Failed to read AppImage: ${result.stderr}`);
-    return { verified: false, reason: 'Failed to extract file list' };
+    return { verified: false, issues: ['Failed to extract file list'] };
   }
 
   const files = result.stdout.split('\n');
@@ -174,12 +174,12 @@ function verifyDeb(debPath) {
 
   if (result.error) {
     logError(`Failed to execute dpkg-deb: ${result.error.message}`);
-    return { verified: false, reason: `Command execution failed: ${result.error.message}` };
+    return { verified: false, issues: [`Command execution failed: ${result.error.message}`] };
   }
 
   if (result.status !== 0) {
     logError(`Failed to read deb package: ${result.stderr}`);
-    return { verified: false, reason: 'Failed to extract file list' };
+    return { verified: false, issues: ['Failed to extract file list'] };
   }
 
   const files = result.stdout.split('\n');
@@ -228,27 +228,32 @@ function main() {
 
   const packages = findPackages(distDir);
 
-  // Report found packages
+  // Report found packages — all three targets are required
+  let missingTargets = false;
+
   if (packages.appImage) {
     logSuccess(`Found AppImage: ${path.basename(packages.appImage)}`);
   } else {
-    logWarning('No AppImage found');
+    logError('No AppImage found — expected build target is missing');
+    missingTargets = true;
   }
 
   if (packages.deb) {
     logSuccess(`Found deb: ${path.basename(packages.deb)}`);
   } else {
-    logWarning('No deb package found');
+    logError('No deb package found — expected build target is missing');
+    missingTargets = true;
   }
 
   if (packages.flatpak) {
     logSuccess(`Found Flatpak: ${path.basename(packages.flatpak)}`);
   } else {
-    logWarning('No Flatpak package found');
+    logError('No Flatpak package found — expected build target is missing');
+    missingTargets = true;
   }
 
-  if (!packages.appImage && !packages.deb && !packages.flatpak) {
-    logError('\nNo Linux packages found to verify!');
+  if (missingTargets) {
+    logError('\nOne or more expected Linux package targets are missing!');
     process.exit(1);
   }
 
