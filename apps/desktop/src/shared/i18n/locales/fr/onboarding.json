@@ -1,261 +1,261 @@
 {
   "wizard": {
-    "title": "Assistant de configuration",
-    "description": "Configurez votre environnement Aperant en quelques étapes simples",
-    "helpText": "Cet assistant vous aidera à configurer votre environnement en quelques étapes. Vous pouvez configurer votre token OAuth Claude, activer les fonctionnalités de mémoire et créer votre première tâche."
+    "title": "Setup Wizard",
+    "description": "Configure your Aperant environment in a few simple steps",
+    "helpText": "This wizard will help you set up your environment in just a few steps. You can configure your Claude OAuth token, set up memory features, and create your first task."
   },
   "welcome": {
-    "title": "Bienvenue sur Aperant",
-    "subtitle": "Construisez des logiciels de manière autonome avec des agents IA",
-    "getStarted": "Commencer",
-    "skip": "Passer la configuration",
+    "title": "Welcome to Aperant",
+    "subtitle": "Build software autonomously with AI-powered agents",
+    "getStarted": "Get Started",
+    "skip": "Skip Setup",
     "features": {
       "aiPowered": {
-        "title": "Développement assisté par IA",
-        "description": "Générez du code et construisez des fonctionnalités avec les agents Claude Code"
+        "title": "AI-Powered Development",
+        "description": "Generate code and build features using Claude Code agents"
       },
       "specDriven": {
-        "title": "Workflow basé sur les specs",
-        "description": "Définissez des tâches avec des spécifications claires et laissez Aperant gérer l'implémentation"
+        "title": "Spec-Driven Workflow",
+        "description": "Define tasks with clear specifications and let Aperant handle the implementation"
       },
       "memory": {
-        "title": "Mémoire & Contexte",
-        "description": "Mémoire persistante entre les sessions avec Graphiti"
+        "title": "Memory & Context",
+        "description": "Persistent memory across sessions with Graphiti"
       },
       "parallel": {
-        "title": "Exécution parallèle",
-        "description": "Exécutez plusieurs agents en parallèle pour des cycles de développement plus rapides"
+        "title": "Parallel Execution",
+        "description": "Run multiple agents in parallel for faster development cycles"
       }
     }
   },
   "oauth": {
-    "title": "Authentification Claude",
-    "description": "Connectez votre compte Claude pour activer les fonctionnalités IA",
-    "configureTitle": "Configurer l'authentification Claude",
-    "addAccountsDesc": "Ajoutez vos comptes Claude pour activer les fonctionnalités IA",
-    "multiAccountInfo": "Ajoutez plusieurs abonnements Claude pour basculer automatiquement entre eux lorsque vous atteignez les limites.",
-    "noAccountsYet": "Aucun compte configuré",
+    "title": "Claude Authentication",
+    "description": "Connect your Claude account to enable AI features",
+    "configureTitle": "Configure Claude Authentication",
+    "addAccountsDesc": "Add your Claude accounts to enable AI features",
+    "multiAccountInfo": "Add multiple Claude subscriptions to automatically switch between them when you hit rate limits.",
+    "noAccountsYet": "No accounts configured yet",
     "badges": {
-      "default": "Par défaut",
-      "active": "Actif",
-      "authenticated": "Authentifié",
-      "needsAuth": "Auth requise"
+      "default": "Default",
+      "active": "Active",
+      "authenticated": "Authenticated",
+      "needsAuth": "Needs Auth"
     },
     "buttons": {
-      "authenticate": "Authentifier",
-      "setActive": "Définir actif",
-      "rename": "Renommer",
-      "delete": "Supprimer",
-      "add": "Ajouter",
-      "adding": "Ajout...",
-      "showToken": "Afficher le jeton",
-      "hideToken": "Masquer le jeton",
-      "copyToken": "Copier le jeton",
-      "back": "Retour",
-      "continue": "Continuer",
-      "skip": "Passer"
+      "authenticate": "Authenticate",
+      "setActive": "Set Active",
+      "rename": "Rename",
+      "delete": "Delete",
+      "add": "Add",
+      "adding": "Adding...",
+      "showToken": "Show Token",
+      "hideToken": "Hide Token",
+      "copyToken": "Copy Token",
+      "back": "Back",
+      "continue": "Continue",
+      "skip": "Skip"
     },
     "labels": {
-      "accountName": "Nom du compte",
-      "namePlaceholder": "Nom du profil (ex: Travail, Personnel)",
-      "tokenLabel": "Jeton OAuth",
-      "tokenPlaceholder": "Entrez le jeton ici",
-      "tokenHint": "Collez le jeton affiché dans votre terminal après la connexion OAuth."
+      "accountName": "Account name",
+      "namePlaceholder": "Profile name (e.g., Work, Personal)",
+      "tokenLabel": "OAuth Token",
+      "tokenPlaceholder": "Enter token here",
+      "tokenHint": "Paste the token shown in your terminal after completing OAuth login."
     },
-    "keychainTitle": "Stockage sécurisé",
-    "keychainDescription": "Vos jetons sont chiffrés à l'aide du trousseau de clés de votre système. Une demande de mot de passe macOS peut apparaître — cliquez sur « Toujours autoriser » pour ne plus la revoir.",
+    "keychainTitle": "Secure Storage",
+    "keychainDescription": "Your tokens are encrypted using your system's keychain. You may see a password prompt from macOS — click \"Always Allow\" to avoid seeing it again.",
     "toast": {
-      "authSuccess": "Profil authentifié avec succès",
-      "authSuccessWithEmail": "Compte : {{email}}",
-      "authSuccessGeneric": "Authentification terminée. Vous pouvez maintenant utiliser ce profil.",
-      "authStartFailed": "Échec du démarrage de l'authentification",
-      "addProfileFailed": "Échec de l'ajout du profil",
-      "tokenSaved": "Jeton enregistré",
-      "tokenSavedDescription": "Votre jeton a été enregistré avec succès.",
-      "tokenSaveFailed": "Échec de l'enregistrement du jeton",
-      "tryAgain": "Veuillez réessayer."
+      "authSuccess": "Profile authenticated successfully",
+      "authSuccessWithEmail": "Account: {{email}}",
+      "authSuccessGeneric": "Authentication complete. You can now use this profile.",
+      "authStartFailed": "Failed to start authentication",
+      "addProfileFailed": "Failed to add profile",
+      "tokenSaved": "Token saved",
+      "tokenSavedDescription": "Your token has been saved successfully.",
+      "tokenSaveFailed": "Failed to save token",
+      "tryAgain": "Please try again."
     },
     "alerts": {
-      "profileCreatedAuthFailed": "Profil créé mais échec de la préparation de l'authentification : {{error}}",
-      "authPrepareFailed": "Échec de la préparation de l'authentification : {{error}}",
-      "authStartFailedMessage": "Échec du démarrage de l'authentification. Veuillez réessayer."
+      "profileCreatedAuthFailed": "Profile created but failed to prepare authentication: {{error}}",
+      "authPrepareFailed": "Failed to prepare authentication: {{error}}",
+      "authStartFailedMessage": "Failed to start authentication. Please try again."
     }
   },
   "memory": {
-    "title": "Mémoire",
-    "description": "Configurer la mémoire persistante entre sessions pour les agents",
-    "contextDescription": "La mémoire Aperant aide à retenir le contexte entre vos sessions de code",
-    "enableMemory": "Activer la mémoire",
-    "enableMemoryDescription": "Mémoire persistante entre sessions utilisant une base de données intégrée",
-    "memoryDisabledInfo": "La mémoire est désactivée. Les informations de session seront stockées uniquement dans des fichiers locaux. Activez la mémoire pour un contexte persistant entre sessions avec recherche sémantique.",
-    "embeddingProvider": "Fournisseur d'embeddings",
-    "embeddingProviderDescription": "Fournisseur pour la recherche sémantique (optionnel - la recherche par mots-clés fonctionne sans)",
-    "selectEmbeddingModel": "Sélectionner le modèle d'embedding",
-    "openaiApiKey": "Clé API OpenAI",
-    "openaiApiKeyDescription": "Requise pour les embeddings OpenAI",
-    "openaiGetKey": "Obtenez votre clé sur",
-    "voyageApiKey": "Clé API Voyage AI",
-    "voyageApiKeyDescription": "Requise pour les embeddings Voyage AI",
-    "voyageEmbeddingModel": "Modèle d'embedding",
-    "googleApiKey": "Clé API Google AI",
-    "googleApiKeyDescription": "Requise pour les embeddings Google AI",
-    "azureConfig": "Configuration Azure OpenAI",
-    "azureApiKey": "Clé API",
-    "azureBaseUrl": "URL de base",
-    "azureEmbeddingDeployment": "Nom du déploiement d'embedding",
-    "memoryInfo": "La mémoire stocke les découvertes, motifs et informations sur votre codebase pour que les futures sessions démarrent avec le contexte déjà chargé.",
-    "learnMore": "En savoir plus sur la mémoire",
-    "back": "Retour",
-    "skip": "Passer",
-    "saving": "Enregistrement...",
-    "saveAndContinue": "Enregistrer et continuer",
+    "title": "Memory",
+    "description": "Configure persistent cross-session memory for agents",
+    "contextDescription": "Aperant Memory helps remember context across your coding sessions",
+    "enableMemory": "Enable Memory",
+    "enableMemoryDescription": "Persistent cross-session memory using an embedded database",
+    "memoryDisabledInfo": "Memory is disabled. Session insights will be stored in local files only. Enable Memory for persistent cross-session context with semantic search.",
+    "embeddingProvider": "Embedding Provider",
+    "embeddingProviderDescription": "Provider for semantic search (optional - keyword search works without)",
+    "selectEmbeddingModel": "Select Embedding Model",
+    "openaiApiKey": "OpenAI API Key",
+    "openaiApiKeyDescription": "Required for OpenAI embeddings",
+    "openaiGetKey": "Get your key from",
+    "voyageApiKey": "Voyage AI API Key",
+    "voyageApiKeyDescription": "Required for Voyage AI embeddings",
+    "voyageEmbeddingModel": "Embedding Model",
+    "googleApiKey": "Google AI API Key",
+    "googleApiKeyDescription": "Required for Google AI embeddings",
+    "azureConfig": "Azure OpenAI Configuration",
+    "azureApiKey": "API Key",
+    "azureBaseUrl": "Base URL",
+    "azureEmbeddingDeployment": "Embedding Deployment Name",
+    "memoryInfo": "Memory stores discoveries, patterns, and insights about your codebase so future sessions start with context already loaded.",
+    "learnMore": "Learn more about Memory",
+    "back": "Back",
+    "skip": "Skip",
+    "saving": "Saving...",
+    "saveAndContinue": "Save & Continue",
     "providers": {
-      "ollama": "Ollama (Local - Gratuit)",
+      "ollama": "Ollama (Local - Free)",
       "openai": "OpenAI",
       "voyage": "Voyage AI",
       "google": "Google AI",
       "azure": "Azure OpenAI"
     },
-    "ollamaConfig": "Configuration Ollama",
-    "checking": "Vérification...",
-    "connected": "Connecté",
-    "notRunning": "Non démarré",
-    "baseUrl": "URL de base",
-    "embeddingModel": "Modèle d'embedding",
-    "embeddingDim": "Dimension d'embedding",
-    "embeddingDimDescription": "Requis pour les embeddings Ollama (ex. 768 pour nomic-embed-text)",
-    "modelRecommendation": "Recommandé : qwen3-embedding:4b (équilibré), :8b (qualité), :0.6b (rapide)"
+    "ollamaConfig": "Ollama Configuration",
+    "checking": "Checking...",
+    "connected": "Connected",
+    "notRunning": "Not running",
+    "baseUrl": "Base URL",
+    "embeddingModel": "Embedding Model",
+    "embeddingDim": "Embedding Dimension",
+    "embeddingDimDescription": "Required for Ollama embeddings (e.g., 768 for nomic-embed-text)",
+    "modelRecommendation": "Recommended: qwen3-embedding:4b (balanced), :8b (quality), :0.6b (fast)"
   },
   "completion": {
-    "title": "Vous êtes prêt !",
-    "subtitle": "Aperant est prêt à vous aider à construire des logiciels incroyables",
-    "setupComplete": "Configuration terminée",
-    "setupCompleteDescription": "Votre environnement est configuré et prêt. Vous pouvez commencer à créer des tâches immédiatement ou explorer l'application à votre rythme.",
-    "whatsNext": "Et maintenant ?",
+    "title": "You're All Set!",
+    "subtitle": "Aperant is ready to help you build amazing software",
+    "setupComplete": "Setup Complete",
+    "setupCompleteDescription": "Your environment is configured and ready. You can start creating tasks immediately or explore the application at your own pace.",
+    "whatsNext": "What's Next?",
     "createTask": {
-      "title": "Créer une tâche",
-      "description": "Commencez par créer votre première tâche pour voir Aperant en action.",
-      "action": "Ouvrir le créateur de tâches"
+      "title": "Create a Task",
+      "description": "Start by creating your first task to see Aperant in action.",
+      "action": "Open Task Creator"
     },
     "customizeSettings": {
-      "title": "Personnaliser les paramètres",
-      "description": "Affinez vos préférences, configurez les intégrations ou relancez cet assistant.",
-      "action": "Ouvrir les paramètres"
+      "title": "Customize Settings",
+      "description": "Fine-tune your preferences, configure integrations, or re-run this wizard.",
+      "action": "Open Settings"
     },
     "exploreDocs": {
-      "title": "Explorer la documentation",
-      "description": "En savoir plus sur les fonctionnalités avancées, les bonnes pratiques et le dépannage."
+      "title": "Explore Documentation",
+      "description": "Learn more about advanced features, best practices, and troubleshooting."
     },
-    "finish": "Terminer et commencer à construire",
-    "rerunHint": "Vous pouvez toujours relancer cet assistant depuis Paramètres → Application"
+    "finish": "Finish & Start Building",
+    "rerunHint": "You can always re-run this wizard from Settings → Application"
   },
   "steps": {
-    "welcome": "Bienvenue",
-    "accounts": "Comptes",
-    "devtools": "Outils dev",
-    "privacy": "Confidentialité",
-    "memory": "Mémoire",
-    "done": "Terminé"
+    "welcome": "Welcome",
+    "accounts": "Accounts",
+    "devtools": "Dev Tools",
+    "privacy": "Privacy",
+    "memory": "Memory",
+    "done": "Done"
   },
   "privacy": {
-    "title": "Aidez à améliorer Aperant",
-    "subtitle": "Les rapports d'erreurs anonymes nous aident à corriger les bugs plus rapidement",
+    "title": "Help Improve Aperant",
+    "subtitle": "Anonymous error reporting helps us fix bugs faster",
     "whatWeCollect": {
-      "title": "Ce que nous collectons",
-      "crashReports": "Rapports de crash et traces d'erreurs",
-      "errorMessages": "Messages d'erreur (avec chemins de fichiers anonymisés)",
-      "appVersion": "Version de l'app et informations système"
+      "title": "What we collect",
+      "crashReports": "Crash reports and error stack traces",
+      "errorMessages": "Error messages (with file paths anonymized)",
+      "appVersion": "App version and platform info"
     },
     "whatWeNeverCollect": {
-      "title": "Ce que nous ne collectons jamais",
-      "code": "Votre code ou fichiers de projet",
-      "filenames": "Chemins de fichiers complets (noms d'utilisateur masqués)",
-      "apiKeys": "Clés API ou jetons",
-      "personalData": "Informations personnelles ou données d'utilisation"
+      "title": "What we never collect",
+      "code": "Your code or project files",
+      "filenames": "Full file paths (usernames are masked)",
+      "apiKeys": "API keys or tokens",
+      "personalData": "Personal information or usage data"
     },
     "toggle": {
-      "label": "Envoyer des rapports d'erreurs anonymes",
-      "description": "Aidez-nous à identifier et corriger les problèmes"
+      "label": "Send anonymous error reports",
+      "description": "Help us identify and fix issues"
     }
   },
   "claudeCode": {
     "title": "Claude Code CLI",
-    "description": "Installez ou mettez à jour le CLI Claude Code pour activer les fonctionnalités IA",
-    "detecting": "Vérification de l'installation de Claude Code...",
+    "description": "Install or update the Claude Code CLI to enable AI-powered features",
+    "detecting": "Checking Claude Code installation...",
     "info": {
-      "title": "Qu'est-ce que Claude Code ?",
-      "description": "Claude Code est le CLI officiel d'Anthropic qui alimente les fonctionnalités IA d'Aperant. Il fournit une authentification sécurisée et un accès direct aux modèles Claude."
+      "title": "What is Claude Code?",
+      "description": "Claude Code is Anthropic's official CLI that powers Aperant's AI features. It provides secure authentication and direct access to Claude models."
     },
     "status": {
-      "installed": "Installé",
-      "outdated": "Mise à jour disponible",
-      "notFound": "Non installé"
+      "installed": "Installed",
+      "outdated": "Update Available",
+      "notFound": "Not Installed"
     },
     "version": {
-      "current": "Version actuelle",
-      "latest": "Dernière version"
+      "current": "Current Version",
+      "latest": "Latest Version"
     },
     "install": {
-      "button": "Installer Claude Code",
-      "updating": "Mettre à jour Claude Code",
-      "inProgress": "Installation...",
-      "success": "Commande d'installation envoyée au terminal. Veuillez terminer l'installation là-bas.",
-      "instructions": "L'installateur s'ouvrira dans votre terminal. Suivez les instructions pour terminer l'installation."
+      "button": "Install Claude Code",
+      "updating": "Update Claude Code",
+      "inProgress": "Installing...",
+      "success": "Installation command sent to terminal. Please complete the installation there.",
+      "instructions": "The installer will open in your terminal. Follow the prompts to complete installation."
     },
-    "learnMore": "En savoir plus sur Claude Code"
+    "learnMore": "Learn more about Claude Code"
   },
   "devtools": {
-    "title": "Outils de développement",
-    "description": "Choisissez votre IDE, terminal et CLI préférés pour travailler avec les worktrees Aperant",
-    "detecting": "Détection des outils installés...",
-    "detectAgain": "Détecter à nouveau",
-    "whyConfigure": "Pourquoi configurer ceci ?",
-    "whyConfigureDescription": "Quand Aperant construit des fonctionnalités dans des worktrees isolés, vous pouvez les ouvrir directement dans votre IDE ou terminal préféré pour tester et réviser les changements.",
+    "title": "Developer Tools",
+    "description": "Choose your preferred IDE, terminal, and CLI for working with Aperant worktrees",
+    "detecting": "Detecting installed tools...",
+    "detectAgain": "Detect Again",
+    "whyConfigure": "Why configure these?",
+    "whyConfigureDescription": "When Aperant builds features in isolated worktrees, you can open them directly in your preferred IDE or terminal to test and review changes.",
     "ide": {
-      "label": "IDE préféré",
-      "description": "Aperant ouvrira les worktrees dans cet éditeur",
-      "customPath": "Chemin IDE personnalisé"
+      "label": "Preferred IDE",
+      "description": "Aperant will open worktrees in this editor",
+      "customPath": "Custom IDE Path"
     },
     "terminal": {
-      "label": "Terminal préféré",
-      "description": "Aperant ouvrira les sessions terminal ici",
-      "customPath": "Chemin terminal personnalisé"
+      "label": "Preferred Terminal",
+      "description": "Aperant will open terminal sessions here",
+      "customPath": "Custom Terminal Path"
     },
     "cli": {
-      "label": "CLI préféré",
-      "description": "Outil CLI utilisé pour les sessions terminal assistées par IA",
-      "customPath": "Chemin CLI personnalisé"
+      "label": "Preferred CLI",
+      "description": "CLI tool used for AI-powered terminal sessions",
+      "customPath": "Custom CLI Path"
     },
-    "detectedSummary": "Détecté sur votre système :",
-    "noToolsDetected": "Aucun outil supplémentaire détecté (VS Code et le terminal système seront utilisés)",
-    "custom": "Personnalisé...",
-    "saveAndContinue": "Enregistrer et continuer"
+    "detectedSummary": "Detected on your system:",
+    "noToolsDetected": "No additional tools detected (VS Code and system terminal will be used)",
+    "custom": "Custom...",
+    "saveAndContinue": "Save & Continue"
   },
   "accounts": {
-    "title": "Ajoutez vos comptes IA",
-    "description": "Connectez vos comptes de fournisseurs IA. Vous pouvez en ajouter d'autres plus tard dans les paramètres.",
+    "title": "Add Your AI Accounts",
+    "description": "Connect your AI provider accounts. You can add more later in Settings.",
     "buttons": {
-      "back": "Retour",
-      "continue": "Continuer",
-      "skip": "Passer pour le moment"
+      "back": "Back",
+      "continue": "Continue",
+      "skip": "Skip for now"
     }
   },
   "ollama": {
     "notInstalled": {
-      "title": "Ollama non installé",
-      "description": "Ollama fournit des modèles d'embeddings locaux gratuits pour la recherche sémantique. Installez-le en un clic pour activer cette fonctionnalité.",
-      "installSuccess": "Installation lancée dans votre terminal. Terminez l'installation là-bas, puis cliquez sur Réessayer.",
-      "installButton": "Installer Ollama",
-      "installing": "Installation...",
-      "retry": "Réessayer",
-      "learnMore": "En savoir plus",
-      "fallbackNote": "La mémoire fonctionnera toujours avec la recherche par mots-clés même sans Ollama."
+      "title": "Ollama not installed",
+      "description": "Ollama provides free, local embedding models for semantic search. Install it with one click to enable this feature.",
+      "installSuccess": "Installation started in your terminal. Complete the installation there, then click Retry.",
+      "installButton": "Install Ollama",
+      "installing": "Installing...",
+      "retry": "Retry",
+      "learnMore": "Learn more",
+      "fallbackNote": "Memory will still work with keyword search even without Ollama."
     },
     "notRunning": {
-      "title": "Ollama non démarré",
-      "description": "Ollama est installé mais non démarré. Lancez Ollama pour utiliser les modèles d'embeddings locaux.",
-      "retry": "Réessayer",
-      "fallbackNote": "La mémoire fonctionnera toujours avec la recherche par mots-clés même sans embeddings."
+      "title": "Ollama not running",
+      "description": "Ollama is installed but not running. Start Ollama to use local embedding models.",
+      "retry": "Retry",
+      "fallbackNote": "Memory will still work with keyword search even without embeddings."
     }
   }
 }

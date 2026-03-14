@@ -1,45 +1,45 @@
 {
   "sections": {
-    "project": "Project",
-    "tools": "Tools"
+    "project": "प्रोजेक्ट",
+    "tools": "टूल्स"
   },
   "items": {
-    "kanban": "Kanban Board",
-    "terminals": "Agent Terminals",
-    "insights": "Insights",
-    "roadmap": "Roadmap",
-    "ideation": "Ideation",
-    "changelog": "Changelog",
-    "context": "Context",
-    "githubIssues": "GitHub Issues",
-    "githubPRs": "GitHub PRs",
-    "gitlabIssues": "GitLab Issues",
-    "gitlabMRs": "GitLab MRs",
+    "kanban": "कानबन बोर्ड",
+    "terminals": "एजेंट टर्मिनल",
+    "insights": "इंसाइट्स",
+    "roadmap": "रोडमैप",
+    "ideation": "विचार निर्माण",
+    "changelog": "बदलाव लॉग",
+    "context": "संदर्भ",
+    "githubIssues": "GitHub मुद्दे",
+    "githubPRs": "GitHub PR",
+    "gitlabIssues": "GitLab मुद्दे",
+    "gitlabMRs": "GitLab MR",
     "worktrees": "Worktrees",
-    "agentTools": "MCP Overview"
+    "agentTools": "MCP अवलोकन"
   },
   "actions": {
     "settings": "सेटिंग्स",
-    "help": "Help & Feedback",
-    "newTask": "New Task",
-    "collapseSidebar": "Collapse Sidebar",
-    "expandSidebar": "Expand Sidebar",
-    "sponsor": "Sponsor Us"
+    "help": "सहायता और प्रतिक्रिया",
+    "newTask": "नया कार्य",
+    "collapseSidebar": "साइडबार संक्षिप्त करें",
+    "expandSidebar": "साइडबार विस्तार करें",
+    "sponsor": "हमें प्रायोजित करें"
   },
   "tooltips": {
-    "settings": "Application Settings",
-    "help": "Help & Feedback"
+    "settings": "एप्लिकेशन सेटिंग्स",
+    "help": "सहायता और प्रतिक्रिया"
   },
   "messages": {
     "initializeToCreateTasks": "Initialize Aperant to create tasks"
   },
   "updateBanner": {
-    "title": "Update Available",
-    "version": "संस्करण {{version}} is ready",
-    "updateAndRestart": "Update and Restart",
-    "installAndRestart": "Install and Restart",
+    "title": "अपडेट उपलब्ध",
+    "version": "Version {{version}} is ready",
+    "updateAndRestart": "अपडेट और पुनः प्रारंभ करें",
+    "installAndRestart": "इंस्टॉल और पुनः प्रारंभ करें",
     "downloading": "Downloading...",
-    "dismiss": "Dismiss",
+    "dismiss": "खारिज करें",
     "downloadError": "Failed to download update",
     "readOnlyVolumeWarning": "Move to Applications folder to update"
   },
@@ -78,7 +78,7 @@
     "selectInstallation": "Select installation",
     "loadingInstallations": "Loading installations...",
     "failedToLoadInstallations": "Failed to load installations",
-    "activeInstallation": "Active",
+    "activeInstallation": "सक्रिय",
     "pathChangeWarningTitle": "Switch CLI installation?",
     "pathChangeWarningDescription": "Switching CLI installations will use a different Claude Code binary. Any running sessions will continue using the previous installation until restarted.",
     "switchInstallationConfirm": "Switch",

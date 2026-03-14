@@ -8,7 +8,7 @@
     "review": "Review",
     "prCreated": "PR Created",
     "complete": "Complete",
-    "archived": "Archived"
+    "archived": "已封存"
   },
   "actions": {
     "start": "Start",
@@ -27,7 +27,7 @@
     "running": "Running",
     "aiReview": "AI Review",
     "needsReview": "Needs Review",
-    "pending": "Pending",
+    "pending": "擱置中",
     "stuck": "Stuck",
     "incomplete": "Incomplete",
     "recovering": "Recovering...",
@@ -35,7 +35,7 @@
     "needsResume": "Needs Resume"
   },
   "reviewReason": {
-    "completed": "Completed",
+    "completed": "已完成",
     "hasErrors": "Has Errors",
     "qaIssues": "QA Issues",
     "approvePlan": "Approve Plan",
@@ -106,8 +106,8 @@
     "deleteConfirmDescription": "Are you sure you want to permanently delete these tasks?",
     "deleteWarning": "This action cannot be undone. All task files, including the spec, implementation plan, and any generated code will be permanently deleted from the project.",
     "tasksToDelete": "Tasks to delete",
-    "deleteConfirmButton": "刪除 {{count}} Tasks",
-    "deleteSuccess": "成功fully deleted {{count}} task(s)",
+    "deleteConfirmButton": "Delete {{count}} Tasks",
+    "deleteSuccess": "Successfully deleted {{count}} task(s)",
     "deleteError": "Failed to delete some tasks",
     "clearSelection": "Clear Selection",
     "collapseColumn": "Collapse column",
@@ -147,7 +147,7 @@
       "reviewing": "Reviewing",
       "fixing": "Fixing",
       "complete": "Complete",
-      "failed": "Failed"
+      "failed": "失敗"
     },
     "labels": {
       "interrupted": "Interrupted",

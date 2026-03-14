@@ -37,7 +37,7 @@
     "noAccountsYet": "No accounts configured yet",
     "badges": {
       "default": "Default",
-      "active": "Active",
+      "active": "सक्रिय",
       "authenticated": "Authenticated",
       "needsAuth": "Needs Auth"
     },
@@ -45,8 +45,8 @@
       "authenticate": "Authenticate",
       "setActive": "Set Active",
       "rename": "Rename",
-      "delete": "हटाएँ",
-      "add": "Add",
+      "delete": "हटाएं",
+      "add": "जोड़ें",
       "adding": "Adding...",
       "showToken": "Show Token",
       "hideToken": "Hide Token",
@@ -151,7 +151,7 @@
   },
   "steps": {
     "welcome": "Welcome",
-    "accounts": "Accounts",
+    "accounts": "खाते",
     "devtools": "Dev Tools",
     "privacy": "Privacy",
     "memory": "Memory",
@@ -188,7 +188,7 @@
     },
     "status": {
       "installed": "Installed",
-      "outdated": "Update Available",
+      "outdated": "अपडेट उपलब्ध",
       "notFound": "Not Installed"
     },
     "version": {
@@ -205,7 +205,7 @@
     "learnMore": "Learn more about Claude Code"
   },
   "devtools": {
-    "title": "Developer Tools",
+    "title": "डेवलपर टूल्स",
     "description": "Choose your preferred IDE, terminal, and CLI for working with Aperant worktrees",
     "detecting": "Detecting installed tools...",
     "detectAgain": "Detect Again",

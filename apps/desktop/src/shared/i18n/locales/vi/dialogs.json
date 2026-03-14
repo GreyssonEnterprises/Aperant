@@ -60,7 +60,7 @@
     "mergeDescription": "Merge changes from this worktree into the base branch.",
     "delete": "Delete Worktree?",
     "deleteDescription": "This will permanently delete the worktree and all uncommitted changes. This action cannot be undone.",
-    "bulkDeleteTitle": "Xóa {{count}} Worktrees?",
+    "bulkDeleteTitle": "Delete {{count}} Worktrees?",
     "bulkDeleteDescription": "This will permanently delete the selected worktrees and all their uncommitted changes. This action cannot be undone.",
     "deleting": "Deleting...",
     "deleteSelected": "Delete Selected"
@@ -161,7 +161,7 @@
     "released": "Released",
     "downloading": "Downloading...",
     "downloadUpdate": "Download Update",
-    "installAndRestart": "Install and Restart",
+    "installAndRestart": "Cài đặt và Khởi động lại",
     "installLater": "Install Later",
     "remindMeLater": "Remind Me Later",
     "updateDownloaded": "Update downloaded successfully! Click Install to restart and apply the update.",

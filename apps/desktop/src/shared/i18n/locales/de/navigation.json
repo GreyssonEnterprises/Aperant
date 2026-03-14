@@ -1,45 +1,45 @@
 {
   "sections": {
-    "project": "Project",
+    "project": "Projekt",
     "tools": "Tools"
   },
   "items": {
-    "kanban": "Kanban Board",
-    "terminals": "Agent Terminals",
-    "insights": "Insights",
+    "kanban": "Kanban-Board",
+    "terminals": "Agent-Terminals",
+    "insights": "Einblicke",
     "roadmap": "Roadmap",
-    "ideation": "Ideation",
-    "changelog": "Changelog",
-    "context": "Context",
-    "githubIssues": "GitHub Issues",
-    "githubPRs": "GitHub PRs",
-    "gitlabIssues": "GitLab Issues",
-    "gitlabMRs": "GitLab MRs",
+    "ideation": "Ideengenerierung",
+    "changelog": "Änderungsprotokoll",
+    "context": "Kontext",
+    "githubIssues": "GitHub-Issues",
+    "githubPRs": "GitHub-PRs",
+    "gitlabIssues": "GitLab-Issues",
+    "gitlabMRs": "GitLab-MRs",
     "worktrees": "Worktrees",
-    "agentTools": "MCP Overview"
+    "agentTools": "MCP-Übersicht"
   },
   "actions": {
     "settings": "Einstellungen",
-    "help": "Help & Feedback",
-    "newTask": "New Task",
-    "collapseSidebar": "Collapse Sidebar",
-    "expandSidebar": "Expand Sidebar",
-    "sponsor": "Sponsor Us"
+    "help": "Hilfe & Feedback",
+    "newTask": "Neue Aufgabe",
+    "collapseSidebar": "Seitenleiste einklappen",
+    "expandSidebar": "Seitenleiste ausklappen",
+    "sponsor": "Unterstützen Sie uns"
   },
   "tooltips": {
-    "settings": "Application Settings",
-    "help": "Help & Feedback"
+    "settings": "Anwendungseinstellungen",
+    "help": "Hilfe & Feedback"
   },
   "messages": {
     "initializeToCreateTasks": "Initialize Aperant to create tasks"
   },
   "updateBanner": {
-    "title": "Update Available",
+    "title": "Update verfügbar",
     "version": "Version {{version}} is ready",
-    "updateAndRestart": "Update and Restart",
-    "installAndRestart": "Install and Restart",
+    "updateAndRestart": "Update und Neustart",
+    "installAndRestart": "Installieren und Neustart",
     "downloading": "Downloading...",
-    "dismiss": "Dismiss",
+    "dismiss": "Verwerfen",
     "downloadError": "Failed to download update",
     "readOnlyVolumeWarning": "Move to Applications folder to update"
   },
@@ -78,7 +78,7 @@
     "selectInstallation": "Select installation",
     "loadingInstallations": "Loading installations...",
     "failedToLoadInstallations": "Failed to load installations",
-    "activeInstallation": "Active",
+    "activeInstallation": "Aktiv",
     "pathChangeWarningTitle": "Switch CLI installation?",
     "pathChangeWarningDescription": "Switching CLI installations will use a different Claude Code binary. Any running sessions will continue using the previous installation until restarted.",
     "switchInstallationConfirm": "Switch",

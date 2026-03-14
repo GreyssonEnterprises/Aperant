@@ -1,45 +1,45 @@
 {
   "sections": {
-    "project": "Project",
-    "tools": "Tools"
+    "project": "项目",
+    "tools": "工具"
   },
   "items": {
-    "kanban": "Kanban Board",
-    "terminals": "Agent Terminals",
-    "insights": "Insights",
-    "roadmap": "Roadmap",
-    "ideation": "Ideation",
-    "changelog": "Changelog",
-    "context": "Context",
-    "githubIssues": "GitHub Issues",
-    "githubPRs": "GitHub PRs",
-    "gitlabIssues": "GitLab Issues",
-    "gitlabMRs": "GitLab MRs",
-    "worktrees": "Worktrees",
-    "agentTools": "MCP Overview"
+    "kanban": "看板",
+    "terminals": "代理终端",
+    "insights": "洞察",
+    "roadmap": "路线图",
+    "ideation": "创意生成",
+    "changelog": "变更日志",
+    "context": "上下文",
+    "githubIssues": "GitHub 问题",
+    "githubPRs": "GitHub PR",
+    "gitlabIssues": "GitLab 问题",
+    "gitlabMRs": "GitLab MR",
+    "worktrees": "工作树",
+    "agentTools": "MCP 概览"
   },
   "actions": {
     "settings": "设置",
-    "help": "Help & Feedback",
-    "newTask": "New Task",
-    "collapseSidebar": "Collapse Sidebar",
-    "expandSidebar": "Expand Sidebar",
-    "sponsor": "Sponsor Us"
+    "help": "帮助与反馈",
+    "newTask": "新任务",
+    "collapseSidebar": "折叠侧边栏",
+    "expandSidebar": "展开侧边栏",
+    "sponsor": "赞助我们"
   },
   "tooltips": {
-    "settings": "Application Settings",
-    "help": "Help & Feedback"
+    "settings": "应用程序设置",
+    "help": "帮助与反馈"
   },
   "messages": {
     "initializeToCreateTasks": "Initialize Aperant to create tasks"
   },
   "updateBanner": {
-    "title": "Update Available",
-    "version": "版本 {{version}} is ready",
-    "updateAndRestart": "Update and Restart",
-    "installAndRestart": "Install and Restart",
+    "title": "可用更新",
+    "version": "Version {{version}} is ready",
+    "updateAndRestart": "更新并重启",
+    "installAndRestart": "安装并重启",
     "downloading": "Downloading...",
-    "dismiss": "Dismiss",
+    "dismiss": "忽略",
     "downloadError": "Failed to download update",
     "readOnlyVolumeWarning": "Move to Applications folder to update"
   },
@@ -78,7 +78,7 @@
     "selectInstallation": "Select installation",
     "loadingInstallations": "Loading installations...",
     "failedToLoadInstallations": "Failed to load installations",
-    "activeInstallation": "Active",
+    "activeInstallation": "活动",
     "pathChangeWarningTitle": "Switch CLI installation?",
     "pathChangeWarningDescription": "Switching CLI installations will use a different Claude Code binary. Any running sessions will continue using the previous installation until restarted.",
     "switchInstallationConfirm": "Switch",

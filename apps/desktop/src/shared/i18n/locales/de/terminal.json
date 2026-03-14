@@ -37,7 +37,7 @@
     "selectTask": "Select a task...",
     "noTask": "No task (standalone worktree)",
     "createBranch": "Create Git Branch",
-    "branchHelp": "Erstellens branch: {{branch}}",
+    "branchHelp": "Creates branch: {{branch}}",
     "baseBranch": "Base Branch",
     "selectBaseBranch": "Select base branch...",
     "searchBranch": "Search branches...",

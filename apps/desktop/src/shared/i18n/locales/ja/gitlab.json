@@ -1,8 +1,8 @@
 {
-  "title": "GitLab Issues",
+  "title": "GitLabイシュー",
   "states": {
     "opened": "開く",
-    "closed": "Closed"
+    "closed": "クローズ"
   },
   "complexity": {
     "simple": "Simple",
@@ -15,7 +15,7 @@
   },
   "filters": {
     "opened": "開く",
-    "closed": "Closed",
+    "closed": "クローズ",
     "all": "All"
   },
   "empty": {
@@ -75,7 +75,7 @@
     "scopeApi": "api",
     "scopeFrom": "scope from",
     "gitlabSettings": "GitLab Settings",
-    "project": "Project",
+    "project": "プロジェクト",
     "enterManually": "Enter Manually",
     "loadingProjects": "Loading projects...",
     "selectProject": "Select a project...",
@@ -118,13 +118,13 @@
     "selectMR": "Select a merge request to view details",
     "states": {
       "opened": "開く",
-      "closed": "Closed",
+      "closed": "クローズ",
       "merged": "Merged",
       "locked": "Locked"
     },
     "filters": {
       "opened": "開く",
-      "closed": "Closed",
+      "closed": "クローズ",
       "merged": "Merged",
       "all": "All"
     }

@@ -1,8 +1,8 @@
 {
-  "title": "GitLab Issues",
+  "title": "GitLab 问题",
   "states": {
     "opened": "打开",
-    "closed": "Closed"
+    "closed": "已关闭"
   },
   "complexity": {
     "simple": "Simple",
@@ -15,7 +15,7 @@
   },
   "filters": {
     "opened": "打开",
-    "closed": "Closed",
+    "closed": "已关闭",
     "all": "All"
   },
   "empty": {
@@ -75,7 +75,7 @@
     "scopeApi": "api",
     "scopeFrom": "scope from",
     "gitlabSettings": "GitLab Settings",
-    "project": "Project",
+    "project": "项目",
     "enterManually": "Enter Manually",
     "loadingProjects": "Loading projects...",
     "selectProject": "Select a project...",
@@ -118,13 +118,13 @@
     "selectMR": "Select a merge request to view details",
     "states": {
       "opened": "打开",
-      "closed": "Closed",
+      "closed": "已关闭",
       "merged": "Merged",
       "locked": "Locked"
     },
     "filters": {
       "opened": "打开",
-      "closed": "Closed",
+      "closed": "已关闭",
       "merged": "Merged",
       "all": "All"
     }

@@ -1,8 +1,8 @@
 {
-  "title": "GitLab Issues",
+  "title": "Vấn đề GitLab",
   "states": {
     "opened": "Mở",
-    "closed": "Closed"
+    "closed": "Đã đóng"
   },
   "complexity": {
     "simple": "Simple",
@@ -15,7 +15,7 @@
   },
   "filters": {
     "opened": "Mở",
-    "closed": "Closed",
+    "closed": "Đã đóng",
     "all": "All"
   },
   "empty": {
@@ -75,7 +75,7 @@
     "scopeApi": "api",
     "scopeFrom": "scope from",
     "gitlabSettings": "GitLab Settings",
-    "project": "Project",
+    "project": "Dự án",
     "enterManually": "Enter Manually",
     "loadingProjects": "Loading projects...",
     "selectProject": "Select a project...",
@@ -118,13 +118,13 @@
     "selectMR": "Select a merge request to view details",
     "states": {
       "opened": "Mở",
-      "closed": "Closed",
+      "closed": "Đã đóng",
       "merged": "Merged",
       "locked": "Locked"
     },
     "filters": {
       "opened": "Mở",
-      "closed": "Closed",
+      "closed": "Đã đóng",
       "merged": "Merged",
       "all": "All"
     }

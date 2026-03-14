@@ -8,7 +8,7 @@
     "review": "Review",
     "prCreated": "PR Created",
     "complete": "Complete",
-    "archived": "Archived"
+    "archived": "संग्रहित"
   },
   "actions": {
     "start": "Start",
@@ -16,7 +16,7 @@
     "recover": "Recover",
     "resume": "Resume",
     "archive": "Archive",
-    "delete": "हटाएँ",
+    "delete": "हटाएं",
     "view": "View Details",
     "viewPR": "View PR",
     "moveTo": "Move to",
@@ -27,7 +27,7 @@
     "running": "Running",
     "aiReview": "AI Review",
     "needsReview": "Needs Review",
-    "pending": "Pending",
+    "pending": "लंबित",
     "stuck": "Stuck",
     "incomplete": "Incomplete",
     "recovering": "Recovering...",
@@ -35,7 +35,7 @@
     "needsResume": "Needs Resume"
   },
   "reviewReason": {
-    "completed": "Completed",
+    "completed": "पूर्ण",
     "hasErrors": "Has Errors",
     "qaIssues": "QA Issues",
     "approvePlan": "Approve Plan",
@@ -101,13 +101,13 @@
     "selectedCountOne": "{{count}} task selected",
     "selectedCountOther": "{{count}} tasks selected",
     "createPRs": "Create PRs",
-    "deleteSelected": "हटाएँ",
+    "deleteSelected": "हटाएं",
     "deleteConfirmTitle": "Delete Selected Tasks",
     "deleteConfirmDescription": "Are you sure you want to permanently delete these tasks?",
     "deleteWarning": "This action cannot be undone. All task files, including the spec, implementation plan, and any generated code will be permanently deleted from the project.",
     "tasksToDelete": "Tasks to delete",
-    "deleteConfirmButton": "हटाएँ {{count}} Tasks",
-    "deleteSuccess": "सफलताfully deleted {{count}} task(s)",
+    "deleteConfirmButton": "Delete {{count}} Tasks",
+    "deleteSuccess": "Successfully deleted {{count}} task(s)",
     "deleteError": "Failed to delete some tasks",
     "clearSelection": "Clear Selection",
     "collapseColumn": "Collapse column",
@@ -147,7 +147,7 @@
       "reviewing": "Reviewing",
       "fixing": "Fixing",
       "complete": "Complete",
-      "failed": "Failed"
+      "failed": "विफल"
     },
     "labels": {
       "interrupted": "Interrupted",

@@ -1,159 +1,159 @@
 {
-  "refreshTasks": "Actualiser les tâches",
+  "refreshTasks": "Refresh Tasks",
   "status": {
     "backlog": "Backlog",
-    "queue": "File d'attente",
-    "todo": "À faire",
-    "in_progress": "En cours",
-    "review": "Révision",
-    "prCreated": "PR créée",
-    "complete": "Terminé",
-    "archived": "Archivé"
+    "queue": "Queue",
+    "todo": "To Do",
+    "in_progress": "In Progress",
+    "review": "Review",
+    "prCreated": "PR Created",
+    "complete": "Complete",
+    "archived": "Archived"
   },
   "actions": {
-    "start": "Démarrer",
-    "stop": "Arrêter",
-    "recover": "Récupérer",
-    "resume": "Reprendre",
-    "archive": "Archiver",
-    "delete": "Supprimer",
-    "view": "Voir les détails",
-    "viewPR": "Voir la PR",
-    "moveTo": "Déplacer vers",
-    "taskActions": "Actions de la tâche",
-    "selectTask": "Sélectionner la tâche : {{title}}"
+    "start": "Start",
+    "stop": "Stop",
+    "recover": "Recover",
+    "resume": "Resume",
+    "archive": "Archive",
+    "delete": "Delete",
+    "view": "View Details",
+    "viewPR": "View PR",
+    "moveTo": "Move to",
+    "taskActions": "Task actions",
+    "selectTask": "Select task: {{title}}"
   },
   "labels": {
-    "running": "En cours",
-    "aiReview": "Révision IA",
-    "needsReview": "À réviser",
-    "pending": "En attente",
-    "stuck": "Bloqué",
-    "incomplete": "Incomplet",
-    "recovering": "Récupération...",
-    "needsRecovery": "Récupération requise",
-    "needsResume": "Reprise requise"
+    "running": "Running",
+    "aiReview": "AI Review",
+    "needsReview": "Needs Review",
+    "pending": "Pending",
+    "stuck": "Stuck",
+    "incomplete": "Incomplete",
+    "recovering": "Recovering...",
+    "needsRecovery": "Needs Recovery",
+    "needsResume": "Needs Resume"
   },
   "reviewReason": {
-    "completed": "Terminé",
-    "hasErrors": "Contient des erreurs",
-    "qaIssues": "Problèmes QA",
-    "approvePlan": "Approuver le plan",
-    "stopped": "Arrêté"
+    "completed": "Completed",
+    "hasErrors": "Has Errors",
+    "qaIssues": "QA Issues",
+    "approvePlan": "Approve Plan",
+    "stopped": "Stopped"
   },
   "tooltips": {
-    "archiveTask": "Archiver la tâche",
-    "archiveAllDone": "Archiver toutes les tâches terminées",
-    "viewPR": "Ouvrir la pull request dans le navigateur"
+    "archiveTask": "Archive task",
+    "archiveAllDone": "Archive all done tasks",
+    "viewPR": "Open pull request in browser"
   },
   "creation": {
-    "title": "Créer une nouvelle tâche",
-    "description": "Décrivez ce que vous voulez construire",
-    "placeholder": "Décrivez votre tâche..."
+    "title": "Create New Task",
+    "description": "Describe what you want to build",
+    "placeholder": "Describe your task..."
   },
   "empty": {
-    "title": "Aucune tâche",
-    "description": "Créez votre première tâche pour commencer"
+    "title": "No tasks yet",
+    "description": "Create your first task to get started"
   },
   "columns": {
-    "backlog": "Planification",
-    "queue": "File d'attente",
-    "in_progress": "En cours",
-    "ai_review": "Révision IA",
-    "human_review": "Révision humaine",
-    "done": "Terminé",
-    "pr_created": "PR créée",
-    "error": "Erreur"
+    "backlog": "Planning",
+    "queue": "Queue",
+    "in_progress": "In Progress",
+    "ai_review": "AI Review",
+    "human_review": "Human Review",
+    "done": "Done",
+    "pr_created": "PR Created",
+    "error": "Error"
   },
   "kanban": {
-    "emptyBacklog": "Aucune tâche planifiée",
-    "emptyBacklogHint": "Ajoutez une tâche pour commencer",
-    "emptyQueue": "La file d'attente est vide",
-    "emptyQueueHint": "Les tâches attendront ici lorsque la limite de tâches parallèles sera atteinte",
-    "emptyInProgress": "Rien en cours",
-    "emptyInProgressHint": "Démarrez une tâche depuis le Backlog",
-    "emptyAiReview": "Aucune tâche en révision",
-    "emptyAiReviewHint": "L'IA révisera les tâches terminées",
-    "emptyHumanReview": "Rien à réviser",
-    "emptyHumanReviewHint": "Les tâches attendent votre approbation ici",
-    "emptyDone": "Aucune tâche terminée",
-    "emptyDoneHint": "Les tâches approuvées apparaissent ici",
-    "emptyDefault": "Aucune tâche",
-    "dropHere": "Déposer ici",
-    "showArchived": "Afficher les archivées",
-    "addTaskAriaLabel": "Ajouter une nouvelle tâche au backlog",
-    "queueAllAriaLabel": "Déplacer toutes les tâches vers la file d'attente",
-    "closeTaskDetailsAriaLabel": "Fermer les détails de la tâche",
-    "editTask": "Modifier la tâche",
-    "cannotEditWhileRunning": "Impossible de modifier pendant l'exécution",
-    "worktreeCleanupTitle": "Nettoyage du Worktree",
-    "worktreeCleanupStaged": "Cette tâche a été préparée et possède un worktree. Voulez-vous nettoyer le worktree ?",
-    "worktreeCleanupNotStaged": "Cette tâche possède un worktree avec des changements non fusionnés. Supprimez le worktree pour marquer comme terminé, ou annulez pour réviser les changements d'abord.",
-    "keepWorktree": "Garder le Worktree",
-    "deleteWorktree": "Supprimer le Worktree & Marquer Terminé",
-    "refreshTasks": "Actualiser les tâches",
-    "queueSettings": "Paramètres de la file d'attente",
-    "orderSaveFailedTitle": "Réorganisation non enregistrée",
-    "orderSaveFailedDescription": "Votre changement d'ordre des tâches a été appliqué mais n'a pas pu être sauvegardé. Il sera perdu lors du rafraîchissement.",
-    "selectAll": "Tout sélectionner",
-    "deselectAll": "Tout désélectionner",
-    "selectedCount": "{{count}} sélectionné(s)",
-    "selectedCountOne": "{{count}} tâche sélectionnée",
-    "selectedCountOther": "{{count}} tâches sélectionnées",
-    "createPRs": "Créer les PRs",
-    "deleteSelected": "Supprimer",
-    "deleteConfirmTitle": "Supprimer les tâches sélectionnées",
-    "deleteConfirmDescription": "Êtes-vous sûr de vouloir supprimer définitivement ces tâches ?",
-    "deleteWarning": "Cette action est irréversible. Tous les fichiers de tâche, y compris le spec, le plan d'implémentation et tout code généré seront définitivement supprimés du projet.",
-    "tasksToDelete": "Tâches à supprimer",
-    "deleteConfirmButton": "Supprimer {{count}} tâches",
-    "deleteSuccess": "{{count}} tâche(s) supprimée(s) avec succès",
-    "deleteError": "Échec de la suppression de certaines tâches",
-    "clearSelection": "Effacer la sélection",
-    "collapseColumn": "Réduire la colonne",
-    "expandColumn": "Développer la colonne",
-    "resizeColumn": "Redimensionner la colonne",
-    "lockColumn": "Verrouiller la largeur de la colonne",
-    "unlockColumn": "Déverrouiller la largeur de la colonne",
-    "columnLocked": "La largeur de la colonne est verrouillée",
-    "expandAll": "Développer toutes les colonnes"
+    "emptyBacklog": "No tasks planned",
+    "emptyBacklogHint": "Add a task to get started",
+    "emptyQueue": "Queue is empty",
+    "emptyQueueHint": "Tasks will wait here when parallel task limit is reached",
+    "emptyInProgress": "Nothing running",
+    "emptyInProgressHint": "Start a task from Planning",
+    "emptyAiReview": "No tasks in review",
+    "emptyAiReviewHint": "AI will review completed tasks",
+    "emptyHumanReview": "Nothing to review",
+    "emptyHumanReviewHint": "Tasks await your approval here",
+    "emptyDone": "No completed tasks",
+    "emptyDoneHint": "Approved tasks appear here",
+    "emptyDefault": "No tasks",
+    "dropHere": "Drop here",
+    "showArchived": "Show archived",
+    "addTaskAriaLabel": "Add new task to backlog",
+    "queueAllAriaLabel": "Move all tasks to queue",
+    "closeTaskDetailsAriaLabel": "Close task details",
+    "editTask": "Edit task",
+    "cannotEditWhileRunning": "Cannot edit while task is running",
+    "worktreeCleanupTitle": "Worktree Cleanup",
+    "worktreeCleanupStaged": "This task has been staged and has a worktree. Would you like to clean up the worktree?",
+    "worktreeCleanupNotStaged": "This task has a worktree with changes that have not been merged. Delete the worktree to mark as done, or cancel to review the changes first.",
+    "keepWorktree": "Keep Worktree",
+    "deleteWorktree": "Delete Worktree & Mark Done",
+    "refreshTasks": "Refresh Tasks",
+    "queueSettings": "Queue Settings",
+    "orderSaveFailedTitle": "Reorder not saved",
+    "orderSaveFailedDescription": "Your task order change was applied but couldn't be saved to storage. It will be lost on refresh.",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "selectedCount": "{{count}} selected",
+    "selectedCountOne": "{{count}} task selected",
+    "selectedCountOther": "{{count}} tasks selected",
+    "createPRs": "Create PRs",
+    "deleteSelected": "Delete",
+    "deleteConfirmTitle": "Delete Selected Tasks",
+    "deleteConfirmDescription": "Are you sure you want to permanently delete these tasks?",
+    "deleteWarning": "This action cannot be undone. All task files, including the spec, implementation plan, and any generated code will be permanently deleted from the project.",
+    "tasksToDelete": "Tasks to delete",
+    "deleteConfirmButton": "Delete {{count}} Tasks",
+    "deleteSuccess": "Successfully deleted {{count}} task(s)",
+    "deleteError": "Failed to delete some tasks",
+    "clearSelection": "Clear Selection",
+    "collapseColumn": "Collapse column",
+    "expandColumn": "Expand column",
+    "resizeColumn": "Resize column",
+    "lockColumn": "Lock column width",
+    "unlockColumn": "Unlock column width",
+    "columnLocked": "Column width is locked",
+    "expandAll": "Expand all columns"
   },
   "queue": {
-    "limitReached": "Limite de tâches parallèles atteinte ({{current}}/{{max}}). Tâche déplacée vers la file d'attente.",
-    "movedToQueue": "Tâche déplacée vers la file d'attente.",
-    "autoPromoted": "Tâche auto-promue de la file d'attente vers En cours.",
-    "capacityAvailable": "{{count}} emplacement(s) disponible(s) dans En cours.",
-    "queueAll": "Tout ajouter à la file d'attente",
-    "queueAllSuccess": "{{count}} tâches déplacées vers la file d'attente.",
+    "limitReached": "Parallel task limit reached ({{current}}/{{max}}). Task moved to queue.",
+    "movedToQueue": "Task moved to queue.",
+    "autoPromoted": "Task auto-promoted from queue to In Progress.",
+    "capacityAvailable": "{{count}} slot(s) available in In Progress.",
+    "queueAll": "Add All to Queue",
+    "queueAllSuccess": "Moved {{count}} tasks to queue.",
     "settings": {
-      "title": "Paramètres de la file d'attente",
-      "description": "Configurer le nombre maximal de tâches pouvant s'exécuter en parallèle dans le tableau \"En cours\"",
-      "maxParallelLabel": "Tâches parallèles maximales",
-      "minValueError": "Doit être au moins 1",
-      "maxValueError": "Ne peut pas dépasser 10",
-      "hint": "Lorsque cette limite est atteinte, les nouvelles tâches attendront dans la file avant de passer à \"En cours\"",
-      "saved": "Paramètres de la file d'attente enregistrés",
-      "saveFailed": "Échec de l'enregistrement des paramètres",
-      "retry": "Veuillez réessayer"
+      "title": "Queue Settings",
+      "description": "Configure the maximum number of tasks that can run in parallel in the \"In Progress\" board",
+      "maxParallelLabel": "Max Parallel Tasks",
+      "minValueError": "Must be at least 1",
+      "maxValueError": "Cannot exceed 10",
+      "hint": "When this limit is reached, new tasks will wait in the queue before moving to \"In Progress\"",
+      "saved": "Queue settings saved",
+      "saveFailed": "Failed to save queue settings",
+      "retry": "Please try again"
     }
   },
   "execution": {
     "phases": {
-      "idle": "Inactif",
-      "planning": "Planification",
-      "coding": "Codage",
-      "rate_limit_paused": "Limite atteinte",
-      "auth_failure_paused": "Auth requise",
-      "reviewing": "Révision",
-      "fixing": "Correction",
-      "complete": "Terminé",
-      "failed": "Échoué"
+      "idle": "Idle",
+      "planning": "Planning",
+      "coding": "Coding",
+      "rate_limit_paused": "Rate Limited",
+      "auth_failure_paused": "Auth Required",
+      "reviewing": "Reviewing",
+      "fixing": "Fixing",
+      "complete": "Complete",
+      "failed": "Failed"
     },
     "labels": {
-      "interrupted": "Interrompu",
-      "progress": "Progression",
-      "entry": "entrée",
-      "entries": "entrées"
+      "interrupted": "Interrupted",
+      "progress": "Progress",
+      "entry": "entry",
+      "entries": "entries"
     },
     "shortPhases": {
       "plan": "Plan",
@@ -162,196 +162,196 @@
     }
   },
   "files": {
-    "title": "Fichiers",
-    "tab": "Fichiers",
-    "noSpecPath": "Aucun fichier de spécification disponible",
-    "noFiles": "Aucun fichier trouvé",
-    "loading": "Chargement des fichiers...",
-    "loadingContent": "Chargement du contenu...",
-    "errorLoading": "Échec du chargement des fichiers",
-    "errorLoadingContent": "Échec du chargement du contenu du fichier",
-    "retry": "Réessayer",
-    "selectFile": "Sélectionnez un fichier pour voir son contenu",
-    "openInIDE": "Ouvrir dans l'IDE"
+    "title": "Files",
+    "tab": "Files",
+    "noSpecPath": "No spec files available",
+    "noFiles": "No files found",
+    "loading": "Loading files...",
+    "loadingContent": "Loading content...",
+    "errorLoading": "Failed to load files",
+    "errorLoadingContent": "Failed to load file content",
+    "retry": "Retry",
+    "selectFile": "Select a file to view its contents",
+    "openInIDE": "Open in IDE"
   },
   "metadata": {
-    "fastMode": "Rapide",
-    "severity": "sévérité",
+    "fastMode": "Fast",
+    "severity": "severity",
     "pullRequest": "Pull Request",
-    "showMore": "Afficher plus",
-    "showLess": "Afficher moins"
+    "showMore": "Show more",
+    "showLess": "Show less"
   },
   "images": {
-    "removeImageAriaLabel": "Supprimer l'image {{filename}}",
-    "pasteHint": "Astuce : Collez des captures d'écran directement avec {{shortcut}} pour ajouter des images de référence."
+    "removeImageAriaLabel": "Remove image {{filename}}",
+    "pasteHint": "Tip: Paste screenshots directly with {{shortcut}} to add reference images."
   },
   "imagePreview": {
-    "close": "Fermer l'aperçu",
-    "unavailable": "Image indisponible",
-    "description": "Aperçu de {{filename}}",
-    "doubleClickHint": "Double-cliquez pour agrandir",
-    "lowResolution": "Aperçu basse résolution"
+    "close": "Close preview",
+    "unavailable": "Image unavailable",
+    "description": "Preview of {{filename}}",
+    "doubleClickHint": "Double-click to enlarge",
+    "lowResolution": "Low resolution preview"
   },
   "notifications": {
-    "backgroundTaskTitle": "La tâche continue en arrière-plan",
-    "backgroundTaskDescription": "La tâche est toujours en cours. Vous pouvez rouvrir cette boîte de dialogue pour suivre la progression."
+    "backgroundTaskTitle": "Task continues in background",
+    "backgroundTaskDescription": "The task is still running. You can reopen this dialog to monitor progress."
   },
   "wizard": {
-    "createTitle": "Créer une nouvelle tâche",
-    "createDescription": "Décrivez ce que vous voulez construire. L'IA analysera votre demande et créera une spécification détaillée.",
-    "descriptionPlaceholder": "Décrivez la fonctionnalité, la correction de bug ou l'amélioration que vous souhaitez implémenter. Soyez aussi précis que possible sur les exigences, les contraintes et le comportement attendu. Tapez @ pour référencer des fichiers.",
-    "draftRestored": "Brouillon restauré",
-    "startFresh": "Recommencer",
-    "hideFiles": "Masquer les fichiers",
-    "browseFiles": "Parcourir les fichiers",
-    "creating": "Création...",
-    "createTask": "Créer la tâche",
+    "createTitle": "Create New Task",
+    "createDescription": "Describe what you want to build. The AI will analyze your request and create a detailed specification.",
+    "descriptionPlaceholder": "Describe the feature, bug fix, or improvement you want to implement. Be as specific as possible about requirements, constraints, and expected behavior. Type @ to reference files.",
+    "draftRestored": "Draft restored",
+    "startFresh": "Start Fresh",
+    "hideFiles": "Hide Files",
+    "browseFiles": "Browse Files",
+    "creating": "Creating...",
+    "createTask": "Create Task",
     "worktreeNotice": {
-      "title": "Espace de travail isolé",
-      "description": "Cette tâche s'exécute dans un worktree git isolé. Votre branche principale reste protégée jusqu'à ce que vous choisissiez de fusionner."
+      "title": "Isolated Workspace",
+      "description": "This task runs in an isolated git worktree. Your main branch stays safe until you choose to merge."
     },
     "gitOptions": {
-      "title": "Options Git (optionnel)",
-      "baseBranchLabel": "Branche de base (optionnel)",
-      "useProjectDefault": "Utiliser la branche par défaut du projet",
-      "useProjectDefaultWithBranch": "Utiliser la branche par défaut du projet ({{branch}})",
-      "searchBranches": "Rechercher des branches...",
-      "noBranchesFound": "Aucune branche trouvée",
-      "helpText": "Remplacez la branche à partir de laquelle le worktree de cette tâche sera créé. Laissez vide pour utiliser la branche par défaut configurée du projet.",
-      "pushNewBranchesLabel": "Pousser automatiquement la nouvelle branche",
-      "pushNewBranchesDescription": "Publier automatiquement cette branche de tâche sur GitHub et configurer le suivi. Désactivez pour la garder locale uniquement.",
-      "useWorktreeLabel": "Utiliser un espace de travail isolé (recommandé)",
-      "useWorktreeDescription": "Crée les changements dans un worktree git séparé pour une révision sécurisée avant la fusion. Désactivez pour travailler directement dans votre projet (plus rapide mais risqué)."
+      "title": "Git Options (optional)",
+      "baseBranchLabel": "Base Branch (optional)",
+      "useProjectDefault": "Use project default",
+      "useProjectDefaultWithBranch": "Use project default ({{branch}})",
+      "searchBranches": "Search branches...",
+      "noBranchesFound": "No branches found",
+      "helpText": "Override the branch this task's worktree will be created from. Leave empty to use the project's configured default branch.",
+      "pushNewBranchesLabel": "Automatically push new branch",
+      "pushNewBranchesDescription": "Publish this task branch to GitHub and set upstream tracking automatically. Disable to keep it local-only.",
+      "useWorktreeLabel": "Use isolated workspace (recommended)",
+      "useWorktreeDescription": "Creates changes in a separate git worktree for safe review before merging. Disable to build directly in your project (faster but riskier)."
     },
     "errors": {
-      "createFailed": "Échec de la création de la tâche. Veuillez réessayer.",
-      "startFailed": "Échec du démarrage de la tâche"
+      "createFailed": "Failed to create task. Please try again.",
+      "startFailed": "Failed to start task"
     }
   },
   "feedback": {
-    "dragDropHint": "Glissez-déposez des images ou collez des captures d'écran",
-    "imageAdded": "Image ajoutée avec succès",
-    "maxImagesError": "Maximum de {{count}} images autorisées",
-    "invalidTypeError": "Type d'image invalide. Autorisés : {{types}}",
-    "removeImage": "Supprimer l'image",
-    "processingError": "Échec du traitement de l'image"
+    "dragDropHint": "Drag & drop images or paste screenshots",
+    "imageAdded": "Image added successfully",
+    "maxImagesError": "Maximum of {{count}} images allowed",
+    "invalidTypeError": "Invalid image type. Allowed: {{types}}",
+    "removeImage": "Remove image",
+    "processingError": "Failed to process image"
   },
   "review": {
-    "mergeTooltip": "Fusionne les changements de la branche worktree de la tâche vers votre branche de base. L'IA résoudra les conflits éventuels. Vous pourrez ensuite choisir de conserver ou de supprimer le worktree."
+    "mergeTooltip": "Merges changes from the task's worktree branch back to your base branch. AI will resolve any conflicts. You can then choose whether to keep or remove the worktree."
   },
   "edit": {
-    "title": "Modifier la tâche",
-    "description": "Mettez à jour les détails de la tâche, y compris le titre, la description, la classification, les images et les paramètres. Les modifications seront enregistrées dans les fichiers de spécification.",
-    "saveChanges": "Enregistrer les modifications",
+    "title": "Edit Task",
+    "description": "Update task details including title, description, classification, images, and settings. Changes will be saved to the spec files.",
+    "saveChanges": "Save Changes",
     "errors": {
-      "updateFailed": "Échec de la mise à jour de la tâche. Veuillez réessayer."
+      "updateFailed": "Failed to update task. Please try again."
     }
   },
   "form": {
     "description": "Description",
-    "descriptionPlaceholder": "Décrivez la fonctionnalité, la correction de bug ou l'amélioration que vous souhaitez implémenter. Soyez aussi précis que possible sur les exigences, les contraintes et le comportement attendu.",
-    "imageAddedSuccess": "Image ajoutée avec succès !",
-    "taskTitle": "Titre de la tâche",
-    "titlePlaceholder": "Laissez vide pour générer automatiquement à partir de la description",
-    "titleHelpText": "Un titre court et descriptif sera généré automatiquement s'il est laissé vide.",
-    "classificationOptional": "Classification (optionnel)",
-    "requireReviewLabel": "Exiger une révision humaine avant le codage",
-    "requireReviewDescription": "Lorsque activé, vous serez invité à réviser la spécification et le plan d'implémentation avant le début de la phase de codage. Cela vous permet d'approuver, de demander des modifications ou de fournir des commentaires.",
-    "fastModeLabel": "Mode Rapide",
-    "fastModeDescription": "Même modèle Opus 4.6 avec une sortie plus rapide. Coût plus élevé par token.",
-    "fastModeNotice": "Nécessite « utilisation supplémentaire » activée sur votre abonnement Claude.",
+    "descriptionPlaceholder": "Describe the feature, bug fix, or improvement you want to implement. Be as specific as possible about requirements, constraints, and expected behavior.",
+    "imageAddedSuccess": "Image added successfully!",
+    "taskTitle": "Task Title",
+    "titlePlaceholder": "Leave empty to auto-generate from description",
+    "titleHelpText": "A short, descriptive title will be generated automatically if left empty.",
+    "classificationOptional": "Classification (optional)",
+    "requireReviewLabel": "Require human review before coding",
+    "requireReviewDescription": "When enabled, you'll be prompted to review the spec and implementation plan before the coding phase begins. This allows you to approve, request changes, or provide feedback.",
+    "fastModeLabel": "Fast Mode",
+    "fastModeDescription": "Same Opus 4.6 model with faster output. Higher cost per token.",
+    "fastModeNotice": "Requires \"extra usage\" enabled on your Claude subscription.",
     "errors": {
-      "descriptionRequired": "Veuillez fournir une description",
-      "maxImagesReached": "Maximum de 5 images autorisé",
-      "invalidImageType": "Type d'image non valide. Autorisés : PNG, JPEG, GIF, WebP",
-      "processPasteFailed": "Échec du traitement de l'image collée",
-      "processDropFailed": "Échec du traitement de l'image déposée"
+      "descriptionRequired": "Please provide a description",
+      "maxImagesReached": "Maximum of 5 images allowed",
+      "invalidImageType": "Invalid image type. Allowed: PNG, JPEG, GIF, WebP",
+      "processPasteFailed": "Failed to process pasted image",
+      "processDropFailed": "Failed to process dropped image"
     },
     "classification": {
-      "category": "Catégorie",
-      "selectCategory": "Sélectionner une catégorie",
-      "priority": "Priorité",
-      "selectPriority": "Sélectionner une priorité",
-      "complexity": "Complexité",
-      "selectComplexity": "Sélectionner une complexité",
+      "category": "Category",
+      "selectCategory": "Select category",
+      "priority": "Priority",
+      "selectPriority": "Select priority",
+      "complexity": "Complexity",
+      "selectComplexity": "Select complexity",
       "impact": "Impact",
-      "selectImpact": "Sélectionner un impact",
-      "helpText": "Ces étiquettes aident à organiser et à prioriser les tâches. Elles sont optionnelles mais utiles pour le filtrage.",
+      "selectImpact": "Select impact",
+      "helpText": "These labels help organize and prioritize tasks. They're optional but useful for filtering.",
       "values": {
         "category": {
-          "feature": "Fonctionnalité",
-          "bug_fix": "Correction de bug",
+          "feature": "Feature",
+          "bug_fix": "Bug Fix",
           "refactoring": "Refactoring",
-          "documentation": "Documentation",
-          "security": "Sécurité"
+          "documentation": "Docs",
+          "security": "Security"
         },
         "priority": {
-          "low": "Basse",
-          "medium": "Moyenne",
-          "high": "Haute",
-          "urgent": "Urgente"
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High",
+          "urgent": "Urgent"
         },
         "complexity": {
-          "trivial": "Triviale",
-          "small": "Petite",
-          "medium": "Moyenne",
-          "large": "Grande",
-          "complex": "Complexe"
+          "trivial": "Trivial",
+          "small": "Small",
+          "medium": "Medium",
+          "large": "Large",
+          "complex": "Complex"
         },
         "impact": {
-          "low": "Impact faible",
-          "medium": "Impact moyen",
-          "high": "Impact élevé",
-          "critical": "Impact critique"
+          "low": "Low Impact",
+          "medium": "Medium Impact",
+          "high": "High Impact",
+          "critical": "Critical Impact"
         }
       }
     }
   },
   "subtasks": {
-    "untitled": "Sous-tâche sans titre",
-    "expandAll": "Tout déplier",
-    "collapseAll": "Tout replier"
+    "untitled": "Untitled subtask",
+    "expandAll": "Expand all",
+    "collapseAll": "Collapse all"
   },
   "bulkPR": {
-    "selectAllInColumn": "Sélectionner toutes les tâches de la colonne",
-    "deselectAllInColumn": "Désélectionner toutes les tâches",
-    "selectionMode": "Mode sélection actif",
-    "exitSelectionMode": "Quitter le mode sélection",
-    "noTasksToSelect": "Aucune tâche disponible à sélectionner",
-    "confirmBulkAction": "Confirmer l'action groupée pour {{count}} tâches",
-    "processingTasks": "Traitement des tâches sélectionnées..."
+    "selectAllInColumn": "Select all tasks in column",
+    "deselectAllInColumn": "Deselect all tasks",
+    "selectionMode": "Selection mode active",
+    "exitSelectionMode": "Exit selection mode",
+    "noTasksToSelect": "No tasks available to select",
+    "confirmBulkAction": "Confirm bulk action for {{count}} tasks",
+    "processingTasks": "Processing selected tasks..."
   },
   "screenshot": {
-    "title": "Prendre une capture d'écran",
-    "description": "Sélectionnez un écran ou une fenêtre à capturer comme image de référence",
-    "capture": "Capturer",
-    "capturing": "Capture...",
-    "noSources": "Aucun écran ou fenêtre trouvé",
+    "title": "Capture Screenshot",
+    "description": "Select a screen or window to capture as a reference image",
+    "capture": "Capture",
+    "capturing": "Capturing...",
+    "noSources": "No screens or windows found",
     "errors": {
-      "getSources": "Échec de l'obtention des sources de capture d'écran",
-      "fetchSources": "Échec de la récupération des sources de capture d'écran",
-      "capture": "Échec de la capture d'écran",
-      "captureFailed": "Échec de la capture d'écran"
+      "getSources": "Failed to get screenshot sources",
+      "fetchSources": "Failed to fetch screenshot sources",
+      "capture": "Failed to capture screenshot",
+      "captureFailed": "Failed to capture screenshot"
     },
     "devMode": {
-      "title": "Capture d'écran non disponible",
-      "description": "La capture d'écran n'est pas disponible en mode développement en raison des restrictions de permissions système.",
-      "hint": "Utilisez un outil de capture d'écran externe et collez directement dans la description de la tâche avec {{shortcut}}."
+      "title": "Screenshot capture unavailable",
+      "description": "Screen capture is not available in development mode due to system permission restrictions.",
+      "hint": "Use an external screenshot tool and paste directly into the task description with {{shortcut}}."
     }
   },
   "deleteDialog": {
-    "title": "Supprimer la t\u00e2che",
-    "confirmMessage": "\u00cates-vous s\u00fbr de vouloir supprimer",
-    "destructiveWarning": "Cette action est irr\u00e9versible. Tous les fichiers de t\u00e2che, y compris la sp\u00e9cification, le plan d'impl\u00e9mentation et tout code g\u00e9n\u00e9r\u00e9 seront d\u00e9finitivement supprim\u00e9s du projet.",
-    "checkingChanges": "V\u00e9rification des changements non valid\u00e9s...",
-    "uncommittedChanges": "Le worktree de cette t\u00e2che contient {{count}} fichier(s) non valid\u00e9(s)",
-    "uncommittedChangesHint": "Ces changements n'ont pas \u00e9t\u00e9 valid\u00e9s ni fusionn\u00e9s. La suppression de cette t\u00e2che supprimera d\u00e9finitivement tout le travail non valid\u00e9 dans le worktree.",
-    "cancel": "Annuler",
-    "deletePermanently": "Supprimer d\u00e9finitivement",
-    "deleting": "Suppression..."
+    "title": "Delete Task",
+    "confirmMessage": "Are you sure you want to delete",
+    "destructiveWarning": "This action cannot be undone. All task files, including the spec, implementation plan, and any generated code will be permanently deleted from the project.",
+    "checkingChanges": "Checking for uncommitted changes...",
+    "uncommittedChanges": "This task's worktree has {{count}} uncommitted file(s)",
+    "uncommittedChangesHint": "These changes have not been committed or merged. Deleting this task will permanently discard all uncommitted work in the worktree.",
+    "cancel": "Cancel",
+    "deletePermanently": "Delete Permanently",
+    "deleting": "Deleting..."
   },
   "referenceImages": {
-    "title": "Images de référence (facultatif)",
-    "description": "Ajoutez des références visuelles comme des captures d'écran ou des conceptions pour aider l'IA à comprendre vos exigences."
+    "title": "Reference Images (optional)",
+    "description": "Add visual references like screenshots or designs to help the AI understand your requirements."
   }
 }

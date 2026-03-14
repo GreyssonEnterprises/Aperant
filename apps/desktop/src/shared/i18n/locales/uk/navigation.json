@@ -1,45 +1,45 @@
 {
   "sections": {
-    "project": "Project",
-    "tools": "Tools"
+    "project": "Проект",
+    "tools": "Інструменти"
   },
   "items": {
-    "kanban": "Kanban Board",
-    "terminals": "Agent Terminals",
-    "insights": "Insights",
-    "roadmap": "Roadmap",
-    "ideation": "Ideation",
-    "changelog": "Changelog",
-    "context": "Context",
-    "githubIssues": "GitHub Issues",
-    "githubPRs": "GitHub PRs",
-    "gitlabIssues": "GitLab Issues",
-    "gitlabMRs": "GitLab MRs",
+    "kanban": "Канбан-дошка",
+    "terminals": "Термінали агентів",
+    "insights": "Інсайти",
+    "roadmap": "Дорожня карта",
+    "ideation": "Генерація ідей",
+    "changelog": "Журнал змін",
+    "context": "Контекст",
+    "githubIssues": "Проблеми GitHub",
+    "githubPRs": "PR GitHub",
+    "gitlabIssues": "Проблеми GitLab",
+    "gitlabMRs": "MR GitLab",
     "worktrees": "Worktrees",
-    "agentTools": "MCP Overview"
+    "agentTools": "Огляд MCP"
   },
   "actions": {
     "settings": "Налаштування",
-    "help": "Help & Feedback",
-    "newTask": "New Task",
-    "collapseSidebar": "Collapse Sidebar",
-    "expandSidebar": "Expand Sidebar",
-    "sponsor": "Sponsor Us"
+    "help": "Довідка та зворотний зв'язок",
+    "newTask": "Нове завдання",
+    "collapseSidebar": "Згорнути бічну панель",
+    "expandSidebar": "Розгорнути бічну панель",
+    "sponsor": "Станьте спонсором"
   },
   "tooltips": {
-    "settings": "Application Settings",
-    "help": "Help & Feedback"
+    "settings": "Налаштування програми",
+    "help": "Довідка та зворотний зв'язок"
   },
   "messages": {
     "initializeToCreateTasks": "Initialize Aperant to create tasks"
   },
   "updateBanner": {
-    "title": "Update Available",
-    "version": "Версія {{version}} is ready",
-    "updateAndRestart": "Update and Restart",
-    "installAndRestart": "Install and Restart",
+    "title": "Доступне оновлення",
+    "version": "Version {{version}} is ready",
+    "updateAndRestart": "Оновити та перезапустити",
+    "installAndRestart": "Встановити та перезапустити",
     "downloading": "Downloading...",
-    "dismiss": "Dismiss",
+    "dismiss": "Відхилити",
     "downloadError": "Failed to download update",
     "readOnlyVolumeWarning": "Move to Applications folder to update"
   },
@@ -78,7 +78,7 @@
     "selectInstallation": "Select installation",
     "loadingInstallations": "Loading installations...",
     "failedToLoadInstallations": "Failed to load installations",
-    "activeInstallation": "Active",
+    "activeInstallation": "Активний",
     "pathChangeWarningTitle": "Switch CLI installation?",
     "pathChangeWarningDescription": "Switching CLI installations will use a different Claude Code binary. Any running sessions will continue using the previous installation until restarted.",
     "switchInstallationConfirm": "Switch",

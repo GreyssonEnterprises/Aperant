@@ -52,7 +52,7 @@
     "selectVisibilityAriaLabel": "Set repository visibility to {{visibility}}"
   },
   "worktrees": {
-    "title": "Worktrees",
+    "title": "워크트리",
     "description": "Manage isolated workspaces for your Aperant tasks",
     "empty": "No Worktrees",
     "emptyDescription": "Worktrees are created automatically when Aperant builds features. They provide isolated workspaces for each task.",
@@ -60,7 +60,7 @@
     "mergeDescription": "Merge changes from this worktree into the base branch.",
     "delete": "Delete Worktree?",
     "deleteDescription": "This will permanently delete the worktree and all uncommitted changes. This action cannot be undone.",
-    "bulkDeleteTitle": "삭제 {{count}} Worktrees?",
+    "bulkDeleteTitle": "Delete {{count}} Worktrees?",
     "bulkDeleteDescription": "This will permanently delete the selected worktrees and all their uncommitted changes. This action cannot be undone.",
     "deleting": "Deleting...",
     "deleteSelected": "Delete Selected"
@@ -161,7 +161,7 @@
     "released": "Released",
     "downloading": "Downloading...",
     "downloadUpdate": "Download Update",
-    "installAndRestart": "Install and Restart",
+    "installAndRestart": "설치하고 다시 시작",
     "installLater": "Install Later",
     "remindMeLater": "Remind Me Later",
     "updateDownloaded": "Update downloaded successfully! Click Install to restart and apply the update.",

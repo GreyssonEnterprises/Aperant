@@ -1,45 +1,45 @@
 {
   "sections": {
-    "project": "Project",
-    "tools": "Tools"
+    "project": "프로젝트",
+    "tools": "도구"
   },
   "items": {
-    "kanban": "Kanban Board",
-    "terminals": "Agent Terminals",
-    "insights": "Insights",
-    "roadmap": "Roadmap",
-    "ideation": "Ideation",
-    "changelog": "Changelog",
-    "context": "Context",
-    "githubIssues": "GitHub Issues",
-    "githubPRs": "GitHub PRs",
-    "gitlabIssues": "GitLab Issues",
-    "gitlabMRs": "GitLab MRs",
-    "worktrees": "Worktrees",
-    "agentTools": "MCP Overview"
+    "kanban": "칸반 보드",
+    "terminals": "에이전트 터미널",
+    "insights": "인사이트",
+    "roadmap": "로드맵",
+    "ideation": "아이디어 개발",
+    "changelog": "변경 로그",
+    "context": "컨텍스트",
+    "githubIssues": "GitHub 이슈",
+    "githubPRs": "GitHub PR",
+    "gitlabIssues": "GitLab 이슈",
+    "gitlabMRs": "GitLab MR",
+    "worktrees": "워크트리",
+    "agentTools": "MCP 개요"
   },
   "actions": {
     "settings": "설정",
-    "help": "Help & Feedback",
-    "newTask": "New Task",
-    "collapseSidebar": "Collapse Sidebar",
-    "expandSidebar": "Expand Sidebar",
-    "sponsor": "Sponsor Us"
+    "help": "도움말 및 피드백",
+    "newTask": "새 작업",
+    "collapseSidebar": "사이드바 접기",
+    "expandSidebar": "사이드바 펼치기",
+    "sponsor": "후원하기"
   },
   "tooltips": {
-    "settings": "Application Settings",
-    "help": "Help & Feedback"
+    "settings": "애플리케이션 설정",
+    "help": "도움말 및 피드백"
   },
   "messages": {
     "initializeToCreateTasks": "Initialize Aperant to create tasks"
   },
   "updateBanner": {
-    "title": "Update Available",
-    "version": "버전 {{version}} is ready",
-    "updateAndRestart": "Update and Restart",
-    "installAndRestart": "Install and Restart",
+    "title": "업데이트 사용 가능",
+    "version": "Version {{version}} is ready",
+    "updateAndRestart": "업데이트하고 다시 시작",
+    "installAndRestart": "설치하고 다시 시작",
     "downloading": "Downloading...",
-    "dismiss": "Dismiss",
+    "dismiss": "무시",
     "downloadError": "Failed to download update",
     "readOnlyVolumeWarning": "Move to Applications folder to update"
   },
@@ -78,7 +78,7 @@
     "selectInstallation": "Select installation",
     "loadingInstallations": "Loading installations...",
     "failedToLoadInstallations": "Failed to load installations",
-    "activeInstallation": "Active",
+    "activeInstallation": "활성",
     "pathChangeWarningTitle": "Switch CLI installation?",
     "pathChangeWarningDescription": "Switching CLI installations will use a different Claude Code binary. Any running sessions will continue using the previous installation until restarted.",
     "switchInstallationConfirm": "Switch",

@@ -37,7 +37,7 @@
     "noAccountsYet": "No accounts configured yet",
     "badges": {
       "default": "Default",
-      "active": "Active",
+      "active": "Actief",
       "authenticated": "Authenticated",
       "needsAuth": "Needs Auth"
     },
@@ -46,7 +46,7 @@
       "setActive": "Set Active",
       "rename": "Rename",
       "delete": "Verwijderen",
-      "add": "Add",
+      "add": "Toevoegen",
       "adding": "Adding...",
       "showToken": "Show Token",
       "hideToken": "Hide Token",
@@ -188,7 +188,7 @@
     },
     "status": {
       "installed": "Installed",
-      "outdated": "Update Available",
+      "outdated": "Update beschikbaar",
       "notFound": "Not Installed"
     },
     "version": {
@@ -205,7 +205,7 @@
     "learnMore": "Learn more about Claude Code"
   },
   "devtools": {
-    "title": "Developer Tools",
+    "title": "Ontwikkelaarstools",
     "description": "Choose your preferred IDE, terminal, and CLI for working with Aperant worktrees",
     "detecting": "Detecting installed tools...",
     "detectAgain": "Detect Again",

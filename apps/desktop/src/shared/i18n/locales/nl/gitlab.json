@@ -1,8 +1,8 @@
 {
-  "title": "GitLab Issues",
+  "title": "GitLab-issues",
   "states": {
-    "opened": "Openen",
-    "closed": "Closed"
+    "opened": "Open",
+    "closed": "Gesloten"
   },
   "complexity": {
     "simple": "Simple",
@@ -14,8 +14,8 @@
     "searchPlaceholder": "Search issues..."
   },
   "filters": {
-    "opened": "Openen",
-    "closed": "Closed",
+    "opened": "Open",
+    "closed": "Gesloten",
     "all": "All"
   },
   "empty": {
@@ -117,14 +117,14 @@
     "newMR": "New Merge Request",
     "selectMR": "Select a merge request to view details",
     "states": {
-      "opened": "Openen",
-      "closed": "Closed",
+      "opened": "Open",
+      "closed": "Gesloten",
       "merged": "Merged",
       "locked": "Locked"
     },
     "filters": {
-      "opened": "Openen",
-      "closed": "Closed",
+      "opened": "Open",
+      "closed": "Gesloten",
       "merged": "Merged",
       "all": "All"
     }

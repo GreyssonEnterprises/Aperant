@@ -37,7 +37,7 @@
     "noAccountsYet": "No accounts configured yet",
     "badges": {
       "default": "Default",
-      "active": "Active",
+      "active": "アクティブ",
       "authenticated": "Authenticated",
       "needsAuth": "Needs Auth"
     },
@@ -46,7 +46,7 @@
       "setActive": "Set Active",
       "rename": "Rename",
       "delete": "削除",
-      "add": "Add",
+      "add": "追加",
       "adding": "Adding...",
       "showToken": "Show Token",
       "hideToken": "Hide Token",
@@ -151,7 +151,7 @@
   },
   "steps": {
     "welcome": "Welcome",
-    "accounts": "Accounts",
+    "accounts": "アカウント",
     "devtools": "Dev Tools",
     "privacy": "Privacy",
     "memory": "Memory",
@@ -188,7 +188,7 @@
     },
     "status": {
       "installed": "Installed",
-      "outdated": "Update Available",
+      "outdated": "アップデートが利用可能",
       "notFound": "Not Installed"
     },
     "version": {
@@ -205,7 +205,7 @@
     "learnMore": "Learn more about Claude Code"
   },
   "devtools": {
-    "title": "Developer Tools",
+    "title": "開発者ツール",
     "description": "Choose your preferred IDE, terminal, and CLI for working with Aperant worktrees",
     "detecting": "Detecting installed tools...",
     "detectAgain": "Detect Again",

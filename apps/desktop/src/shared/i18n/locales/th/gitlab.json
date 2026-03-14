@@ -2,7 +2,7 @@
   "title": "GitLab Issues",
   "states": {
     "opened": "เปิด",
-    "closed": "Closed"
+    "closed": "ปิด"
   },
   "complexity": {
     "simple": "Simple",
@@ -15,7 +15,7 @@
   },
   "filters": {
     "opened": "เปิด",
-    "closed": "Closed",
+    "closed": "ปิด",
     "all": "All"
   },
   "empty": {
@@ -75,7 +75,7 @@
     "scopeApi": "api",
     "scopeFrom": "scope from",
     "gitlabSettings": "GitLab Settings",
-    "project": "Project",
+    "project": "โปรเจกต์",
     "enterManually": "Enter Manually",
     "loadingProjects": "Loading projects...",
     "selectProject": "Select a project...",
@@ -118,13 +118,13 @@
     "selectMR": "Select a merge request to view details",
     "states": {
       "opened": "เปิด",
-      "closed": "Closed",
+      "closed": "ปิด",
       "merged": "Merged",
       "locked": "Locked"
     },
     "filters": {
       "opened": "เปิด",
-      "closed": "Closed",
+      "closed": "ปิด",
       "merged": "Merged",
       "all": "All"
     }

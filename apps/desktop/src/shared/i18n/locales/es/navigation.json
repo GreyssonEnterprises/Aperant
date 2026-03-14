@@ -1,45 +1,45 @@
 {
   "sections": {
-    "project": "Project",
-    "tools": "Tools"
+    "project": "Proyecto",
+    "tools": "Herramientas"
   },
   "items": {
-    "kanban": "Kanban Board",
-    "terminals": "Agent Terminals",
-    "insights": "Insights",
-    "roadmap": "Roadmap",
-    "ideation": "Ideation",
-    "changelog": "Changelog",
-    "context": "Context",
-    "githubIssues": "GitHub Issues",
-    "githubPRs": "GitHub PRs",
-    "gitlabIssues": "GitLab Issues",
-    "gitlabMRs": "GitLab MRs",
-    "worktrees": "Worktrees",
-    "agentTools": "MCP Overview"
+    "kanban": "Tablero Kanban",
+    "terminals": "Terminales de Agentes",
+    "insights": "Perspectivas",
+    "roadmap": "Hoja de ruta",
+    "ideation": "Ideación",
+    "changelog": "Registro de cambios",
+    "context": "Contexto",
+    "githubIssues": "Issues de GitHub",
+    "githubPRs": "PRs de GitHub",
+    "gitlabIssues": "Issues de GitLab",
+    "gitlabMRs": "MRs de GitLab",
+    "worktrees": "Árboles de trabajo",
+    "agentTools": "Resumen de MCP"
   },
   "actions": {
     "settings": "Configuración",
-    "help": "Help & Feedback",
-    "newTask": "New Task",
-    "collapseSidebar": "Collapse Sidebar",
-    "expandSidebar": "Expand Sidebar",
-    "sponsor": "Sponsor Us"
+    "help": "Ayuda y comentarios",
+    "newTask": "Nueva tarea",
+    "collapseSidebar": "Contraer barra lateral",
+    "expandSidebar": "Expandir barra lateral",
+    "sponsor": "Patrónenos"
   },
   "tooltips": {
-    "settings": "Application Settings",
-    "help": "Help & Feedback"
+    "settings": "Configuración de la aplicación",
+    "help": "Ayuda y comentarios"
   },
   "messages": {
     "initializeToCreateTasks": "Initialize Aperant to create tasks"
   },
   "updateBanner": {
-    "title": "Update Available",
-    "version": "Versión {{version}} is ready",
-    "updateAndRestart": "Update and Restart",
-    "installAndRestart": "Install and Restart",
+    "title": "Actualización disponible",
+    "version": "Version {{version}} is ready",
+    "updateAndRestart": "Actualizar y reiniciar",
+    "installAndRestart": "Instalar y reiniciar",
     "downloading": "Downloading...",
-    "dismiss": "Dismiss",
+    "dismiss": "Descartar",
     "downloadError": "Failed to download update",
     "readOnlyVolumeWarning": "Move to Applications folder to update"
   },
@@ -78,7 +78,7 @@
     "selectInstallation": "Select installation",
     "loadingInstallations": "Loading installations...",
     "failedToLoadInstallations": "Failed to load installations",
-    "activeInstallation": "Active",
+    "activeInstallation": "Activo",
     "pathChangeWarningTitle": "Switch CLI installation?",
     "pathChangeWarningDescription": "Switching CLI installations will use a different Claude Code binary. Any running sessions will continue using the previous installation until restarted.",
     "switchInstallationConfirm": "Switch",
