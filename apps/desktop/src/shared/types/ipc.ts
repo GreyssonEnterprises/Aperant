@@ -300,8 +300,6 @@ export interface ElectronAPILegacy {
     success: boolean;
     message?: string;
     detectedAt: string;
-    /** If true, user should complete onboarding in terminal before closing */
-    needsOnboarding?: boolean;
   }) => void) => () => void;
   /** Listen for auth terminal creation - allows UI to display the OAuth terminal */
   onTerminalAuthCreated: (callback: (info: {
