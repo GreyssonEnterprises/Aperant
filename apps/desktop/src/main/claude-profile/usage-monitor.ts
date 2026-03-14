@@ -442,6 +442,9 @@ export class UsageMonitor extends EventEmitter {
       // Include Z.AI provider accounts from providerAccounts
       await this.appendZAIAccounts(allProfiles);
 
+      // Deduplicate by email (multiple profiles can share the same underlying account)
+      const deduped = this.deduplicateProfilesByEmail(allProfiles);
+
       // Return minimal data with auth status - don't return null!
       return {
         activeProfile: {
@@ -452,7 +455,7 @@ export class UsageMonitor extends EventEmitter {
           fetchedAt: new Date(),
           needsReauthentication: this.needsReauthProfiles.has(activeProfileId || '')
         },
-        allProfiles,
+        allProfiles: deduped,
         fetchedAt: new Date()
       };
     }
@@ -752,15 +755,47 @@ export class UsageMonitor extends EventEmitter {
     // Include Z.AI provider accounts from providerAccounts
     await this.appendZAIAccounts(allProfiles);
 
+    // Deduplicate by email (multiple profiles can share the same underlying account)
+    const deduplicatedProfiles = this.deduplicateProfilesByEmail(allProfiles);
+
     // Sort by availability score (highest first = most available)
-    allProfiles.sort((a, b) => b.availabilityScore - a.availabilityScore);
+    deduplicatedProfiles.sort((a, b) => b.availabilityScore - a.availabilityScore);
 
     return {
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       activeProfile: this.currentUsage!, // Non-null: _doGetAllProfilesUsage is only called when currentUsage is set
-      allProfiles,
+      allProfiles: deduplicatedProfiles,
       fetchedAt: new Date()
     };
+  }
+
+  /**
+   * Deduplicate profiles by email. Multiple ClaudeProfileManager profiles can share
+   * the same email (different configDir pointing to the same underlying OAuth account).
+   * Keeps one entry per email, preferring the one with higher usage or active status.
+   */
+  private deduplicateProfilesByEmail(profiles: ProfileUsageSummary[]): ProfileUsageSummary[] {
+    const result: ProfileUsageSummary[] = [];
+    const seenEmails = new Map<string, number>(); // email -> index in result
+    for (const profile of profiles) {
+      const key = profile.profileEmail?.toLowerCase();
+      if (key && seenEmails.has(key)) {
+        const existingIdx = seenEmails.get(key)!;
+        const existing = result[existingIdx];
+        const existingMax = Math.max(existing.sessionPercent, existing.weeklyPercent);
+        const currentMax = Math.max(profile.sessionPercent, profile.weeklyPercent);
+        if (currentMax > existingMax || (currentMax === existingMax && profile.isActive)) {
+          result[existingIdx] = profile;
+        }
+      } else {
+        seenEmails.set(key ?? profile.profileId, result.length);
+        result.push(profile);
+      }
+    }
+    if (result.length < profiles.length) {
+      console.log('[UsageMonitor] Deduplicated profiles by email:', profiles.length, '→', result.length);
+    }
+    return result;
   }
 
   /**
