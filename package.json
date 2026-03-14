@@ -17,6 +17,7 @@
     "build": "cd apps/desktop && npm run build",
     "lint": "cd apps/desktop && npm run lint",
     "test": "cd apps/desktop && npm test",
+    "validate:i18n": "node scripts/validate-i18n.js",
     "package": "cd apps/desktop && npm run package",
     "package:mac": "cd apps/desktop && npm run package:mac",
     "package:win": "cd apps/desktop && npm run package:win",
