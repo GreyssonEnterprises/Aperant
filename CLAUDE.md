@@ -32,7 +32,7 @@ Auto Claude is a desktop application (+ CLI) where users describe a goal and AI 
 
 **Vercel AI SDK only** — All AI interactions use the Vercel AI SDK v6 (`ai` package) via the TypeScript agent layer in `apps/desktop/src/main/ai/`. NEVER use `@anthropic-ai/sdk` or `anthropic.Anthropic()` directly. Use `createProvider()` from `ai/providers/factory.ts` and `streamText()`/`generateText()` from the `ai` package. Provider-specific adapters (e.g., `@ai-sdk/anthropic`, `@ai-sdk/openai`) are managed through the provider registry.
 
-**i18n required** — All frontend user-facing text uses `react-i18next` translation keys. Hardcoded strings in JSX/TSX break localization for non-English users. Add keys to both `en/*.json` and `fr/*.json`.
+**i18n required** — All frontend user-facing text uses `react-i18next` translation keys. Hardcoded strings in JSX/TSX break localization for non-English users. Add keys to ALL 21 language files.
 
 **Platform abstraction** — Never use `process.platform` directly. Import from `apps/desktop/src/main/platform/`. CI tests all three platforms.
 
@@ -126,7 +126,7 @@ autonomous-coding/
 │           │   ├── styles/      # CSS / Tailwind styles
 │           │   └── App.tsx      # Root component
 │           ├── shared/          # Shared types, i18n, constants, utils
-│           │   ├── i18n/locales/# en/*.json, fr/*.json
+│           │   ├── i18n/locales/# 21 language directories (de, en, es, fr, hi, id, it, ja, ko, nl, no, pl, pt-BR, pt-PT, ru, th, tr, uk, vi, zh-CN, zh-TW)
 │           │   ├── constants/   # themes.ts, etc.
 │           │   ├── types/       # 19+ type definition files
 │           │   └── utils/       # ANSI sanitizer, shell escape, provider detection
@@ -304,9 +304,32 @@ Full PTY-based terminal integration:
 
 ## i18n Guidelines
 
-All frontend UI text uses `react-i18next`. Translation files: `apps/desktop/src/shared/i18n/locales/{en,fr}/*.json`
+All frontend UI text uses `react-i18next`. Translation files: `apps/desktop/src/shared/i18n/locales/{lang}/*.json`
+
+**Supported Languages (21):**
+
+| Code | Language | Code | Language |
+|------|----------|------|----------|
+| `de` | German | `nl` | Dutch |
+| `en` | English | `no` | Norwegian |
+| `es` | Spanish | `pl` | Polish |
+| `fr` | French | `pt-BR` | Portuguese (Brazil) |
+| `hi` | Hindi | `pt-PT` | Portuguese (Portugal) |
+| `id` | Indonesian | `ru` | Russian |
+| `it` | Italian | `th` | Thai |
+| `ja` | Japanese | `tr` | Turkish |
+| `ko` | Korean | `uk` | Ukrainian |
+| `vi` | Vietnamese | `zh-CN` | Chinese (Simplified) |
+| | | `zh-TW` | Chinese (Traditional) |
 
 **Namespaces:** `common`, `navigation`, `settings`, `dialogs`, `tasks`, `errors`, `onboarding`, `welcome`
+
+### Adding New Translations
+
+1. **Add translation keys to ALL 21 language files** - Never leave gaps
+2. **Use namespace:section.key format** - e.g., `'navigation:items.githubPRs'`
+3. **Run validation** - `npm run validate:i18n` checks for missing keys
+4. **Test your language** - Change app language in Settings to verify
 
 ```tsx
 import { useTranslation } from 'react-i18next';
@@ -317,9 +340,53 @@ const { t } = useTranslation(['navigation', 'common']);
 
 // With interpolation:
 <span>{t('errors:task.parseError', { error })}</span>
+
+// Pluralization:
+<span>{t('tasks:count', { count: tasks.length })}</span>
 ```
 
-When adding new UI text: add keys to ALL language files, use `namespace:section.key` format.
+### Translation File Structure
+
+Each language directory contains identical namespaces:
+```
+apps/desktop/src/shared/i18n/locales/
+├── en/
+│   ├── common.json
+│   ├── navigation.json
+│   ├── settings.json
+│   └── ...
+├── fr/
+│   ├── common.json
+│   ├── navigation.json
+│   └── ...
+└── [19 more languages...]
+```
+
+### Validation
+
+Run `npm run validate:i18n` to:
+- Check for missing translation keys across languages
+- Identify inconsistent namespace structures
+- Detect orphaned keys (keys present but not used in code)
+- Validate JSON syntax in all translation files
+
+### Adding New Languages
+
+To add support for a new language:
+
+1. Create language directory: `apps/desktop/src/shared/i18n/locales/{lang}/`
+2. Copy all namespace files from `en/` as template
+3. Translate all keys (use English as fallback for missing translations)
+4. Add language to supported locales list in i18n config
+5. Run `npm run validate:i18n` to verify completeness
+6. Test the language in the app
+
+**Translation quality guidelines:**
+- Maintain consistent terminology across namespaces
+- Preserve placeholders like `{{variable}}` exactly
+- Keep similar length to English for UI layout (±30%)
+- Use formal tone for languages that distinguish formality
+- Test in context - translations should fit naturally in UI
 
 ## Cross-Platform
 

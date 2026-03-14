@@ -154,6 +154,128 @@ describe('TaskCard', () => {
 4. Push and create a Pull Request
 5. Address review feedback
 
+## i18n and Translations
+
+Auto Claude supports 21 languages. All user-facing text must use translation keys.
+
+### Supported Languages
+
+| Code | Language | Code | Language |
+|------|----------|------|----------|
+| `de` | German | `nl` | Dutch |
+| `en` | English | `no` | Norwegian |
+| `es` | Spanish | `pl` | Polish |
+| `fr` | French | `pt-BR` | Portuguese (Brazil) |
+| `hi` | Hindi | `pt-PT` | Portuguese (Portugal) |
+| `id` | Indonesian | `ru` | Russian |
+| `it` | Italian | `th` | Thai |
+| `ja` | Japanese | `tr` | Turkish |
+| `ko` | Korean | `uk` | Ukrainian |
+| `vi` | Vietnamese | `zh-CN` | Chinese (Simplified) |
+| | | `zh-TW` | Chinese (Traditional) |
+
+### Adding or Updating Translations
+
+**Translation files location:** `src/shared/i18n/locales/{lang}/*.json`
+
+#### For Developers Adding New UI Text
+
+1. **Never hardcode strings** in JSX/TSX components
+2. **Use the `useTranslation` hook:**
+
+```tsx
+import { useTranslation } from 'react-i18next';
+
+function MyComponent() {
+  const { t } = useTranslation(['common', 'settings']);
+
+  return (
+    <div>
+      <h1>{t('common:welcome')}</h1>
+      <p>{t('settings:description', { appName: 'Auto Claude' })}</p>
+    </div>
+  );
+}
+```
+
+3. **Add keys to ALL 21 language files** - Copy the key structure to each language's JSON file
+4. **Use namespace:section.key format** - e.g., `'settings:theme.dark'`
+5. **Run validation:** `npm run validate:i18n`
+
+#### For Translators Contributing Language Updates
+
+1. **Find the language directory:** `src/shared/i18n/locales/{lang}/`
+2. **Edit the appropriate namespace file** (e.g., `common.json`, `settings.json`)
+3. **Follow these guidelines:**
+
+   - **Preserve structure:** Keep the exact same JSON keys as English
+   - **Keep placeholders:** Variables like `{{name}}` must appear in translation
+   - **Match context:** Understand where the text appears before translating
+   - **Consistent terminology:** Use the same term for the same concept
+   - **Length awareness:** UI text should be ±30% of English length
+   - **Formality:** Use appropriate formality level for your language's culture
+
+4. **Validate your changes:**
+
+```bash
+# From repository root
+npm run validate:i18n
+```
+
+5. **Test in the app:** Change language in Settings > Language and verify
+
+### Adding a New Language
+
+To contribute support for a language not yet available:
+
+1. **Create language directory:**
+   ```bash
+   mkdir -p src/shared/i18n/locales/{lang}/
+   ```
+
+2. **Copy English templates:**
+   ```bash
+   cp src/shared/i18n/locales/en/*.json src/shared/i18n/locales/{lang}/
+   ```
+
+3. **Translate all files** in the new language directory
+
+4. **Update i18n configuration** to include the new language code
+
+5. **Validate:**
+   ```bash
+   npm run validate:i18n
+   ```
+
+6. **Submit a PR** with:
+   - Language code and full language name
+   - Translation completion percentage
+   - Screenshot testing (if possible)
+
+### Translation Namespaces
+
+| Namespace | Purpose |
+|-----------|---------|
+| `common` | Reusable UI text (buttons, labels, etc.) |
+| `navigation` | Menu items and navigation |
+| `settings` | Settings page content |
+| `dialogs` | Modal dialogs and alerts |
+| `tasks` | Task management UI |
+| `errors` | Error messages |
+| `onboarding` | First-run experience |
+| `welcome` | Welcome screen content |
+
+### Validation Script
+
+The `validate:i18n` script checks for:
+
+- Missing translation keys across languages
+- Inconsistent namespace structures
+- Orphaned keys (defined but not used in code)
+- JSON syntax errors
+
+Run this before committing any translation changes.
+
 ## Security
 
 - Never commit secrets, API keys, or tokens
