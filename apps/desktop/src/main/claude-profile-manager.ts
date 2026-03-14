@@ -105,6 +105,10 @@ export class ClaudeProfileManager {
     // This repairs emails that were truncated due to ANSI escape codes in terminal output
     this.migrateCorruptedEmails();
 
+    // Deduplicate profiles that share the same email
+    // This cleans up duplicates created by repeated auth logins
+    this.deduplicateExistingProfiles();
+
     // Populate missing subscription metadata for existing profiles
     // This reads subscriptionType and rateLimitTier from Keychain credentials
     this.populateSubscriptionMetadata();
@@ -204,6 +208,68 @@ export class ClaudeProfileManager {
       this.save();
       console.warn('[ClaudeProfileManager] Subscription metadata population complete');
     }
+  }
+
+  /**
+   * Deduplicate existing profiles that share the same email.
+   * Keeps one profile per email, preferring: active > default > most recently created.
+   * Updates activeProfileId if the active profile was merged away.
+   */
+  private deduplicateExistingProfiles(): void {
+    const emailMap = new Map<string, ClaudeProfile[]>();
+
+    for (const profile of this.data.profiles) {
+      if (!profile.email) continue;
+      const key = profile.email.toLowerCase();
+      const group = emailMap.get(key) || [];
+      group.push(profile);
+      emailMap.set(key, group);
+    }
+
+    const duplicateGroups = [...emailMap.values()].filter(g => g.length > 1);
+    if (duplicateGroups.length === 0) return;
+
+    const removedIds = new Set<string>();
+
+    for (const group of duplicateGroups) {
+      // Pick the winner: active profile > default > first in list
+      const winner =
+        group.find(p => p.id === this.data.activeProfileId) ||
+        group.find(p => p.isDefault) ||
+        group[0];
+
+      for (const profile of group) {
+        if (profile.id === winner.id) continue;
+        removedIds.add(profile.id);
+      }
+
+      // Merge: ensure winner has best metadata
+      if (!winner.isDefault) {
+        const defaultInGroup = group.find(p => p.isDefault);
+        if (defaultInGroup) winner.isDefault = true;
+      }
+    }
+
+    if (removedIds.size === 0) return;
+
+    const before = this.data.profiles.length;
+    this.data.profiles = this.data.profiles.filter(p => !removedIds.has(p.id));
+
+    // Fix activeProfileId if it was removed
+    if (this.data.activeProfileId && removedIds.has(this.data.activeProfileId)) {
+      const defaultProfile = this.data.profiles.find(p => p.isDefault);
+      this.data.activeProfileId = defaultProfile?.id || this.data.profiles[0]?.id;
+    }
+
+    // Clean up accountPriorityOrder references
+    if (this.data.accountPriorityOrder) {
+      this.data.accountPriorityOrder = this.data.accountPriorityOrder.filter(
+        id => !removedIds.has(id.replace('oauth-', ''))
+      );
+    }
+
+    this.save();
+    console.warn(`[ClaudeProfileManager] Deduplicated profiles: ${before} → ${this.data.profiles.length} (removed ${removedIds.size} duplicates)`);
   }
 
   /**
@@ -354,7 +420,11 @@ export class ClaudeProfileManager {
   }
 
   /**
-   * Save or update a profile
+   * Save or update a profile.
+   *
+   * Deduplicates by email: if a profile with the same email already exists
+   * (different ID but same underlying account), the existing profile is updated
+   * instead of creating a duplicate entry.
    */
   saveProfile(profile: ClaudeProfile): ClaudeProfile {
     // Expand ~ in configDir path
@@ -362,16 +432,42 @@ export class ClaudeProfileManager {
       profile.configDir = expandHomePath(profile.configDir);
     }
 
-    const index = this.data.profiles.findIndex(p => p.id === profile.id);
+    // First check: exact ID match (update existing profile)
+    const indexById = this.data.profiles.findIndex(p => p.id === profile.id);
 
-    if (index >= 0) {
-      // Update existing
-      this.data.profiles[index] = profile;
-    } else {
-      // Add new
-      this.data.profiles.push(profile);
+    if (indexById >= 0) {
+      // Update existing by ID
+      this.data.profiles[indexById] = profile;
+      this.save();
+      return profile;
     }
 
+    // Second check: same email already exists (prevent duplicate)
+    if (profile.email) {
+      const emailLower = profile.email.toLowerCase();
+      const indexByEmail = this.data.profiles.findIndex(
+        p => p.email?.toLowerCase() === emailLower
+      );
+
+      if (indexByEmail >= 0) {
+        const existing = this.data.profiles[indexByEmail];
+        debugLog('[ClaudeProfileManager] Reusing existing profile for email:', profile.email,
+          '(existing ID:', existing.id, ', incoming ID:', profile.id, ')');
+
+        // Update the existing profile with fresh data, keeping its ID and default status
+        this.data.profiles[indexByEmail] = {
+          ...profile,
+          id: existing.id,
+          isDefault: existing.isDefault || profile.isDefault,
+          name: profile.name || existing.name,
+        };
+        this.save();
+        return this.data.profiles[indexByEmail];
+      }
+    }
+
+    // No match — add new profile
+    this.data.profiles.push(profile);
     this.save();
     return profile;
   }
