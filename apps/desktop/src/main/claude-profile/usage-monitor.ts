@@ -444,6 +444,7 @@ export class UsageMonitor extends EventEmitter {
 
       // Deduplicate by email (multiple profiles can share the same underlying account)
       const deduped = this.deduplicateProfilesByEmail(allProfiles);
+      deduped.sort((a, b) => b.availabilityScore - a.availabilityScore);
 
       // Return minimal data with auth status - don't return null!
       return {
@@ -776,24 +777,26 @@ export class UsageMonitor extends EventEmitter {
    */
   private deduplicateProfilesByEmail(profiles: ProfileUsageSummary[]): ProfileUsageSummary[] {
     const result: ProfileUsageSummary[] = [];
-    const seenEmails = new Map<string, number>(); // email -> index in result
+    const profileKeys = new Map<string, number>(); // email-or-profileId -> index in result
     for (const profile of profiles) {
       const key = profile.profileEmail?.toLowerCase();
-      if (key && seenEmails.has(key)) {
-        const existingIdx = seenEmails.get(key)!;
+      if (key && profileKeys.has(key)) {
+        const existingIdx = profileKeys.get(key)!;
         const existing = result[existingIdx];
         const existingMax = Math.max(existing.sessionPercent, existing.weeklyPercent);
         const currentMax = Math.max(profile.sessionPercent, profile.weeklyPercent);
         if (currentMax > existingMax || (currentMax === existingMax && profile.isActive)) {
-          result[existingIdx] = profile;
+          const mergedIsActive = existing.isActive || profile.isActive;
+          const mergedNeedsReauth = existing.needsReauthentication || profile.needsReauthentication;
+          result[existingIdx] = { ...profile, isActive: mergedIsActive, needsReauthentication: mergedNeedsReauth };
         }
       } else {
-        seenEmails.set(key ?? profile.profileId, result.length);
+        profileKeys.set(key ?? profile.profileId, result.length);
         result.push(profile);
       }
     }
     if (result.length < profiles.length) {
-      console.log('[UsageMonitor] Deduplicated profiles by email:', profiles.length, '→', result.length);
+      this.debugLog(`[UsageMonitor] Deduplicated profiles by email: ${profiles.length} → ${result.length}`);
     }
     return result;
   }

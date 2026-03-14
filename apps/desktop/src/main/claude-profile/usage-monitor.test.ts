@@ -1737,4 +1737,120 @@ describe('usage-monitor', () => {
       expect(hasHardcodedText('   ')).toBe(true);
     });
   });
+
+  describe('deduplicateProfilesByEmail (private, tested via instance as any)', () => {
+    function makeProfile(overrides: Partial<import('../../shared/types/agent').ProfileUsageSummary> & { profileId: string }): import('../../shared/types/agent').ProfileUsageSummary {
+      return {
+        profileId: overrides.profileId,
+        profileName: overrides.profileName ?? 'Test Profile',
+        profileEmail: overrides.profileEmail,
+        sessionPercent: overrides.sessionPercent ?? 0,
+        weeklyPercent: overrides.weeklyPercent ?? 0,
+        isAuthenticated: overrides.isAuthenticated ?? true,
+        isRateLimited: overrides.isRateLimited ?? false,
+        availabilityScore: overrides.availabilityScore ?? 100,
+        isActive: overrides.isActive ?? false,
+        needsReauthentication: overrides.needsReauthentication ?? false,
+      };
+    }
+
+    let monitor: UsageMonitor;
+
+    beforeEach(() => {
+      monitor = UsageMonitor.getInstance();
+    });
+
+    it('should return empty array for empty input', () => {
+      const result = (monitor as any).deduplicateProfilesByEmail([]);
+      expect(result).toEqual([]);
+    });
+
+    it('should return all profiles when there are no duplicate emails', () => {
+      const profiles = [
+        makeProfile({ profileId: 'p1', profileEmail: 'alice@example.com' }),
+        makeProfile({ profileId: 'p2', profileEmail: 'bob@example.com' }),
+        makeProfile({ profileId: 'p3', profileEmail: 'carol@example.com' }),
+      ];
+      const result = (monitor as any).deduplicateProfilesByEmail(profiles);
+      expect(result).toHaveLength(3);
+      expect(result.map((p: any) => p.profileId)).toEqual(['p1', 'p2', 'p3']);
+    });
+
+    it('should keep the higher-usage profile when two share the same email', () => {
+      const profiles = [
+        makeProfile({ profileId: 'p1', profileEmail: 'user@example.com', sessionPercent: 20, weeklyPercent: 30 }),
+        makeProfile({ profileId: 'p2', profileEmail: 'user@example.com', sessionPercent: 70, weeklyPercent: 50 }),
+      ];
+      const result = (monitor as any).deduplicateProfilesByEmail(profiles);
+      expect(result).toHaveLength(1);
+      expect(result[0].profileId).toBe('p2');
+    });
+
+    it('should keep the first profile when two have the same max usage', () => {
+      const profiles = [
+        makeProfile({ profileId: 'p1', profileEmail: 'user@example.com', sessionPercent: 50, weeklyPercent: 40 }),
+        makeProfile({ profileId: 'p2', profileEmail: 'user@example.com', sessionPercent: 50, weeklyPercent: 40 }),
+      ];
+      const result = (monitor as any).deduplicateProfilesByEmail(profiles);
+      expect(result).toHaveLength(1);
+      expect(result[0].profileId).toBe('p1');
+    });
+
+    it('should merge isActive flag: active profile with lower usage survives as active', () => {
+      const profiles = [
+        makeProfile({ profileId: 'p1', profileEmail: 'user@example.com', sessionPercent: 10, weeklyPercent: 10, isActive: true }),
+        makeProfile({ profileId: 'p2', profileEmail: 'user@example.com', sessionPercent: 80, weeklyPercent: 60, isActive: false }),
+      ];
+      const result = (monitor as any).deduplicateProfilesByEmail(profiles);
+      expect(result).toHaveLength(1);
+      // p2 has higher usage, so it replaces p1, but isActive is merged from p1
+      expect(result[0].profileId).toBe('p2');
+      expect(result[0].isActive).toBe(true);
+    });
+
+    it('should merge needsReauthentication flag when replacing a profile', () => {
+      const profiles = [
+        makeProfile({ profileId: 'p1', profileEmail: 'user@example.com', sessionPercent: 10, needsReauthentication: true }),
+        makeProfile({ profileId: 'p2', profileEmail: 'user@example.com', sessionPercent: 80, needsReauthentication: false }),
+      ];
+      const result = (monitor as any).deduplicateProfilesByEmail(profiles);
+      expect(result).toHaveLength(1);
+      expect(result[0].needsReauthentication).toBe(true);
+    });
+
+    it('should not deduplicate profiles with no email (uses profileId as key)', () => {
+      const profiles = [
+        makeProfile({ profileId: 'p1', profileEmail: undefined }),
+        makeProfile({ profileId: 'p2', profileEmail: undefined }),
+      ];
+      const result = (monitor as any).deduplicateProfilesByEmail(profiles);
+      expect(result).toHaveLength(2);
+    });
+
+    it('should perform case-insensitive email matching', () => {
+      const profiles = [
+        makeProfile({ profileId: 'p1', profileEmail: 'User@Example.COM', sessionPercent: 10 }),
+        makeProfile({ profileId: 'p2', profileEmail: 'user@example.com', sessionPercent: 90 }),
+      ];
+      const result = (monitor as any).deduplicateProfilesByEmail(profiles);
+      expect(result).toHaveLength(1);
+      expect(result[0].profileId).toBe('p2');
+    });
+
+    it('should handle mixed: some with emails, some without', () => {
+      const profiles = [
+        makeProfile({ profileId: 'p1', profileEmail: 'alice@example.com', sessionPercent: 20 }),
+        makeProfile({ profileId: 'p2', profileEmail: undefined }),
+        makeProfile({ profileId: 'p3', profileEmail: 'alice@example.com', sessionPercent: 60 }),
+        makeProfile({ profileId: 'p4', profileEmail: undefined }),
+      ];
+      const result = (monitor as any).deduplicateProfilesByEmail(profiles);
+      // p1+p3 deduplicated (p3 wins), p2 and p4 are kept separately (no email)
+      expect(result).toHaveLength(3);
+      const ids = result.map((p: any) => p.profileId);
+      expect(ids).toContain('p3');
+      expect(ids).toContain('p2');
+      expect(ids).toContain('p4');
+    });
+  });
 });
