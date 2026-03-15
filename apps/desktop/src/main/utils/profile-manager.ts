@@ -11,11 +11,11 @@ import { app } from 'electron';
 import type { ProfilesFile } from '../../shared/types/profile';
 
 /**
- * Get the path to profiles.json in the auto-claude directory
+ * Get the path to profiles.json in the aperant directory
  */
 export function getProfilesFilePath(): string {
   const userDataPath = app.getPath('userData');
-  return path.join(userDataPath, 'auto-claude', 'profiles.json');
+  return path.join(userDataPath, 'aperant', 'profiles.json');
 }
 
 /**

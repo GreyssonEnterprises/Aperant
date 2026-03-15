@@ -155,6 +155,12 @@ export function App() {
   const [skippedInitProjectId, setSkippedInitProjectId] = useState<string | null>(null);
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
 
+  // Migration dialog state
+  const [showMigrateDialog, setShowMigrateDialog] = useState(false);
+  const [migrationProject, setMigrationProject] = useState<Project | null>(null);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [migrateError, setMigrateError] = useState<string | null>(null);
+
   // GitHub setup state (shown after Auto Claude init)
   const [showGitHubSetup, setShowGitHubSetup] = useState(false);
   const [gitHubSetupProject, setGitHubSetupProject] = useState<Project | null>(null);
@@ -372,7 +378,7 @@ export function App() {
     setInitError(null);
   }, []);
 
-  // Check if selected project needs initialization (e.g., .auto-claude folder was deleted)
+  // Check if selected project needs initialization (e.g., .aperant folder was deleted)
   useEffect(() => {
     // Don't show dialog while initialization is in progress
     if (isInitializing) return;
@@ -411,6 +417,18 @@ export function App() {
             const project = await addProject(path);
             if (project) {
               openProjectTab(project.id);
+              // Check migration before init
+              try {
+                const requiresMigration = await window.electronAPI.needsMigration(project.path);
+                if (requiresMigration) {
+                  setMigrationProject(project);
+                  setMigrateError(null);
+                  setShowMigrateDialog(true);
+                  return;
+                }
+              } catch {
+                // Non-critical - fall through to init check
+              }
               if (!project.autoBuildPath) {
                 setPendingProject(project);
                 setInitError(null);
@@ -639,8 +657,22 @@ export function App() {
     setShowAddProjectModal(true);
   };
 
-  const handleProjectAdded = (project: Project, needsInit: boolean) => {
+  const handleProjectAdded = async (project: Project, needsInit: boolean) => {
     openProjectTab(project.id);
+
+    // Check for migration before showing init dialog
+    try {
+      const requiresMigration = await window.electronAPI.needsMigration(project.path);
+      if (requiresMigration) {
+        setMigrationProject(project);
+        setMigrateError(null);
+        setShowMigrateDialog(true);
+        return;
+      }
+    } catch (error) {
+      console.error('[App] Failed to check migration status:', error);
+    }
+
     if (needsInit) {
       setPendingProject(project);
       setInitError(null);
@@ -711,6 +743,34 @@ export function App() {
     if (oldIndex !== newIndex && oldIndex !== -1 && newIndex !== -1) {
       reorderTabs(oldIndex, newIndex);
     }
+  };
+
+  const handleMigrate = async () => {
+    if (!migrationProject) return;
+
+    setIsMigrating(true);
+    setMigrateError(null);
+    try {
+      const result = await window.electronAPI.migrateProject(migrationProject.path);
+      if (result.success) {
+        setShowMigrateDialog(false);
+        // Refresh projects so the updated autoBuildPath is reflected
+        await loadProjects();
+        setMigrationProject(null);
+      } else {
+        setMigrateError(result.error || t('initialize.migrateError'));
+      }
+    } catch (error) {
+      setMigrateError(error instanceof Error ? error.message : t('initialize.migrateError'));
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
+  const handleSkipMigrate = () => {
+    setShowMigrateDialog(false);
+    setMigrationProject(null);
+    setMigrateError(null);
   };
 
   const handleInitialize = async () => {
@@ -1013,6 +1073,51 @@ export function App() {
           onOpenChange={setShowAddProjectModal}
           onProjectAdded={handleProjectAdded}
         />
+
+        {/* Migrate Project Data Dialog - shown when .auto-claude exists but .aperant does not */}
+        <Dialog open={showMigrateDialog} onOpenChange={(open) => {
+          if (!open && !isMigrating) {
+            handleSkipMigrate();
+          }
+        }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <RefreshCw className="h-5 w-5" />
+                {t('initialize.migrateTitle')}
+              </DialogTitle>
+              <DialogDescription>
+                {t('initialize.migrateDescription')}
+              </DialogDescription>
+            </DialogHeader>
+            {migrateError && (
+              <div className="mt-2 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-medium text-destructive">{t('initialize.migrateError')}</p>
+                    <p className="text-muted-foreground mt-1">{migrateError}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={handleSkipMigrate} disabled={isMigrating}>
+                {t('common:buttons.skip', { ns: 'common' })}
+              </Button>
+              <Button onClick={handleMigrate} disabled={isMigrating}>
+                {isMigrating ? (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    {t('initialize.migrateAction')}
+                  </>
+                ) : (
+                  t('initialize.migrateAction')
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Initialize Auto Claude Dialog */}
         <Dialog open={showInitDialog} onOpenChange={(open) => {

@@ -160,7 +160,7 @@ export async function runIdeation(
   const toolContext: ToolContext = {
     cwd: projectDir,
     projectDir,
-    specDir: join(projectDir, '.auto-claude', 'specs'),
+    specDir: join(projectDir, '.aperant', 'specs'),
     securityProfile: null as unknown as SecurityProfile,
     abortSignal,
   };

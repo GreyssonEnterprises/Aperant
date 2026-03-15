@@ -3,13 +3,18 @@
     "title": "Initialiser Aperant",
     "description": "Ce projet n'a pas Aperant initialisé. Voulez-vous le configurer maintenant ?",
     "willDo": "Ceci va :",
-    "createFolder": "Créer un dossier .auto-claude dans votre projet",
+    "createFolder": "Créer un dossier .aperant dans votre projet",
     "copyFramework": "Copier les fichiers du framework Aperant",
     "setupSpecs": "Configurer le répertoire des spécifications pour vos tâches",
     "sourcePathNotConfigured": "Chemin source non configuré",
     "sourcePathNotConfiguredDescription": "Veuillez définir le chemin source Aperant dans les paramètres de l'application avant d'initialiser.",
     "initFailed": "Échec de l'initialisation",
-    "initFailedDescription": "Échec de l'initialisation de Aperant. Veuillez réessayer."
+    "initFailedDescription": "Échec de l'initialisation de Aperant. Veuillez réessayer.",
+    "migrateTitle": "Migrer les données du projet",
+    "migrateDescription": "Ce projet utilise l'ancien dossier .auto-claude. Aperant utilise maintenant .aperant pour les données du projet.",
+    "migrateAction": "Migrer",
+    "migrateSuccess": "Données du projet migrées avec succès",
+    "migrateError": "La migration a échoué"
   },
   "gitSetup": {
     "title": "Dépôt Git requis",

@@ -35,7 +35,7 @@ const SKIP_DIRS = new Set([
   '.nuxt',
   'target',
   'vendor',
-  '.auto-claude',
+  '.aperant',
   'coverage',
   '.nyc_output',
 ]);

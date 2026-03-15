@@ -245,8 +245,8 @@
     "sourceFallback": "Fallback",
     "notDetected": "Not detected",
     "autoClaudePath": "Aperant Path",
-    "autoClaudePathDescription": "Relative path to auto-claude directory in projects",
-    "autoClaudePathPlaceholder": "auto-claude (default)",
+    "autoClaudePathDescription": "Relative path to aperant directory in projects",
+    "autoClaudePathPlaceholder": ".aperant (default)",
     "autoNameTerminals": "Automatically name terminals",
     "autoNameTerminalsDescription": "Use AI to generate descriptive names for terminal tabs based on their activity"
   },

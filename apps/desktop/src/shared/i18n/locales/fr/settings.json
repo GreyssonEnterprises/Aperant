@@ -245,8 +245,8 @@
     "sourceFallback": "Valeur par défaut",
     "notDetected": "Non détecté",
     "autoClaudePath": "Chemin Aperant",
-    "autoClaudePathDescription": "Chemin relatif vers le répertoire auto-claude dans les projets",
-    "autoClaudePathPlaceholder": "auto-claude (par défaut)",
+    "autoClaudePathDescription": "Chemin relatif vers le répertoire aperant dans les projets",
+    "autoClaudePathPlaceholder": ".aperant (par défaut)",
     "autoNameTerminals": "Nommer automatiquement les terminaux",
     "autoNameTerminalsDescription": "Utiliser l'IA pour générer des noms descriptifs pour les onglets de terminal en fonction de leur activité"
   },

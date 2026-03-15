@@ -221,7 +221,7 @@ export function getRequiredMcpServers(
     const removals = removeValue.split(',').map((s) => s.trim()).filter(Boolean);
     for (const server of removals) {
       const mapped = mapMcpServerName(server, customServerIds);
-      if (mapped && mapped !== 'auto-claude') {
+      if (mapped && mapped !== 'aperant') {
         servers = servers.filter((s) => s !== mapped);
       }
     }

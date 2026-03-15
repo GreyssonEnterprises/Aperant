@@ -3,13 +3,18 @@
     "title": "Initialize Aperant",
     "description": "This project doesn't have Aperant initialized. Would you like to set it up now?",
     "willDo": "This will:",
-    "createFolder": "Create a .auto-claude folder in your project",
+    "createFolder": "Create a .aperant folder in your project",
     "copyFramework": "Copy the Aperant framework files",
     "setupSpecs": "Set up the specs directory for your tasks",
     "sourcePathNotConfigured": "Source path not configured",
     "sourcePathNotConfiguredDescription": "Please set the Aperant source path in App Settings before initializing.",
     "initFailed": "Initialization Failed",
-    "initFailedDescription": "Failed to initialize Aperant. Please try again."
+    "initFailedDescription": "Failed to initialize Aperant. Please try again.",
+    "migrateTitle": "Migrate Project Data",
+    "migrateDescription": "This project uses the old .auto-claude folder. Aperant now uses .aperant for project data.",
+    "migrateAction": "Migrate",
+    "migrateSuccess": "Project data migrated successfully",
+    "migrateError": "Migration failed"
   },
   "gitSetup": {
     "title": "Git Repository Required",

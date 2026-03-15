@@ -36,15 +36,15 @@ const ALL_BUILTIN_TOOLS = [...BASE_READ_TOOLS, ...BASE_WRITE_TOOLS, ...WEB_TOOLS
 const SPEC_TOOLS = [...BASE_READ_TOOLS, 'Write', ...WEB_TOOLS] as const;
 
 // =============================================================================
-// Auto-Claude MCP Tools (Custom build management)
+// Aperant MCP Tools (Custom build management)
 // =============================================================================
 
-const TOOL_UPDATE_SUBTASK_STATUS = 'mcp__auto-claude__update_subtask_status';
-const TOOL_GET_BUILD_PROGRESS = 'mcp__auto-claude__get_build_progress';
-const TOOL_RECORD_DISCOVERY = 'mcp__auto-claude__record_discovery';
-const TOOL_RECORD_GOTCHA = 'mcp__auto-claude__record_gotcha';
-const TOOL_GET_SESSION_CONTEXT = 'mcp__auto-claude__get_session_context';
-const TOOL_UPDATE_QA_STATUS = 'mcp__auto-claude__update_qa_status';
+const TOOL_UPDATE_SUBTASK_STATUS = 'mcp__aperant__update_subtask_status';
+const TOOL_GET_BUILD_PROGRESS = 'mcp__aperant__get_build_progress';
+const TOOL_RECORD_DISCOVERY = 'mcp__aperant__record_discovery';
+const TOOL_RECORD_GOTCHA = 'mcp__aperant__record_gotcha';
+const TOOL_GET_SESSION_CONTEXT = 'mcp__aperant__get_session_context';
+const TOOL_UPDATE_QA_STATUS = 'mcp__aperant__update_qa_status';
 
 // =============================================================================
 // External MCP Tools
@@ -246,7 +246,7 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
    */
   build_orchestrator: {
     tools: [...ALL_BUILTIN_TOOLS, 'SpawnSubagent'],
-    mcpServers: ['context7', 'memory', 'auto-claude'],
+    mcpServers: ['context7', 'memory', 'aperant'],
     mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_GET_BUILD_PROGRESS,
@@ -263,7 +263,7 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   // ═══════════════════════════════════════════════════════════════════════
   planner: {
     tools: [...ALL_BUILTIN_TOOLS],
-    mcpServers: ['context7', 'memory', 'auto-claude'],
+    mcpServers: ['context7', 'memory', 'aperant'],
     mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_GET_BUILD_PROGRESS,
@@ -274,7 +274,7 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   },
   coder: {
     tools: [...ALL_BUILTIN_TOOLS],
-    mcpServers: ['context7', 'memory', 'auto-claude'],
+    mcpServers: ['context7', 'memory', 'aperant'],
     mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_UPDATE_SUBTASK_STATUS,
@@ -291,7 +291,7 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   // ═══════════════════════════════════════════════════════════════════════
   qa_reviewer: {
     tools: [...ALL_BUILTIN_TOOLS],
-    mcpServers: ['context7', 'memory', 'auto-claude', 'browser'],
+    mcpServers: ['context7', 'memory', 'aperant', 'browser'],
     mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_GET_BUILD_PROGRESS,
@@ -302,7 +302,7 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   },
   qa_fixer: {
     tools: [...ALL_BUILTIN_TOOLS],
-    mcpServers: ['context7', 'memory', 'auto-claude', 'browser'],
+    mcpServers: ['context7', 'memory', 'aperant', 'browser'],
     mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_UPDATE_SUBTASK_STATUS,
@@ -482,7 +482,7 @@ const MCP_SERVER_NAME_MAP: Record<string, string> = {
   linear: 'linear',
   electron: 'electron',
   puppeteer: 'puppeteer',
-  'auto-claude': 'auto-claude',
+  'aperant': 'aperant',
 };
 
 /**
@@ -593,11 +593,11 @@ export function getRequiredMcpServers(
     }
   }
 
-  // Apply per-agent MCP removals (never remove auto-claude)
+  // Apply per-agent MCP removals (never remove aperant)
   if (options.agentMcpRemove) {
     for (const name of options.agentMcpRemove.split(',')) {
       const mapped = mapMcpServerName(name.trim(), options.customServerIds);
-      if (mapped && mapped !== 'auto-claude') {
+      if (mapped && mapped !== 'aperant') {
         const idx = servers.indexOf(mapped);
         if (idx !== -1) servers.splice(idx, 1);
       }

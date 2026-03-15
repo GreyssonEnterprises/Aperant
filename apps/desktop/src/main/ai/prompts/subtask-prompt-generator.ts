@@ -28,8 +28,8 @@ import type {
 
 /** Patterns to detect worktree isolation */
 const WORKTREE_PATH_PATTERNS = [
-  /[/\\]\.auto-claude[/\\]worktrees[/\\]tasks[/\\]/,
-  /[/\\]\.auto-claude[/\\]github[/\\]pr[/\\]worktrees[/\\]/,
+  /[/\\]\.aperant[/\\]worktrees[/\\]tasks[/\\]/,
+  /[/\\]\.aperant[/\\]github[/\\]pr[/\\]worktrees[/\\]/,
   /[/\\]\.worktrees[/\\]/,
 ];
 
@@ -106,7 +106,7 @@ function getRelativeSpecPath(specDir: string, projectDir: string): string {
 
   // Fallback: just use the spec dir name
   const parts = resolvedSpec.split(/[/\\]/);
-  return `./auto-claude/specs/${parts[parts.length - 1]}`;
+  return `./aperant/specs/${parts[parts.length - 1]}`;
 }
 
 /**

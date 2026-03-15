@@ -54,13 +54,16 @@ lerna-debug.log*
 .worktrees/
 
 # ===========================
-# Auto Claude Generated
+# Aperant Generated
 # ===========================
+.aperant/
 .auto-claude/
 .planning/
 .planning-archive/
 .auto-build-security.json
+.aperant-security.json
 .auto-claude-security.json
+.aperant-status
 .auto-claude-status
 .claude_settings.json
 .update-metadata.json

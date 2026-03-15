@@ -49,7 +49,7 @@ export type McpServerId =
   | 'memory'
   | 'electron'
   | 'puppeteer'
-  | 'auto-claude';
+  | 'aperant';
 
 /** Configuration for a single MCP server */
 export interface McpServerConfig {

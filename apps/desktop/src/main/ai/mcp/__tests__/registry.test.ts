@@ -104,23 +104,23 @@ describe('getMcpServerConfig', () => {
     });
   });
 
-  describe('auto-claude', () => {
-    it('returns auto-claude config with empty specDir as default', () => {
-      const config = getMcpServerConfig('auto-claude', {});
+  describe('aperant', () => {
+    it('returns aperant config with empty specDir as default', () => {
+      const config = getMcpServerConfig('aperant', {});
       expect(config).not.toBeNull();
-      expect(config?.id).toBe('auto-claude');
+      expect(config?.id).toBe('aperant');
     });
 
     it('injects SPEC_DIR into transport env', () => {
-      const config = getMcpServerConfig('auto-claude', { specDir: '/project/.auto-claude/specs/001-feature' });
+      const config = getMcpServerConfig('aperant', { specDir: '/project/.aperant/specs/001-feature' });
       expect(config?.transport.type).toBe('stdio');
       if (config?.transport.type === 'stdio') {
-        expect(config.transport.env?.SPEC_DIR).toBe('/project/.auto-claude/specs/001-feature');
+        expect(config.transport.env?.SPEC_DIR).toBe('/project/.aperant/specs/001-feature');
       }
     });
 
     it('uses node command', () => {
-      const config = getMcpServerConfig('auto-claude', {});
+      const config = getMcpServerConfig('aperant', {});
       if (config?.transport.type === 'stdio') {
         expect(config.transport.command).toBe('node');
       }
@@ -174,9 +174,9 @@ describe('resolveMcpServers', () => {
     expect(configs[0].id).toBe('memory');
   });
 
-  it('passes specDir through to auto-claude config', () => {
-    const specDir = '/my-project/.auto-claude/specs/042-auth';
-    const configs = resolveMcpServers(['auto-claude'], { specDir });
+  it('passes specDir through to aperant config', () => {
+    const specDir = '/my-project/.aperant/specs/042-auth';
+    const configs = resolveMcpServers(['aperant'], { specDir });
     expect(configs).toHaveLength(1);
     if (configs[0].transport.type === 'stdio') {
       expect(configs[0].transport.env?.SPEC_DIR).toBe(specDir);

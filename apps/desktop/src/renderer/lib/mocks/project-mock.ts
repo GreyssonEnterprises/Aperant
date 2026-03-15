@@ -125,5 +125,9 @@ export const projectMock = {
   initializeGit: async () => ({
     success: true,
     data: { success: true }
-  })
+  }),
+
+  needsMigration: async () => false,
+
+  migrateProject: async () => ({ success: true })
 };
