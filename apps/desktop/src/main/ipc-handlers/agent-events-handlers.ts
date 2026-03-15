@@ -2,7 +2,7 @@ import type { BrowserWindow } from "electron";
 import path from "path";
 import { existsSync, readFileSync } from "fs";
 import { safeParseJson } from "../utils/json-repair";
-import { IPC_CHANNELS, AUTO_BUILD_PATHS, getSpecsDir } from "../../shared/constants";
+import { IPC_CHANNELS, APERANT_PATHS, getSpecsDir } from "../../shared/constants";
 import type {
   SDKRateLimitInfo,
   AuthFailureInfo,
@@ -164,8 +164,8 @@ export function registerAgenteventsHandlers(
     if (exitTask && exitProject) {
       const worktreePath = findTaskWorktree(exitProject.path, exitTask.specId);
       if (worktreePath) {
-        const specsBaseDir = getSpecsDir(exitProject.autoBuildPath);
-        const worktreePlanPath = path.join(worktreePath, specsBaseDir, exitTask.specId, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+        const specsBaseDir = getSpecsDir(exitProject.aperantPath);
+        const worktreePlanPath = path.join(worktreePath, specsBaseDir, exitTask.specId, APERANT_PATHS.IMPLEMENTATION_PLAN);
         try {
           const content = readFileSync(worktreePlanPath, 'utf-8');
           const parsed = safeParseJson<ImplementationPlan>(content);
@@ -205,9 +205,9 @@ export function registerAgenteventsHandlers(
       if (code === 0) {
         const { task: specTask, project: specProject } = findTaskAndProject(taskId, projectId);
         if (specTask && specProject) {
-          const specsBaseDir = getSpecsDir(specProject.autoBuildPath);
+          const specsBaseDir = getSpecsDir(specProject.aperantPath);
           const specDir = path.join(specProject.path, specsBaseDir, specTask.specId);
-          const specFilePath = path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE);
+          const specFilePath = path.join(specDir, APERANT_PATHS.SPEC_FILE);
           if (existsSync(specFilePath)) {
             console.warn(`[Task ${taskId}] Spec created successfully — starting task execution`);
             // Re-watch the spec directory for the build phase
@@ -290,12 +290,12 @@ export function registerAgenteventsHandlers(
 
     const worktreePath = findTaskWorktree(project.path, task.specId);
     if (worktreePath) {
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const worktreePlanPath = path.join(
         worktreePath,
         specsBaseDir,
         task.specId,
-        AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN
+        APERANT_PATHS.IMPLEMENTATION_PLAN
       );
       if (existsSync(worktreePlanPath)) {
         persistPlanLastEventSync(worktreePlanPath, event);
@@ -329,11 +329,11 @@ export function registerAgenteventsHandlers(
       // Also persist to worktree if task has one
       const worktreePath = findTaskWorktree(project.path, task.specId);
       if (worktreePath) {
-        const specsBaseDir = getSpecsDir(project.autoBuildPath);
+        const specsBaseDir = getSpecsDir(project.aperantPath);
         const worktreeSpecDir = path.join(worktreePath, specsBaseDir, task.specId);
         const worktreePlanPath = path.join(
           worktreeSpecDir,
-          AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN
+          APERANT_PATHS.IMPLEMENTATION_PLAN
         );
         if (existsSync(worktreePlanPath)) {
           persistPlanPhaseSync(worktreePlanPath, progress.phase, project.id);
@@ -426,12 +426,12 @@ export function registerAgenteventsHandlers(
       // Also re-stamp worktree copy if it exists
       const worktreePath = findTaskWorktree(project.path, task.specId);
       if (worktreePath) {
-        const specsBaseDir = getSpecsDir(project.autoBuildPath);
+        const specsBaseDir = getSpecsDir(project.aperantPath);
         const worktreePlanPath = path.join(
           worktreePath,
           specsBaseDir,
           task.specId,
-          AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN
+          APERANT_PATHS.IMPLEMENTATION_PLAN
         );
         if (existsSync(worktreePlanPath)) {
           persistPlanStatusAndReasonSync(worktreePlanPath, status, reviewReason, project.id, currentXState, phase);

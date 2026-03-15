@@ -196,7 +196,7 @@ export async function startCodexOAuthFlow(): Promise<CodexAuthResult> {
   authUrl.searchParams.set('state', state);
   authUrl.searchParams.set('code_challenge', codeChallenge);
   authUrl.searchParams.set('code_challenge_method', 'S256');
-  authUrl.searchParams.set('originator', 'auto-claude');
+  authUrl.searchParams.set('originator', 'aperant');
   authUrl.searchParams.set('codex_cli_simplified_flow', 'true');
 
   debugLog('Built authorization URL', { url: authUrl.toString() });

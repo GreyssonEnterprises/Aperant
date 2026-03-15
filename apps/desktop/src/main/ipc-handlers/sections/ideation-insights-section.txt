@@ -100,8 +100,8 @@
 
       const ideationPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.IDEATION_DIR,
-        AUTO_BUILD_PATHS.IDEATION_FILE
+        APERANT_PATHS.IDEATION_DIR,
+        APERANT_PATHS.IDEATION_FILE
       );
 
       if (!existsSync(ideationPath)) {
@@ -235,8 +235,8 @@
 
       const ideationPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.IDEATION_DIR,
-        AUTO_BUILD_PATHS.IDEATION_FILE
+        APERANT_PATHS.IDEATION_DIR,
+        APERANT_PATHS.IDEATION_FILE
       );
 
       if (!existsSync(ideationPath)) {
@@ -284,8 +284,8 @@
 
       const ideationPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.IDEATION_DIR,
-        AUTO_BUILD_PATHS.IDEATION_FILE
+        APERANT_PATHS.IDEATION_DIR,
+        APERANT_PATHS.IDEATION_FILE
       );
 
       if (!existsSync(ideationPath)) {
@@ -327,8 +327,8 @@
 
       const ideationPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.IDEATION_DIR,
-        AUTO_BUILD_PATHS.IDEATION_FILE
+        APERANT_PATHS.IDEATION_DIR,
+        APERANT_PATHS.IDEATION_FILE
       );
 
       if (!existsSync(ideationPath)) {
@@ -370,8 +370,8 @@
 
       const ideationPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.IDEATION_DIR,
-        AUTO_BUILD_PATHS.IDEATION_FILE
+        APERANT_PATHS.IDEATION_DIR,
+        APERANT_PATHS.IDEATION_FILE
       );
 
       if (!existsSync(ideationPath)) {
@@ -390,7 +390,7 @@
 
         // Generate spec ID by finding next available number
         // Get specs directory path
-                const specsBaseDir = getSpecsDir(project.autoBuildPath);
+                const specsBaseDir = getSpecsDir(project.aperantPath);
         const specsDir = path.join(project.path, specsBaseDir);
 
         // Ensure specs directory exists
@@ -472,7 +472,7 @@
           spec_file: 'spec.md'
         };
         writeFileSync(
-          path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN),
+          path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN),
           JSON.stringify(initialPlan, null, 2)
         );
 
@@ -490,7 +490,7 @@ ${idea.rationale}
 ---
 *This spec was created from ideation and is pending detailed specification.*
 `;
-        writeFileSync(path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE), specContent);
+        writeFileSync(path.join(specDir, APERANT_PATHS.SPEC_FILE), specContent);
 
         // Update idea with converted status
         idea.status = 'converted';
@@ -631,7 +631,7 @@ ${idea.rationale}
       if (project) {
         const typeFile = path.join(
           project.path,
-          AUTO_BUILD_PATHS.IDEATION_DIR,
+          APERANT_PATHS.IDEATION_DIR,
           `${ideationType}_ideas.json`
         );
         if (existsSync(typeFile)) {
@@ -679,7 +679,7 @@ ${idea.rationale}
       const tasks = rendererTasks || projectStore.getTasks(projectId);
 
       // Get specs directory path
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const doneTasks = changelogService.getCompletedTasks(project.path, tasks, specsBaseDir);
 
       return { success: true, data: doneTasks };
@@ -697,7 +697,7 @@ ${idea.rationale}
       const tasks = projectStore.getTasks(projectId);
 
       // Get specs directory path
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const specs = await changelogService.loadTaskSpecs(project.path, taskIds, tasks, specsBaseDir);
 
       return { success: true, data: specs };
@@ -724,7 +724,7 @@ ${idea.rationale}
       let specs: import('../shared/types').TaskSpecContent[] = [];
       if (request.sourceMode === 'tasks' && request.taskIds && request.taskIds.length > 0) {
         const tasks = projectStore.getTasks(request.projectId);
-        const specsBaseDir = getSpecsDir(project.autoBuildPath);
+        const specsBaseDir = getSpecsDir(project.aperantPath);
         specs = await changelogService.loadTaskSpecs(project.path, request.taskIds, tasks, specsBaseDir);
       }
 
@@ -781,7 +781,7 @@ ${idea.rationale}
 
         // Load specs for selected tasks to analyze change types
         const tasks = projectStore.getTasks(projectId);
-                const specsBaseDir = getSpecsDir(project.autoBuildPath);
+                const specsBaseDir = getSpecsDir(project.aperantPath);
         const specs = await changelogService.loadTaskSpecs(project.path, taskIds, tasks, specsBaseDir);
 
         // Analyze specs and suggest version
@@ -957,11 +957,11 @@ ${idea.rationale}
 
       // Ensure Python environment is ready before sending message
       if (!pythonEnvManager.isEnvReady()) {
-        const autoBuildSource = getAutoBuildSourcePath();
-        if (autoBuildSource) {
-          const status = await pythonEnvManager.initialize(autoBuildSource);
+        const aperantSource = getAperantSourcePath();
+        if (aperantSource) {
+          const status = await pythonEnvManager.initialize(aperantSource);
           if (status.ready && status.pythonPath) {
-            configureServicesWithPython(status.pythonPath, autoBuildSource);
+            configureServicesWithPython(status.pythonPath, aperantSource);
           } else {
             const mainWindow = getMainWindow();
             if (mainWindow) {
@@ -1007,14 +1007,14 @@ ${idea.rationale}
         return { success: false, error: 'Project not found' };
       }
 
-      if (!project.autoBuildPath) {
-        return { success: false, error: 'Auto Claude not initialized for this project' };
+      if (!project.aperantPath) {
+        return { success: false, error: 'Aperant not initialized for this project' };
       }
 
       try {
         // Generate a unique spec ID based on existing specs
         // Get specs directory path
-                const specsBaseDir = getSpecsDir(project.autoBuildPath);
+                const specsBaseDir = getSpecsDir(project.aperantPath);
         const specsDir = path.join(project.path, specsBaseDir);
 
         // Find next available spec number
@@ -1065,7 +1065,7 @@ ${idea.rationale}
           phases: []
         };
 
-        const planPath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+        const planPath = path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN);
         writeFileSync(planPath, JSON.stringify(implementationPlan, null, 2));
 
         // Save task metadata

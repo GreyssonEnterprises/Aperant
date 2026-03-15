@@ -388,7 +388,7 @@ export async function createSpecForIssue(
     const safeProject = sanitizeText(config.project, 200);
     const safeInstanceUrl = sanitizeInstanceUrl(config.instanceUrl);
 
-    const specsDir = path.join(project.path, project.autoBuildPath, 'specs');
+    const specsDir = path.join(project.path, project.aperantPath, 'specs');
 
     // Ensure specs directory exists
     await mkdir(specsDir, { recursive: true });

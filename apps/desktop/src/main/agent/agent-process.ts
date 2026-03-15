@@ -102,7 +102,7 @@ export class AgentProcessManager {
   private state: AgentState;
   private events: AgentEvents;
   private emitter: EventEmitter;
-  private autoBuildSourcePath: string = '';
+  private aperantSourcePath: string = '';
 
   constructor(state: AgentState, events: AgentEvents, emitter: EventEmitter) {
     this.state = state;
@@ -110,14 +110,14 @@ export class AgentProcessManager {
     this.emitter = emitter;
   }
 
-  configure(_pythonPath?: string, autoBuildSourcePath?: string): void {
-    if (autoBuildSourcePath) {
-      this.autoBuildSourcePath = autoBuildSourcePath;
+  configure(_pythonPath?: string, aperantSourcePath?: string): void {
+    if (aperantSourcePath) {
+      this.aperantSourcePath = aperantSourcePath;
     }
   }
 
-  getAutoBuildSourcePath(): string {
-    return this.autoBuildSourcePath;
+  getAperantSourcePath(): string {
+    return this.aperantSourcePath;
   }
 
   /**
@@ -497,27 +497,27 @@ export class AgentProcessManager {
    * This contains frontend-configured settings like memory configuration
    */
   private loadProjectEnv(projectPath: string): Record<string, string> {
-    // Find project by path to get autoBuildPath
+    // Find project by path to get aperantPath
     const projects = projectStore.getProjects();
     const project = projects.find((p) => p.path === projectPath);
 
-    if (!project?.autoBuildPath) {
+    if (!project?.aperantPath) {
       return {};
     }
 
-    const envPath = path.join(projectPath, project.autoBuildPath, '.env');
+    const envPath = path.join(projectPath, project.aperantPath, '.env');
     return this.parseEnvFile(envPath);
   }
 
   /**
-   * Load environment variables from auto-claude .env file
+   * Load environment variables from aperant .env file
    */
-  loadAutoBuildEnv(): Record<string, string> {
-    if (!this.autoBuildSourcePath) {
+  loadAperantEnv(): Record<string, string> {
+    if (!this.aperantSourcePath) {
       return {};
     }
 
-    const envPath = path.join(this.autoBuildSourcePath, '.env');
+    const envPath = path.join(this.aperantSourcePath, '.env');
     return this.parseEnvFile(envPath);
   }
 
@@ -1040,9 +1040,9 @@ export class AgentProcessManager {
    * 4. Project settings (useClaudeMd) - Runtime overrides
    */
   getCombinedEnv(projectPath: string): Record<string, string> {
-    const autoBuildEnv = this.loadAutoBuildEnv();
+    const aperantEnv = this.loadAperantEnv();
     const projectFileEnv = this.loadProjectEnv(projectPath);
     const projectSettingsEnv = this.getProjectEnvVars(projectPath);
-    return { ...autoBuildEnv, ...projectFileEnv, ...projectSettingsEnv };
+    return { ...aperantEnv, ...projectFileEnv, ...projectSettingsEnv };
   }
 }

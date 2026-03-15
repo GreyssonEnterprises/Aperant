@@ -101,7 +101,7 @@ export function WelcomeScreen({
                         <span className="font-medium text-foreground truncate">
                           {project.name}
                         </span>
-                        {project.autoBuildPath && (
+                        {project.aperantPath && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-success/20 text-success shrink-0">
                             Initialized
                           </span>

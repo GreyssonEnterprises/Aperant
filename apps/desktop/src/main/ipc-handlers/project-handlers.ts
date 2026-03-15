@@ -7,7 +7,7 @@ import type {
   ProjectSettings,
   IPCResult,
   InitializationResult,
-  AutoBuildVersionInfo,
+  AperantVersionInfo,
   GitStatus,
   GitBranchDetail
 } from '../../shared/types';
@@ -277,7 +277,7 @@ export function registerProjectHandlers(
     IPC_CHANNELS.PROJECT_LIST,
     async (): Promise<IPCResult<Project[]>> => {
       // Validate that .aperant folders still exist for all projects
-      // If a folder was deleted, reset autoBuildPath so UI prompts for reinitialization
+      // If a folder was deleted, reset aperantPath so UI prompts for reinitialization
       const resetIds = projectStore.validateProjects();
       if (resetIds.length > 0) {
         console.warn('[IPC] PROJECT_LIST: Detected missing .aperant folders for', resetIds.length, 'project(s)');
@@ -312,7 +312,6 @@ export function registerProjectHandlers(
     IPC_CHANNELS.TAB_STATE_GET,
     async (): Promise<IPCResult<{ openProjectIds: string[]; activeProjectId: string | null; tabOrder: string[] }>> => {
       const tabState = projectStore.getTabState();
-      console.log('[IPC] TAB_STATE_GET returning:', tabState);
       return { success: true, data: tabState };
     }
   );
@@ -323,7 +322,6 @@ export function registerProjectHandlers(
       _,
       tabState: { openProjectIds: string[]; activeProjectId: string | null; tabOrder: string[] }
     ): Promise<IPCResult> => {
-      console.log('[IPC] TAB_STATE_SAVE called with:', tabState);
       projectStore.saveTabState(tabState);
       return { success: true };
     }
@@ -383,8 +381,8 @@ export function registerProjectHandlers(
         const result = initializeProject(project.path);
 
         if (result.success) {
-          // Update project's autoBuildPath
-          projectStore.updateAutoBuildPath(projectId, '.aperant');
+          // Update project's aperant path
+          projectStore.updateAperantPath(projectId, '.aperant');
         }
 
         return { success: result.success, data: result, error: result.error };
@@ -401,7 +399,7 @@ export function registerProjectHandlers(
   // Version tracking for .aperant is removed since it only contains data
   ipcMain.handle(
     IPC_CHANNELS.PROJECT_CHECK_VERSION,
-    async (_, projectId: string): Promise<IPCResult<AutoBuildVersionInfo>> => {
+    async (_, projectId: string): Promise<IPCResult<AperantVersionInfo>> => {
       try {
         const project = projectStore.getProject(projectId);
         if (!project) {
@@ -424,7 +422,7 @@ export function registerProjectHandlers(
     }
   );
 
-  // Check if project has local auto-claude source (is dev project)
+  // Check if project has local aperant source (is dev project)
   ipcMain.handle(
     'project:has-local-source',
     async (_, projectId: string): Promise<IPCResult<boolean>> => {
@@ -448,18 +446,39 @@ export function registerProjectHandlers(
   // ============================================
 
   // Check if project needs migration from .auto-claude to .aperant
-  ipcMain.handle(IPC_CHANNELS.PROJECT_NEEDS_MIGRATION, async (_, projectId: string) => {
-    const project = projectStore.getProject(projectId);
-    if (!project) return false;
-    return needsMigration(project.path);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.PROJECT_NEEDS_MIGRATION,
+    async (_, projectId: string): Promise<boolean> => {
+      try {
+        const project = projectStore.getProject(projectId);
+        if (!project) return false;
+        return needsMigration(project.path);
+      } catch {
+        return false;
+      }
+    }
+  );
 
   // Migrate project from .auto-claude to .aperant
-  ipcMain.handle(IPC_CHANNELS.PROJECT_MIGRATE, async (_, projectId: string) => {
-    const project = projectStore.getProject(projectId);
-    if (!project) return { success: false, error: 'Project not found' };
-    return migrateProject(project.path);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.PROJECT_MIGRATE,
+    async (_, projectId: string): Promise<IPCResult<InitializationResult>> => {
+      try {
+        const project = projectStore.getProject(projectId);
+        if (!project) return { success: false, error: 'Project not found' };
+        const result = migrateProject(project.path);
+        if (result.success) {
+          projectStore.updateAperantPath(projectId, '.aperant');
+        }
+        return { success: result.success, data: result, error: result.error };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    }
+  );
 
   // ============================================
   // Git Operations

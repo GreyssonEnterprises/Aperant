@@ -505,7 +505,7 @@ export class ReleaseService extends EventEmitter {
           message: 'Stashing current changes...'
         });
 
-        execFileSync(getToolPath('git'), ['stash', 'push', '-m', 'auto-claude-release-temp'], {
+        execFileSync(getToolPath('git'), ['stash', 'push', '-m', 'aperant-release-temp'], {
           cwd: projectPath,
           encoding: 'utf-8'
         });

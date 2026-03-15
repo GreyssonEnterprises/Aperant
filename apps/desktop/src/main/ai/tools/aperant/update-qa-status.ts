@@ -3,7 +3,7 @@
  * =====================
  *
  * Updates the QA sign-off status in implementation_plan.json.
- * See apps/desktop/src/main/ai/tools/auto-claude/update-qa-status.ts for the TypeScript implementation.
+ * See apps/desktop/src/main/ai/tools/aperant/update-qa-status.ts for the TypeScript implementation.
  *
  * Tool name: mcp__aperant__update_qa_status
  *

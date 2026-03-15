@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import type { Project, ProjectSettings as ProjectSettingsType, AutoBuildVersionInfo, ProjectEnvConfig, LinearSyncStatus, GitHubSyncStatus, GitLabSyncStatus } from '../../../../shared/types';
+import type { Project, ProjectSettings as ProjectSettingsType, AperantVersionInfo, ProjectEnvConfig, LinearSyncStatus, GitHubSyncStatus, GitLabSyncStatus } from '../../../../shared/types';
 import { SettingsSection } from '../SettingsSection';
 import { GeneralSettings } from '../../project-settings/GeneralSettings';
 import { SecuritySettings } from '../../project-settings/SecuritySettings';
@@ -14,7 +14,7 @@ interface SectionRouterProps {
   project: Project;
   settings: ProjectSettingsType;
   setSettings: React.Dispatch<React.SetStateAction<ProjectSettingsType>>;
-  versionInfo: AutoBuildVersionInfo | null;
+  versionInfo: AperantVersionInfo | null;
   isCheckingVersion: boolean;
   isUpdating: boolean;
   envConfig: ProjectEnvConfig | null;
@@ -79,7 +79,7 @@ export function SectionRouter({
       return (
         <SettingsSection
           title="General"
-          description={`Configure Auto-Build, agent model, and notifications for ${project.name}`}
+          description={`Configure Aperant, agent model, and notifications for ${project.name}`}
         >
           <GeneralSettings
             project={project}
@@ -100,7 +100,7 @@ export function SectionRouter({
           description={t('projectSections.linear.integrationDescription')}
         >
           <InitializationGuard
-            initialized={!!project.autoBuildPath}
+            initialized={!!project.aperantPath}
             title={t('projectSections.linear.integrationTitle')}
             description={t('projectSections.linear.syncDescription')}
           >
@@ -124,7 +124,7 @@ export function SectionRouter({
           description={t('projectSections.github.integrationDescription')}
         >
           <InitializationGuard
-            initialized={!!project.autoBuildPath}
+            initialized={!!project.aperantPath}
             title={t('projectSections.github.integrationTitle')}
             description={t('projectSections.github.syncDescription')}
           >
@@ -150,7 +150,7 @@ export function SectionRouter({
           description={t('projectSections.gitlab.integrationDescription')}
         >
           <InitializationGuard
-            initialized={!!project.autoBuildPath}
+            initialized={!!project.aperantPath}
             title={t('projectSections.gitlab.integrationTitle')}
             description={t('projectSections.gitlab.syncDescription')}
           >
@@ -176,7 +176,7 @@ export function SectionRouter({
           description={t('projectSections.memory.integrationDescription')}
         >
           <InitializationGuard
-            initialized={!!project.autoBuildPath}
+            initialized={!!project.aperantPath}
             title={t('projectSections.memory.integrationTitle')}
             description={t('projectSections.memory.syncDescription')}
           >

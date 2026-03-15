@@ -2,7 +2,7 @@ import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import path from 'path';
 import { existsSync, readFileSync } from 'fs';
-import { IPC_CHANNELS, AUTO_BUILD_PATHS } from '../../../shared/constants';
+import { IPC_CHANNELS, APERANT_PATHS } from '../../../shared/constants';
 import type {
   IPCResult,
   ProjectContextData,
@@ -47,7 +47,7 @@ function toRendererMemory(m: Memory): RendererMemory {
  * Load project index from file
  */
 function loadProjectIndex(projectPath: string): ProjectIndex | null {
-  const indexPath = path.join(projectPath, AUTO_BUILD_PATHS.PROJECT_INDEX);
+  const indexPath = path.join(projectPath, APERANT_PATHS.PROJECT_INDEX);
   if (!existsSync(indexPath)) {
     return null;
   }
@@ -137,7 +137,7 @@ export function registerProjectContextHandlers(
       }
 
       try {
-        const indexOutputPath = path.join(project.path, AUTO_BUILD_PATHS.PROJECT_INDEX);
+        const indexOutputPath = path.join(project.path, APERANT_PATHS.PROJECT_INDEX);
 
         // Run the TypeScript project indexer (replaces Python subprocess)
         const projectIndex = runProjectIndexer(project.path, indexOutputPath);

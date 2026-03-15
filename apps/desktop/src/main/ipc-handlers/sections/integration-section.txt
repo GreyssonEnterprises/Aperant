@@ -43,8 +43,8 @@
     if (config.claudeOAuthToken !== undefined) {
       existingVars['CLAUDE_CODE_OAUTH_TOKEN'] = config.claudeOAuthToken;
     }
-    if (config.autoBuildModel !== undefined) {
-      existingVars['AUTO_BUILD_MODEL'] = config.autoBuildModel;
+    if (config.aperantModel !== undefined) {
+      existingVars['APERANT_MODEL'] = config.aperantModel;
     }
     if (config.linearApiKey !== undefined) {
       existingVars['LINEAR_API_KEY'] = config.linearApiKey;
@@ -91,14 +91,14 @@
     }
 
     // Generate content with sections
-    let content = `# Auto Claude Framework Environment Variables
-# Managed by Auto Claude UI
+    let content = `# Aperant Framework Environment Variables
+# Managed by Aperant UI
 
 # Claude Code OAuth Token (REQUIRED)
 CLAUDE_CODE_OAUTH_TOKEN=${existingVars['CLAUDE_CODE_OAUTH_TOKEN'] || ''}
 
 # Model override (OPTIONAL)
-${existingVars['AUTO_BUILD_MODEL'] ? `AUTO_BUILD_MODEL=${existingVars['AUTO_BUILD_MODEL']}` : '# AUTO_BUILD_MODEL=claude-opus-4-6'}
+${existingVars['APERANT_MODEL'] ? `APERANT_MODEL=${existingVars['APERANT_MODEL']}` : '# APERANT_MODEL=claude-opus-4-6'}
 
 # =============================================================================
 # LINEAR INTEGRATION (OPTIONAL)
@@ -142,11 +142,11 @@ ${existingVars['GRAPHITI_DATABASE'] ? `GRAPHITI_DATABASE=${existingVars['GRAPHIT
         return { success: false, error: 'Project not found' };
       }
 
-      if (!project.autoBuildPath) {
+      if (!project.aperantPath) {
         return { success: false, error: 'Project not initialized' };
       }
 
-      const envPath = path.join(project.path, project.autoBuildPath, '.env');
+      const envPath = path.join(project.path, project.aperantPath, '.env');
 
       // Load global settings for fallbacks
       let globalSettings: AppSettings = { ...DEFAULT_APP_SETTINGS };
@@ -192,8 +192,8 @@ ${existingVars['GRAPHITI_DATABASE'] ? `GRAPHITI_DATABASE=${existingVars['GRAPHIT
         config.claudeTokenIsGlobal = true;
       }
 
-      if (vars['AUTO_BUILD_MODEL']) {
-        config.autoBuildModel = vars['AUTO_BUILD_MODEL'];
+      if (vars['APERANT_MODEL']) {
+        config.aperantModel = vars['APERANT_MODEL'];
       }
 
       if (vars['LINEAR_API_KEY']) {
@@ -264,11 +264,11 @@ ${existingVars['GRAPHITI_DATABASE'] ? `GRAPHITI_DATABASE=${existingVars['GRAPHIT
         return { success: false, error: 'Project not found' };
       }
 
-      if (!project.autoBuildPath) {
+      if (!project.aperantPath) {
         return { success: false, error: 'Project not initialized' };
       }
 
-      const envPath = path.join(project.path, project.autoBuildPath, '.env');
+      const envPath = path.join(project.path, project.aperantPath, '.env');
 
       try {
         // Read existing content if file exists
@@ -435,8 +435,8 @@ ${existingVars['GRAPHITI_DATABASE'] ? `GRAPHITI_DATABASE=${existingVars['GRAPHIT
    * Helper to get Linear API key from project env
    */
   const getLinearApiKey = (project: Project): string | null => {
-    if (!project.autoBuildPath) return null;
-    const envPath = path.join(project.path, project.autoBuildPath, '.env');
+    if (!project.aperantPath) return null;
+    const envPath = path.join(project.path, project.aperantPath, '.env');
     if (!existsSync(envPath)) return null;
 
     try {
@@ -824,7 +824,7 @@ ${existingVars['GRAPHITI_DATABASE'] ? `GRAPHITI_DATABASE=${existingVars['GRAPHIT
         const errors: string[] = [];
 
         // Set up specs directory
-                const specsBaseDir = getSpecsDir(project.autoBuildPath);
+                const specsBaseDir = getSpecsDir(project.aperantPath);
         const specsDir = path.join(project.path, specsBaseDir);
         if (!existsSync(specsDir)) {
           mkdirSync(specsDir, { recursive: true });
@@ -884,14 +884,14 @@ ${issue.description || 'No description provided.'}
               status: 'pending',
               phases: []
             };
-            writeFileSync(path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN), JSON.stringify(implementationPlan, null, 2));
+            writeFileSync(path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN), JSON.stringify(implementationPlan, null, 2));
 
             // Create requirements.json
             const requirements = {
               task_description: description,
               workflow_type: 'feature'
             };
-            writeFileSync(path.join(specDir, AUTO_BUILD_PATHS.REQUIREMENTS), JSON.stringify(requirements, null, 2));
+            writeFileSync(path.join(specDir, APERANT_PATHS.REQUIREMENTS), JSON.stringify(requirements, null, 2));
 
             // Build metadata
             const metadata: TaskMetadata = {
@@ -939,8 +939,8 @@ ${issue.description || 'No description provided.'}
    * Helper to get GitHub config from project env
    */
   const getGitHubConfig = (project: Project): { token: string; repo: string } | null => {
-    if (!project.autoBuildPath) return null;
-    const envPath = path.join(project.path, project.autoBuildPath, '.env');
+    if (!project.aperantPath) return null;
+    const envPath = path.join(project.path, project.aperantPath, '.env');
     if (!existsSync(envPath)) return null;
 
     try {
@@ -1333,7 +1333,7 @@ Please analyze this issue and provide:
 5. Acceptance criteria for resolving this issue`;
 
         // Create proper spec directory
-                const specsBaseDir = getSpecsDir(project.autoBuildPath);
+                const specsBaseDir = getSpecsDir(project.aperantPath);
         const specsDir = path.join(project.path, specsBaseDir);
         if (!existsSync(specsDir)) {
           mkdirSync(specsDir, { recursive: true });
@@ -1376,14 +1376,14 @@ Please analyze this issue and provide:
           status: 'pending',
           phases: []
         };
-        writeFileSync(path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN), JSON.stringify(implementationPlan, null, 2));
+        writeFileSync(path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN), JSON.stringify(implementationPlan, null, 2));
 
         // Create requirements.json
         const requirements = {
           task_description: taskDescription,
           workflow_type: 'feature'
         };
-        writeFileSync(path.join(specDir, AUTO_BUILD_PATHS.REQUIREMENTS), JSON.stringify(requirements, null, 2));
+        writeFileSync(path.join(specDir, APERANT_PATHS.REQUIREMENTS), JSON.stringify(requirements, null, 2));
 
         // Build metadata
         const metadata: TaskMetadata = {
@@ -1473,7 +1473,7 @@ Please analyze this issue and provide:
       const tasks: Task[] = [];
 
       // Set up specs directory
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const specsDir = path.join(project.path, specsBaseDir);
       if (!existsSync(specsDir)) {
         mkdirSync(specsDir, { recursive: true });
@@ -1540,14 +1540,14 @@ ${issue.body || 'No description provided.'}
             status: 'pending',
             phases: []
           };
-          writeFileSync(path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN), JSON.stringify(implementationPlan, null, 2));
+          writeFileSync(path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN), JSON.stringify(implementationPlan, null, 2));
 
           // Create requirements.json
           const requirements = {
             task_description: description,
             workflow_type: 'feature'
           };
-          writeFileSync(path.join(specDir, AUTO_BUILD_PATHS.REQUIREMENTS), JSON.stringify(requirements, null, 2));
+          writeFileSync(path.join(specDir, APERANT_PATHS.REQUIREMENTS), JSON.stringify(requirements, null, 2));
 
           // Build metadata
           const metadata: TaskMetadata = {

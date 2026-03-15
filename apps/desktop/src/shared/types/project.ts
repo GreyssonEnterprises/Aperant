@@ -6,7 +6,7 @@ export interface Project {
   id: string;
   name: string;
   path: string;
-  autoBuildPath: string;
+  aperantPath: string;
   settings: ProjectSettings;
   createdAt: Date;
   updatedAt: Date;
@@ -305,7 +305,7 @@ export interface ProjectContextData {
 // Environment Configuration for project .env files
 export interface ProjectEnvConfig {
   // Model Override
-  autoBuildModel?: string;
+  aperantModel?: string;
 
   // Linear Integration
   linearEnabled: boolean;
@@ -449,8 +449,8 @@ export interface McpTestConnectionResult {
   responseTime?: number;
 }
 
-// Auto Claude Initialization Types
-export interface AutoBuildVersionInfo {
+// Aperant Initialization Types
+export interface AperantVersionInfo {
   isInitialized: boolean;
   updateAvailable: boolean; // Always false - .aperant only contains data, no code to update
 }

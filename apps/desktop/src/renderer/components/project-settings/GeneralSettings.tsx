@@ -21,14 +21,14 @@ import { AVAILABLE_MODELS } from '../../../shared/constants';
 import type {
   Project,
   ProjectSettings as ProjectSettingsType,
-  AutoBuildVersionInfo
+  AperantVersionInfo
 } from '../../../shared/types';
 
 interface GeneralSettingsProps {
   project: Project;
   settings: ProjectSettingsType;
   setSettings: React.Dispatch<React.SetStateAction<ProjectSettingsType>>;
-  versionInfo: AutoBuildVersionInfo | null;
+  versionInfo: AperantVersionInfo | null;
   isCheckingVersion: boolean;
   isUpdating: boolean;
   handleInitialize: () => Promise<void>;
@@ -47,17 +47,17 @@ export function GeneralSettings({
 
   return (
     <>
-      {/* Auto-Build Integration */}
+      {/* Aperant Integration */}
       <section className="space-y-4">
-        <h3 className="text-sm font-semibold text-foreground">Auto-Build Integration</h3>
-        {!project.autoBuildPath ? (
+        <h3 className="text-sm font-semibold text-foreground">Aperant Integration</h3>
+        {!project.aperantPath ? (
           <div className="rounded-lg border border-border bg-muted/50 p-4">
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-warning mt-0.5 shrink-0" />
               <div className="flex-1">
                 <p className="text-sm font-medium text-foreground">Not Initialized</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Initialize Auto-Build to enable task creation and agent workflows.
+                  Initialize Aperant to enable task creation and agent workflows.
                 </p>
                 <Button
                   size="sm"
@@ -73,7 +73,7 @@ export function GeneralSettings({
                   ) : (
                     <>
                       <Download className="mr-2 h-4 w-4" />
-                      Initialize Auto-Build
+                      Initialize Aperant
                     </>
                   )}
                 </Button>
@@ -88,7 +88,7 @@ export function GeneralSettings({
                 <span className="text-sm font-medium text-foreground">Initialized</span>
               </div>
               <code className="text-xs bg-background px-2 py-1 rounded">
-                {project.autoBuildPath}
+                {project.aperantPath}
               </code>
             </div>
             {isCheckingVersion ? (
@@ -105,7 +105,7 @@ export function GeneralSettings({
         )}
       </section>
 
-      {project.autoBuildPath && (
+      {project.aperantPath && (
         <>
           <Separator />
 

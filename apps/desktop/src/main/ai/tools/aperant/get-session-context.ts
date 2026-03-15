@@ -7,7 +7,7 @@
  *   - memory/gotchas.md         → gotchas & pitfalls
  *   - memory/patterns.md        → code patterns
  *
- * See apps/desktop/src/main/ai/tools/auto-claude/get-session-context.ts for the TypeScript implementation.
+ * See apps/desktop/src/main/ai/tools/aperant/get-session-context.ts for the TypeScript implementation.
  *
  * Tool name: mcp__aperant__get_session_context
  */

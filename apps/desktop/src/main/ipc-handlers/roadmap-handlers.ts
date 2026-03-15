@@ -2,7 +2,7 @@ import { ipcMain } from "electron";
 import type { BrowserWindow } from "electron";
 import {
   IPC_CHANNELS,
-  AUTO_BUILD_PATHS,
+  APERANT_PATHS,
   getSpecsDir,
 } from "../../shared/constants";
 import type {
@@ -54,8 +54,8 @@ export function registerRoadmapHandlers(
 
       const roadmapPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.ROADMAP_DIR,
-        AUTO_BUILD_PATHS.ROADMAP_FILE
+        APERANT_PATHS.ROADMAP_DIR,
+        APERANT_PATHS.ROADMAP_FILE
       );
 
       if (!existsSync(roadmapPath)) {
@@ -69,8 +69,8 @@ export function registerRoadmapHandlers(
         // Load competitor analysis if available (competitor_analysis.json)
         const competitorAnalysisPath = path.join(
           project.path,
-          AUTO_BUILD_PATHS.ROADMAP_DIR,
-          AUTO_BUILD_PATHS.COMPETITOR_ANALYSIS
+          APERANT_PATHS.ROADMAP_DIR,
+          APERANT_PATHS.COMPETITOR_ANALYSIS
         );
         let competitorAnalysis: CompetitorAnalysis | undefined;
         if (existsSync(competitorAnalysisPath)) {
@@ -351,8 +351,8 @@ export function registerRoadmapHandlers(
 
       const roadmapPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.ROADMAP_DIR,
-        AUTO_BUILD_PATHS.ROADMAP_FILE
+        APERANT_PATHS.ROADMAP_DIR,
+        APERANT_PATHS.ROADMAP_FILE
       );
 
       try {
@@ -420,8 +420,8 @@ export function registerRoadmapHandlers(
 
       const roadmapPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.ROADMAP_DIR,
-        AUTO_BUILD_PATHS.ROADMAP_FILE
+        APERANT_PATHS.ROADMAP_DIR,
+        APERANT_PATHS.ROADMAP_FILE
       );
 
       try {
@@ -474,8 +474,8 @@ export function registerRoadmapHandlers(
 
       const roadmapPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.ROADMAP_DIR,
-        AUTO_BUILD_PATHS.ROADMAP_FILE
+        APERANT_PATHS.ROADMAP_DIR,
+        APERANT_PATHS.ROADMAP_FILE
       );
 
       try {
@@ -513,7 +513,7 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join("\n"
 `;
 
         // Generate proper spec directory (like task creation)
-        const specsBaseDir = getSpecsDir(project.autoBuildPath);
+        const specsBaseDir = getSpecsDir(project.aperantPath);
         const specsDir = path.join(project.path, specsBaseDir);
 
         // Ensure specs directory exists
@@ -561,7 +561,7 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join("\n"
           phases: [],
         };
         await writeFileWithRetry(
-          path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN),
+          path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN),
           JSON.stringify(implementationPlan, null, 2),
           { encoding: 'utf-8' }
         );
@@ -572,13 +572,13 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join("\n"
           workflow_type: "feature",
         };
         await writeFileWithRetry(
-          path.join(specDir, AUTO_BUILD_PATHS.REQUIREMENTS),
+          path.join(specDir, APERANT_PATHS.REQUIREMENTS),
           JSON.stringify(requirements, null, 2),
           { encoding: 'utf-8' }
         );
 
         // Create spec.md (required by backend spec creation process)
-        await writeFileWithRetry(path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE), taskDescription, { encoding: 'utf-8' });
+        await writeFileWithRetry(path.join(specDir, APERANT_PATHS.SPEC_FILE), taskDescription, { encoding: 'utf-8' });
 
         // Build metadata
         const metadata: TaskMetadata = {
@@ -644,8 +644,8 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join("\n"
         return { success: false, error: "Project not found" };
       }
 
-      const roadmapDir = path.join(project.path, AUTO_BUILD_PATHS.ROADMAP_DIR);
-      const progressPath = path.join(roadmapDir, AUTO_BUILD_PATHS.GENERATION_PROGRESS);
+      const roadmapDir = path.join(project.path, APERANT_PATHS.ROADMAP_DIR);
+      const progressPath = path.join(roadmapDir, APERANT_PATHS.GENERATION_PROGRESS);
 
       try {
         // Ensure roadmap directory exists
@@ -693,8 +693,8 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join("\n"
 
       const progressPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.ROADMAP_DIR,
-        AUTO_BUILD_PATHS.GENERATION_PROGRESS
+        APERANT_PATHS.ROADMAP_DIR,
+        APERANT_PATHS.GENERATION_PROGRESS
       );
 
       if (!existsSync(progressPath)) {
@@ -746,8 +746,8 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join("\n"
 
       const progressPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.ROADMAP_DIR,
-        AUTO_BUILD_PATHS.GENERATION_PROGRESS
+        APERANT_PATHS.ROADMAP_DIR,
+        APERANT_PATHS.GENERATION_PROGRESS
       );
 
       try {
@@ -782,10 +782,10 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join("\n"
         return { success: false, error: "Project not found" };
       }
 
-      const roadmapDir = path.join(project.path, AUTO_BUILD_PATHS.ROADMAP_DIR);
+      const roadmapDir = path.join(project.path, APERANT_PATHS.ROADMAP_DIR);
       const competitorAnalysisPath = path.join(
         roadmapDir,
-        AUTO_BUILD_PATHS.COMPETITOR_ANALYSIS
+        APERANT_PATHS.COMPETITOR_ANALYSIS
       );
 
       try {
@@ -863,7 +863,7 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join("\n"
         if (manualCompetitors.length > 0) {
           const manualCompetitorsPath = path.join(
             roadmapDir,
-            AUTO_BUILD_PATHS.MANUAL_COMPETITORS
+            APERANT_PATHS.MANUAL_COMPETITORS
           );
           const manualSerialized = {
             competitors: manualCompetitors.map((c) => ({

@@ -22,7 +22,7 @@ This directory contains the refactored components from the original 1,445-line `
 project-settings/
 ├── README.md                         # This file
 ├── index.ts                          # Barrel export for all components
-├── AutoBuildIntegration.tsx          # Auto-Build setup and status
+├── AperantIntegration.tsx          # Aperant setup and status
 ├── LinearIntegrationSection.tsx      # Linear project management integration
 ├── GitHubIntegrationSection.tsx      # GitHub issues integration
 ├── MemoryBackendSection.tsx          # Graphiti/file-based memory configuration
@@ -48,19 +48,19 @@ hooks/
 
 ### Section Components (Feature-Specific)
 
-#### AutoBuildIntegration.tsx
-**Purpose**: Manages Auto-Build framework initialization and status.
+#### AperantIntegration.tsx
+**Purpose**: Manages Aperant framework initialization and status.
 **Props**:
-- `autoBuildPath`: Current Auto-Build path
+- `aperantPath`: Current Aperant path
 - `versionInfo`: Version and initialization status
 - `isCheckingVersion`: Loading state
 - `isUpdating`: Update in progress state
-- `onInitialize`: Initialize Auto-Build handler
-- `onUpdate`: Update Auto-Build handler
+- `onInitialize`: Initialize Aperant handler
+- `onUpdate`: Update Aperant handler
 
 **Responsibilities**:
 - Display initialization status
-- Show Auto-Build version information
+- Show Aperant version information
 - Handle initialization and updates
 
 #### LinearIntegrationSection.tsx
@@ -198,7 +198,7 @@ hooks/
 **Returns**:
 - `settings`: Current project settings
 - `setSettings`: Settings updater
-- `versionInfo`: Auto-Build version info
+- `versionInfo`: Aperant version info
 - `setVersionInfo`: Version info updater
 - `isCheckingVersion`: Loading state
 

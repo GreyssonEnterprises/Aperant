@@ -1,5 +1,5 @@
 /**
- * Path resolution utilities for Auto Claude updater
+ * Path resolution utilities for Aperant updater
  */
 
 import { existsSync, readFileSync } from 'fs';
@@ -48,27 +48,27 @@ export function getBundledSourcePath(): string {
  * Get the path for storing downloaded updates
  */
 export function getUpdateCachePath(): string {
-  return path.join(app.getPath('userData'), 'auto-claude-updates');
+  return path.join(app.getPath('userData'), 'aperant-updates');
 }
 
 /**
  * Get the effective source path (considers override from updates and settings)
  */
 export function getEffectiveSourcePath(): string {
-  // First, check user settings for configured autoBuildPath
+  // First, check user settings for configured aperantPath
   try {
     const settingsPath = path.join(app.getPath('userData'), 'settings.json');
     if (existsSync(settingsPath)) {
       const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
-      if (settings.autoBuildPath && existsSync(settings.autoBuildPath)) {
+      if (settings.aperantPath && existsSync(settings.aperantPath)) {
         // Validate it's a proper prompts source (must have planner.md)
-        const markerPath = path.join(settings.autoBuildPath, 'planner.md');
+        const markerPath = path.join(settings.aperantPath, 'planner.md');
         if (existsSync(markerPath)) {
-          return settings.autoBuildPath;
+          return settings.aperantPath;
         }
         // Invalid path - log warning and fall through to auto-detection
         console.warn(
-          `[path-resolver] Configured autoBuildPath "${settings.autoBuildPath}" is missing planner.md, falling back to bundled source`
+          `[path-resolver] Configured aperantPath "${settings.aperantPath}" is missing planner.md, falling back to bundled source`
         );
       }
     }

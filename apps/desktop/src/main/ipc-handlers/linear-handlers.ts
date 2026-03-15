@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
-import { IPC_CHANNELS, getSpecsDir, AUTO_BUILD_PATHS } from '../../shared/constants';
+import { IPC_CHANNELS, getSpecsDir, APERANT_PATHS } from '../../shared/constants';
 import type { IPCResult, LinearIssue, LinearTeam, LinearProject, LinearImportResult, LinearSyncStatus, Project, TaskMetadata } from '../../shared/types';
 import path from 'path';
 import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from 'fs';
@@ -26,8 +26,8 @@ export function registerLinearHandlers(
    * Helper to get Linear API key from project env
    */
   const getLinearApiKey = (project: Project): string | null => {
-    if (!project.autoBuildPath) return null;
-    const envPath = path.join(project.path, project.autoBuildPath, '.env');
+    if (!project.aperantPath) return null;
+    const envPath = path.join(project.path, project.aperantPath, '.env');
     if (!existsSync(envPath)) return null;
 
     try {
@@ -438,7 +438,7 @@ export function registerLinearHandlers(
         const errors: string[] = [];
 
         // Set up specs directory
-                const specsBaseDir = getSpecsDir(project.autoBuildPath);
+                const specsBaseDir = getSpecsDir(project.aperantPath);
         const specsDir = path.join(project.path, specsBaseDir);
         if (!existsSync(specsDir)) {
           mkdirSync(specsDir, { recursive: true });
@@ -508,7 +508,7 @@ ${safeDescription || 'No description provided.'}
               phases: []
             };
             // lgtm[js/http-to-file-access] - specDir is controlled, Linear data sanitized
-            writeFileSync(path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN), JSON.stringify(implementationPlan, null, 2), 'utf-8');
+            writeFileSync(path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN), JSON.stringify(implementationPlan, null, 2), 'utf-8');
 
             // Create requirements.json
             const requirements = {
@@ -516,7 +516,7 @@ ${safeDescription || 'No description provided.'}
               workflow_type: 'feature'
             };
             // lgtm[js/http-to-file-access] - specDir is controlled, Linear data sanitized
-            writeFileSync(path.join(specDir, AUTO_BUILD_PATHS.REQUIREMENTS), JSON.stringify(requirements, null, 2), 'utf-8');
+            writeFileSync(path.join(specDir, APERANT_PATHS.REQUIREMENTS), JSON.stringify(requirements, null, 2), 'utf-8');
 
             // Build metadata
             const metadata: TaskMetadata = {

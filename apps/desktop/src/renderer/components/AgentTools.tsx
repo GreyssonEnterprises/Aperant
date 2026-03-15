@@ -666,7 +666,7 @@ export function AgentTools() {
 
   // Load project env config when project changes
   useEffect(() => {
-    if (selectedProjectId && selectedProject?.autoBuildPath) {
+    if (selectedProjectId && selectedProject?.aperantPath) {
       setIsLoading(true);
       window.electronAPI.getProjectEnv(selectedProjectId)
         .then((result) => {
@@ -685,7 +685,7 @@ export function AgentTools() {
     } else {
       setEnvConfig(null);
     }
-  }, [selectedProjectId, selectedProject?.autoBuildPath]);
+  }, [selectedProjectId, selectedProject?.aperantPath]);
 
   // Update MCP server toggle
   const updateMcpServer = useCallback(async (
@@ -986,7 +986,7 @@ export function AgentTools() {
     mcpServers.linearMcpEnabled !== false && envConfig?.linearEnabled,
     mcpServers.electronEnabled,
     mcpServers.puppeteerEnabled,
-    true, // auto-claude always enabled
+    true, // aperant always enabled
   ].filter(Boolean).length;
 
   // Resolve model and thinking for an agent based on its settings source
@@ -1067,7 +1067,7 @@ export function AgentTools() {
           )}
 
           {/* Project not initialized message */}
-          {selectedProject && !selectedProject.autoBuildPath && (
+          {selectedProject && !selectedProject.aperantPath && (
             <div className="rounded-lg border border-border bg-card p-6 text-center">
               <Info className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
               <h2 className="text-sm font-medium text-foreground mb-1">{t('settings:mcp.projectNotInitialized')}</h2>

@@ -1042,7 +1042,7 @@ async function listTerminalWorktrees(projectPath: string): Promise<TerminalWorkt
 }
 
 /**
- * List "other" worktrees - worktrees not managed by Auto Claude
+ * List "other" worktrees - worktrees not managed by Aperant
  * These are discovered via `git worktree list` excluding:
  * - Main worktree (project root)
  * - .aperant/worktrees/terminal/*

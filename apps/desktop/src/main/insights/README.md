@@ -18,9 +18,9 @@ insights-service.ts (186 lines)
 ## Module Responsibilities
 
 ### InsightsConfig (`config.ts`)
-- Manages Python and auto-claude source path configuration
-- Detects auto-claude installation automatically
-- Loads environment variables from auto-claude .env file
+- Manages Python and aperant source path configuration
+- Detects aperant installation automatically
+- Loads environment variables from aperant .env file
 - Provides complete process environment with profile support
 
 ### InsightsPaths (`paths.ts`)
@@ -58,7 +58,7 @@ import { InsightsService } from './insights-service';
 const service = new InsightsService();
 
 // Configure paths
-service.configure(pythonPath, autoBuildSourcePath);
+service.configure(pythonPath, aperantSourcePath);
 
 // Load session
 const session = service.loadSession(projectId, projectPath);

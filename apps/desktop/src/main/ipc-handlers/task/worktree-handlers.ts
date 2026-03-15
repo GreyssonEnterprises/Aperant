@@ -1,5 +1,5 @@
 import { ipcMain, BrowserWindow, shell, app } from 'electron';
-import { IPC_CHANNELS, AUTO_BUILD_PATHS, DEFAULT_APP_SETTINGS, DEFAULT_FEATURE_MODELS, DEFAULT_FEATURE_THINKING, MODEL_ID_MAP, THINKING_BUDGET_MAP, getSpecsDir } from '../../../shared/constants';
+import { IPC_CHANNELS, APERANT_PATHS, DEFAULT_APP_SETTINGS, DEFAULT_FEATURE_MODELS, DEFAULT_FEATURE_THINKING, MODEL_ID_MAP, THINKING_BUDGET_MAP, getSpecsDir } from '../../../shared/constants';
 import type { IPCResult, WorktreeStatus, WorktreeDiff, WorktreeDiffFile, WorktreeMergeResult, WorktreeDiscardResult, WorktreeListResult, WorktreeListItem, WorktreeCreatePROptions, WorktreeCreatePRResult, SupportedIDE, SupportedTerminal, SupportedCLI, AppSettings } from '../../../shared/types';
 import path from 'path';
 import { minimatch } from 'minimatch';
@@ -1603,7 +1603,7 @@ async function updateTaskStatusAfterPRCreation(
   specDir: string,
   worktreePath: string | null,
   prUrl: string,
-  autoBuildPath: string | undefined,
+  aperantPath: string | undefined,
   specId: string,
   debug: (...args: unknown[]) => void
 ): Promise<TaskStatusUpdateResult> {
@@ -1614,7 +1614,7 @@ async function updateTaskStatusAfterPRCreation(
     worktreeMetadata: false
   };
 
-  const planPath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+  const planPath = path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN);
   const metadataPath = path.join(specDir, 'task_metadata.json');
 
   // Await status persistence to ensure completion before resolving
@@ -1633,8 +1633,8 @@ async function updateTaskStatusAfterPRCreation(
   // Also persist to WORKTREE location (worktree takes priority when loading tasks)
   // This ensures the status persists after refresh since getTasks() prefers worktree version
   if (worktreePath) {
-    const specsBaseDir = getSpecsDir(autoBuildPath);
-    const worktreePlanPath = path.join(worktreePath, specsBaseDir, specId, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+    const specsBaseDir = getSpecsDir(aperantPath);
+    const worktreePlanPath = path.join(worktreePath, specsBaseDir, specId, APERANT_PATHS.IMPLEMENTATION_PLAN);
     const worktreeMetadataPath = path.join(worktreePath, specsBaseDir, specId, 'task_metadata.json');
 
     try {
@@ -1987,7 +1987,7 @@ export function registerWorktreeHandlers(
 
         debug('Found task:', task.specId, 'project:', project.path);
 
-        const specDir = path.join(project.path, project.autoBuildPath || '.aperant', 'specs', task.specId);
+        const specDir = path.join(project.path, project.aperantPath || '.aperant', 'specs', task.specId);
         const worktreePath = findTaskWorktree(project.path, task.specId);
 
         // Auto-fix any misconfigured bare repo before merge operation
@@ -2031,7 +2031,7 @@ export function registerWorktreeHandlers(
         const aiResolverFn = createMergeResolverFn(modelShorthand, 'low');
 
         // Create the merge orchestrator
-        const storageDir = path.join(project.path, project.autoBuildPath || '.aperant');
+        const storageDir = path.join(project.path, project.aperantPath || '.aperant');
         const orchestrator = new MergeOrchestrator({
           projectDir: project.path,
           storageDir,
@@ -2265,12 +2265,12 @@ export function registerWorktreeHandlers(
               // OPTIMIZATION: Use async I/O and parallel updates to prevent UI blocking
               // NOTE: The worktree has the same directory structure as main project
               const planPaths: { path: string; isMain: boolean }[] = [
-                { path: path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN), isMain: true },
+                { path: path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN), isMain: true },
               ];
               // Add worktree plan path if worktree exists
               if (worktreePath) {
-                const worktreeSpecDir = path.join(worktreePath, project.autoBuildPath || '.aperant', 'specs', task.specId);
-                planPaths.push({ path: path.join(worktreeSpecDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN), isMain: false });
+                const worktreeSpecDir = path.join(worktreePath, project.aperantPath || '.aperant', 'specs', task.specId);
+                planPaths.push({ path: path.join(worktreeSpecDir, APERANT_PATHS.IMPLEMENTATION_PLAN), isMain: false });
               }
 
               const { promises: fsPromises } = require('fs');
@@ -2433,7 +2433,7 @@ export function registerWorktreeHandlers(
         // 1. Task metadata baseBranch (explicit task-level override)
         // 2. Project settings mainBranch (project-level default)
         // 3. Default to 'main'
-        const specDir = path.join(project.path, project.autoBuildPath || '.aperant', 'specs', task.specId);
+        const specDir = path.join(project.path, project.aperantPath || '.aperant', 'specs', task.specId);
         const taskBaseBranch = getTaskBaseBranch(specDir);
         const projectMainBranch = project.settings?.mainBranch;
         const effectiveBaseBranch = taskBaseBranch || projectMainBranch || 'main';
@@ -2442,7 +2442,7 @@ export function registerWorktreeHandlers(
 
         // Run preview using the TypeScript MergeOrchestrator in dry-run mode
         // (no AI resolver needed for preview — only conflict detection and analysis)
-        const storageDir = path.join(project.path, project.autoBuildPath || '.aperant');
+        const storageDir = path.join(project.path, project.aperantPath || '.aperant');
         const orchestrator = new MergeOrchestrator({
           projectDir: project.path,
           storageDir,
@@ -2909,9 +2909,9 @@ export function registerWorktreeHandlers(
           return { success: false, error: 'Task not found' };
         }
 
-        const specsBaseDir = getSpecsDir(project.autoBuildPath);
+        const specsBaseDir = getSpecsDir(project.aperantPath);
         const specDir = path.join(project.path, specsBaseDir, task.specId);
-        const planPath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+        const planPath = path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN);
 
         // Use EAFP pattern (try/catch) instead of LBYL (existsSync check) to avoid TOCTOU race conditions
         const { promises: fsPromises } = require('fs');
@@ -2941,7 +2941,7 @@ export function registerWorktreeHandlers(
         // Also update worktree plan if it exists
         const worktreePath = findTaskWorktree(project.path, task.specId);
         if (worktreePath) {
-          const worktreePlanPath = path.join(worktreePath, specsBaseDir, task.specId, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+          const worktreePlanPath = path.join(worktreePath, specsBaseDir, task.specId, APERANT_PATHS.IMPLEMENTATION_PLAN);
           try {
             const worktreePlanContent = await fsPromises.readFile(worktreePlanPath, 'utf-8');
             const worktreePlan = JSON.parse(worktreePlanContent);
@@ -2997,7 +2997,7 @@ export function registerWorktreeHandlers(
 
         debug('Found task:', task.specId, 'project:', project.path);
 
-        const specDir = path.join(project.path, project.autoBuildPath || '.aperant', 'specs', task.specId);
+        const specDir = path.join(project.path, project.aperantPath || '.aperant', 'specs', task.specId);
 
         // Use EAFP pattern - try to read specDir and catch ENOENT
         try {
@@ -3035,7 +3035,7 @@ export function registerWorktreeHandlers(
         const taskBaseBranch = getTaskBaseBranch(specDir);
         const baseBranch = options?.targetBranch || taskBaseBranch || 'main';
         const branchName = `aperant/${task.specId}`;
-        const prTitle = options?.title || `auto-claude: ${task.specId}`;
+        const prTitle = options?.title || `aperant: ${task.specId}`;
 
         if (taskBaseBranch) {
           debug('Using stored base branch:', taskBaseBranch);
@@ -3068,14 +3068,14 @@ export function registerWorktreeHandlers(
             specDir,
             worktreePath,
             result.prUrl,
-            project.autoBuildPath,
+            project.aperantPath,
             task.specId,
             debug
           );
 
           // Update linked roadmap feature
           if (project.path && task.specId) {
-            const roadmapFile = path.join(project.path, AUTO_BUILD_PATHS.ROADMAP_DIR, AUTO_BUILD_PATHS.ROADMAP_FILE);
+            const roadmapFile = path.join(project.path, APERANT_PATHS.ROADMAP_DIR, APERANT_PATHS.ROADMAP_FILE);
             updateRoadmapFeatureOutcome(roadmapFile, [task.specId], 'completed', '[PR_CREATE]').catch((err) => {
               debug('Failed to update roadmap feature after PR creation:', err);
             });

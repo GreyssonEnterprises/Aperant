@@ -48,8 +48,8 @@ export function registerEnvHandlers(
     const existingVars = existingContent ? parseEnvFile(existingContent) : {};
 
     // Update with new values
-    if (config.autoBuildModel !== undefined) {
-      existingVars['AUTO_BUILD_MODEL'] = config.autoBuildModel;
+    if (config.aperantModel !== undefined) {
+      existingVars['APERANT_MODEL'] = config.aperantModel;
     }
     if (config.linearApiKey !== undefined) {
       existingVars['LINEAR_API_KEY'] = config.linearApiKey;
@@ -183,11 +183,11 @@ export function registerEnvHandlers(
     }
 
     // Generate content with sections
-    const content = `# Auto Claude Framework Environment Variables
-# Managed by Auto Claude UI
+    const content = `# Aperant Framework Environment Variables
+# Managed by Aperant UI
 
 # Model override (OPTIONAL)
-${existingVars['AUTO_BUILD_MODEL'] ? `AUTO_BUILD_MODEL=${existingVars['AUTO_BUILD_MODEL']}` : '# AUTO_BUILD_MODEL=claude-opus-4-6'}
+${existingVars['APERANT_MODEL'] ? `APERANT_MODEL=${existingVars['APERANT_MODEL']}` : '# APERANT_MODEL=claude-opus-4-6'}
 
 # =============================================================================
 # LINEAR INTEGRATION (OPTIONAL)
@@ -217,7 +217,7 @@ ${envLine(existingVars, GITLAB_ENV_KEYS.AUTO_SYNC, 'false')}
 # GIT/WORKTREE SETTINGS (OPTIONAL)
 # =============================================================================
 # Default base branch for worktree creation
-# If not set, Auto Claude will auto-detect main/master, or fall back to current branch
+# If not set, Aperant will auto-detect main/master, or fall back to current branch
 ${existingVars['DEFAULT_BRANCH'] ? `DEFAULT_BRANCH=${existingVars['DEFAULT_BRANCH']}` : '# DEFAULT_BRANCH=main'}
 
 # =============================================================================
@@ -302,11 +302,11 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
         return { success: false, error: 'Project not found' };
       }
 
-      if (!project.autoBuildPath) {
+      if (!project.aperantPath) {
         return { success: false, error: 'Project not initialized' };
       }
 
-      const envPath = path.join(project.path, project.autoBuildPath, '.env');
+      const envPath = path.join(project.path, project.aperantPath, '.env');
 
       // Load global settings for fallbacks
       let globalSettings: AppSettings = { ...DEFAULT_APP_SETTINGS };
@@ -340,8 +340,8 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
         }
       }
 
-      if (vars['AUTO_BUILD_MODEL']) {
-        config.autoBuildModel = vars['AUTO_BUILD_MODEL'];
+      if (vars['APERANT_MODEL']) {
+        config.aperantModel = vars['APERANT_MODEL'];
       }
 
       if (vars['LINEAR_API_KEY']) {
@@ -494,11 +494,11 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
         return { success: false, error: 'Project not found' };
       }
 
-      if (!project.autoBuildPath) {
+      if (!project.aperantPath) {
         return { success: false, error: 'Project not initialized' };
       }
 
-      const envPath = path.join(project.path, project.autoBuildPath, '.env');
+      const envPath = path.join(project.path, project.aperantPath, '.env');
 
       try {
         // Read existing content if file exists (atomic read, no TOCTOU)

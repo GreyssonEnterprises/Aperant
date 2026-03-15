@@ -197,8 +197,8 @@ export async function getGitHubTokenForSubprocess(): Promise<string | null> {
  * Falls back to gh CLI token if GITHUB_TOKEN not in .env
  */
 export function getGitHubConfig(project: Project): GitHubConfig | null {
-  if (!project.autoBuildPath) return null;
-  const envPath = path.join(project.path, project.autoBuildPath, '.env');
+  if (!project.aperantPath) return null;
+  const envPath = path.join(project.path, project.aperantPath, '.env');
   if (!existsSync(envPath)) return null;
 
   try {

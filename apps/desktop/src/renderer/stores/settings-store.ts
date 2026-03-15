@@ -445,11 +445,11 @@ async function migrateOnboardingCompleted(settings: AppSettings): Promise<AppSet
 
   // Check for signs of an existing user:
   // - Has provider accounts configured (Vercel AI SDK migration)
-  // - Has the auto-build source path configured
+  // - Has the aperant source path configured
   const hasProviderAccounts = useSettingsStore.getState().providerAccounts.length > 0;
-  const hasAutoBuildPath = Boolean(settings.autoBuildPath);
+  const hasAperantPath = Boolean(settings.aperantPath);
 
-  const isExistingUser = hasProviderAccounts || hasAutoBuildPath;
+  const isExistingUser = hasProviderAccounts || hasAperantPath;
 
   if (isExistingUser) {
     // Mark onboarding as completed for existing users

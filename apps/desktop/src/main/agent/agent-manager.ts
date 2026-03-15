@@ -15,7 +15,7 @@ import {
 } from './types';
 import type { IdeationConfig } from '../../shared/types';
 import { resetStuckSubtasks } from '../ipc-handlers/task/plan-file-utils';
-import { AUTO_BUILD_PATHS, getSpecsDir } from '../../shared/constants';
+import { APERANT_PATHS, getSpecsDir } from '../../shared/constants';
 import { projectStore } from '../project-store';
 import { resolveAuth, resolveAuthFromQueue } from '../ai/auth/resolver';
 import { resolveModelId } from '../ai/config/phase-config';
@@ -112,10 +112,10 @@ export class AgentManager extends EventEmitter {
   }
 
   /**
-   * Configure paths for Python and auto-claude source
+   * Configure paths for Python and aperant source
    */
-  configure(pythonPath?: string, autoBuildSourcePath?: string): void {
-    this.processManager.configure(pythonPath, autoBuildSourcePath);
+  configure(pythonPath?: string, aperantSourcePath?: string): void {
+    this.processManager.configure(pythonPath, aperantSourcePath);
   }
 
   /**
@@ -216,11 +216,11 @@ export class AgentManager extends EventEmitter {
 
       // Scan each project for stuck subtasks
       for (const project of projects) {
-        if (!project.autoBuildPath) {
+        if (!project.aperantPath) {
           continue; // Skip projects that haven't been initialized yet
         }
 
-        const specsDir = path.join(project.path, getSpecsDir(project.autoBuildPath));
+        const specsDir = path.join(project.path, getSpecsDir(project.aperantPath));
 
         // Check if specs directory exists
         if (!existsSync(specsDir)) {
@@ -235,7 +235,7 @@ export class AgentManager extends EventEmitter {
 
           // Process each spec directory
           for (const specDirName of specDirs) {
-            const planPath = path.join(specsDir, specDirName, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+            const planPath = path.join(specsDir, specDirName, APERANT_PATHS.IMPLEMENTATION_PLAN);
 
             // Check if implementation_plan.json exists
             if (!existsSync(planPath)) {
@@ -336,7 +336,7 @@ export class AgentManager extends EventEmitter {
 
     // Reset stuck subtasks if restarting an existing spec creation task
     if (specDir) {
-      const planPath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+      const planPath = path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN);
       console.log('[AgentManager] Resetting stuck subtasks before spec creation restart:', planPath);
       try {
         const { success, resetCount } = await resetStuckSubtasks(planPath);
@@ -456,7 +456,7 @@ export class AgentManager extends EventEmitter {
 
     // Resolve the spec directory from specId
     const project = projectStore.getProjects().find((p) => p.id === projectId || p.path === projectPath);
-    const specsBaseDir = getSpecsDir(project?.autoBuildPath);
+    const specsBaseDir = getSpecsDir(project?.aperantPath);
     const specDir = path.join(projectPath, specsBaseDir, specId);
 
     // Load model configuration from task_metadata.json if available
@@ -483,7 +483,7 @@ export class AgentManager extends EventEmitter {
           baseBranch,
           options.useLocalBranch ?? false,
           project?.settings?.pushNewBranches !== false,
-          project?.autoBuildPath,
+          project?.aperantPath,
         );
         worktreePath = result.worktreePath;
         // Spec dir in the worktree (spec files were copied by createOrGetWorktree)
@@ -578,7 +578,7 @@ export class AgentManager extends EventEmitter {
 
     // Resolve the spec directory from specId
     const project = projectStore.getProjects().find((p) => p.id === projectId || p.path === projectPath);
-    const specsBaseDir = getSpecsDir(project?.autoBuildPath);
+    const specsBaseDir = getSpecsDir(project?.aperantPath);
     const specDir = path.join(projectPath, specsBaseDir, specId);
 
     // Load model configuration from task_metadata.json if available
@@ -820,8 +820,8 @@ export class AgentManager extends EventEmitter {
       // Reset stuck subtasks before restart to avoid picking up stale in-progress states
       if (context.specId || context.specDir) {
         const planPath = context.specDir
-          ? path.join(context.specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN)
-          : path.join(context.projectPath, AUTO_BUILD_PATHS.SPECS_DIR, context.specId, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+          ? path.join(context.specDir, APERANT_PATHS.IMPLEMENTATION_PLAN)
+          : path.join(context.projectPath, APERANT_PATHS.SPECS_DIR, context.specId, APERANT_PATHS.IMPLEMENTATION_PLAN);
 
         console.log('[AgentManager] Resetting stuck subtasks before restart:', planPath);
         try {

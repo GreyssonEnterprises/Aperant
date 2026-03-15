@@ -83,7 +83,7 @@ No migration needed! The refactoring is transparent to consumers:
 // This code continues to work exactly as before
 import { insightsService } from '../insights-service';
 
-insightsService.configure(pythonPath, autoBuildSourcePath);
+insightsService.configure(pythonPath, aperantSourcePath);
 const session = insightsService.loadSession(projectId, projectPath);
 await insightsService.sendMessage(projectId, projectPath, message);
 ```

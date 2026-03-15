@@ -12,25 +12,25 @@ import { getEffectiveSourcePath } from '../updater/path-resolver';
  * Handles path detection and environment variable loading
  */
 export class InsightsConfig {
-  private autoBuildSourcePath: string = '';
+  private aperantSourcePath: string = '';
 
-  configure(_pythonPath?: string, autoBuildSourcePath?: string): void {
-    if (autoBuildSourcePath) {
-      this.autoBuildSourcePath = autoBuildSourcePath;
+  configure(_pythonPath?: string, aperantSourcePath?: string): void {
+    if (aperantSourcePath) {
+      this.aperantSourcePath = aperantSourcePath;
     }
   }
 
   /**
-   * Get the auto-claude source path (detects automatically if not configured)
+   * Get the aperant source path (detects automatically if not configured)
    * Uses getEffectiveSourcePath() which handles userData override for user-updated backend
    */
-  getAutoBuildSourcePath(): string | null {
-    if (this.autoBuildSourcePath && existsSync(this.autoBuildSourcePath)) {
-      return this.autoBuildSourcePath;
+  getAperantSourcePath(): string | null {
+    if (this.aperantSourcePath && existsSync(this.aperantSourcePath)) {
+      return this.aperantSourcePath;
     }
 
     // Use shared path resolver which handles:
-    // 1. User settings (autoBuildPath)
+    // 1. User settings (aperantPath)
     // 2. userData override (backend-source) for user-updated backend
     // 3. Bundled backend (process.resourcesPath/backend)
     // 4. Development paths
@@ -43,13 +43,13 @@ export class InsightsConfig {
   }
 
   /**
-   * Load environment variables from auto-claude .env file
+   * Load environment variables from aperant .env file
    */
-  loadAutoBuildEnv(): Record<string, string> {
-    const autoBuildSource = this.getAutoBuildSourcePath();
-    if (!autoBuildSource) return {};
+  loadAperantEnv(): Record<string, string> {
+    const aperantSource = this.getAperantSourcePath();
+    if (!aperantSource) return {};
 
-    const envPath = path.join(autoBuildSource, '.env');
+    const envPath = path.join(aperantSource, '.env');
     if (!existsSync(envPath)) return {};
 
     try {
@@ -83,10 +83,10 @@ export class InsightsConfig {
 
   /**
    * Get complete environment for process execution
-   * Includes system env, auto-claude env, and active Claude profile
+   * Includes system env, aperant env, and active Claude profile
    */
   async getProcessEnv(): Promise<Record<string, string>> {
-    const autoBuildEnv = this.loadAutoBuildEnv();
+    const aperantEnv = this.loadAperantEnv();
     // Get best available Claude profile environment (automatically handles rate limits)
     const profileResult = getBestAvailableProfileEnv();
     const profileEnv = profileResult.env;
@@ -99,7 +99,7 @@ export class InsightsConfig {
 
     return {
       ...augmentedEnv,
-      ...autoBuildEnv,
+      ...aperantEnv,
       ...oauthModeClearVars,
       ...profileEnv,
       ...apiProfileEnv,

@@ -8,7 +8,7 @@ import type { SupportedIDE, SupportedTerminal } from './settings';
 import type {
   Project,
   ProjectSettings,
-  AutoBuildVersionInfo,
+  AperantVersionInfo,
   InitializationResult,
   CreateProjectFolderResult,
   FileNode,
@@ -184,9 +184,9 @@ export interface ElectronAPI {
   getProjects: () => Promise<IPCResult<Project[]>>;
   updateProjectSettings: (projectId: string, settings: Partial<ProjectSettings>) => Promise<IPCResult>;
   initializeProject: (projectId: string) => Promise<IPCResult<InitializationResult>>;
-  checkProjectVersion: (projectId: string) => Promise<IPCResult<AutoBuildVersionInfo>>;
+  checkProjectVersion: (projectId: string) => Promise<IPCResult<AperantVersionInfo>>;
   needsMigration: (projectId: string) => Promise<boolean>;
-  migrateProject: (projectId: string) => Promise<{ success: boolean; error?: string }>;
+  migrateProject: (projectId: string) => Promise<IPCResult<InitializationResult>>;
 
   // Tab State (persisted in main process for reliability)
   getTabState: () => Promise<IPCResult<TabState>>;

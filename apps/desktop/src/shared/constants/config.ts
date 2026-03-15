@@ -32,13 +32,13 @@ export const DEFAULT_APP_SETTINGS = {
   theme: 'dark' as const,
   colorTheme: 'default' as const,
   defaultModel: 'opus',
-  agentFramework: 'auto-claude',
+  agentFramework: 'aperant',
   pythonPath: undefined as string | undefined,
   gitPath: undefined as string | undefined,
   githubCLIPath: undefined as string | undefined,
   gitlabCLIPath: undefined as string | undefined,
-  autoBuildPath: undefined as string | undefined,
-  autoUpdateAutoBuild: true,
+  aperantPath: undefined as string | undefined,
+  autoUpdateAperant: true,
   autoNameTerminals: true,
   onboardingCompleted: false,
   notifications: {
@@ -92,12 +92,12 @@ export const DEFAULT_PROJECT_SETTINGS = {
 };
 
 // ============================================
-// Auto Build File Paths
+// Aperant File Paths
 // ============================================
 
 // File paths relative to project
 // IMPORTANT: All paths use .aperant/ (the installed instance), NOT aperant/ (source code)
-export const AUTO_BUILD_PATHS = {
+export const APERANT_PATHS = {
   SPECS_DIR: '.aperant/specs',
   ROADMAP_DIR: '.aperant/roadmap',
   IDEATION_DIR: '.aperant/ideation',
@@ -122,7 +122,7 @@ export const AUTO_BUILD_PATHS = {
  * Get the specs directory path.
  * All specs go to .aperant/specs/ (the project's data directory).
  */
-export function getSpecsDir(autoBuildPath: string | undefined): string {
-  const basePath = autoBuildPath || '.aperant';
+export function getSpecsDir(aperantPath: string | undefined): string {
+  const basePath = aperantPath || '.aperant';
   return `${basePath}/specs`;
 }

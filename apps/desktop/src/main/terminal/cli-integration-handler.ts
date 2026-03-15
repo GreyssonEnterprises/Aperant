@@ -31,6 +31,37 @@ import type {
 } from './types';
 
 // ============================================================================
+// POST-AUTH HELPERS
+// ============================================================================
+
+/**
+ * Performs post-authentication side effects for a profile:
+ * - Clears auth-failed state so the profile is available for agent usage
+ * - Clears migration state if the profile was migrated
+ * - Sets the profile as active if it isn't already
+ * - Triggers a usage check after a short delay
+ */
+function performPostAuthActions(profileId: string): void {
+  try {
+    const usageMonitor = getUsageMonitor();
+    if (usageMonitor) {
+      usageMonitor.clearAuthFailedProfile(profileId);
+      const profileManager = getClaudeProfileManager();
+      if (profileManager.isProfileMigrated(profileId)) {
+        profileManager.clearMigratedProfile(profileId);
+      }
+      const activeProfile = profileManager.getActiveProfile();
+      if (activeProfile?.id !== profileId) {
+        profileManager.setActiveProfile(profileId);
+      }
+      setTimeout(() => { usageMonitor.checkNow(); }, 500);
+    }
+  } catch (error) {
+    debugError('[ClaudeIntegration] Failed to trigger post-auth actions:', error);
+  }
+}
+
+// ============================================================================
 // CLI DISPATCH UTILITIES
 // ============================================================================
 
@@ -529,7 +560,7 @@ export function handleOAuthToken(
 
     if (keychainCreds.token) {
       // NOTE: We intentionally do NOT store the OAuth token in the profile.
-      // Storing causes AutoClaude to use a stale cached token instead of letting
+      // Storing causes Aperant to use a stale cached token instead of letting
       // Claude CLI read fresh tokens from Keychain (which auto-refreshes).
       // See: docs/LONG_LIVED_AUTH_PLAN.md for full context.
 
@@ -569,6 +600,9 @@ export function handleOAuthToken(
         ensureOnboardingComplete(profile.configDir);
       }
 
+      // Perform post-auth side effects (clear auth-failed, set active, trigger usage check)
+      performPostAuthActions(profileId);
+
       safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_OAUTH_TOKEN, {
         terminalId: terminal.id,
         profileId,
@@ -588,6 +622,9 @@ export function handleOAuthToken(
         if (profile.configDir) {
           ensureOnboardingComplete(profile.configDir);
         }
+
+        // Perform post-auth side effects (clear auth-failed, set active, trigger usage check)
+        performPostAuthActions(profileId);
 
         safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_OAUTH_TOKEN, {
           terminalId: terminal.id,
@@ -786,6 +823,7 @@ export function handleClaudeExit(
  * Without this flag, it triggers the onboarding wizard even for authenticated profiles.
  */
 export function ensureOnboardingComplete(configDir: string): void {
+  let tmpPath: string | undefined;
   try {
     const expandedDir = path.resolve(
       configDir.startsWith('~') ? configDir.replace(/^~/, os.homedir()) : configDir
@@ -818,11 +856,15 @@ export function ensureOnboardingComplete(configDir: string): void {
 
     // Write atomically via temp file + rename to avoid partial writes and satisfy CodeQL js/insecure-temporary-file.
     // crypto.randomUUID() ensures no collisions; mode 0o600 restricts to owner-only.
-    const tmpPath = `${claudeJsonPath}.${crypto.randomUUID()}.tmp`;
+    tmpPath = `${claudeJsonPath}.${crypto.randomUUID()}.tmp`;
     fs.writeFileSync(tmpPath, updatedContent, { encoding: 'utf-8', mode: 0o600 });
     fs.renameSync(tmpPath, claudeJsonPath);
     debugLog(`[ClaudeIntegration] Set hasCompletedOnboarding in ${claudeJsonPath}`);
   } catch (error) {
+    // Clean up temp file if it was created but rename failed
+    if (tmpPath) {
+      try { fs.unlinkSync(tmpPath); } catch {}
+    }
     // Non-fatal — worst case the user sees onboarding once
     debugError('[ClaudeIntegration] Failed to set hasCompletedOnboarding:', error);
   }
@@ -1127,7 +1169,7 @@ export function invokeClaude(
  *
  * Uses `claude --continue` which resumes the most recent conversation in the
  * current directory. This is simpler and more reliable than tracking session IDs,
- * since Auto Claude already restores terminals to their correct cwd/projectPath.
+ * since Aperant already restores terminals to their correct cwd/projectPath.
  *
  * Note: The sessionId parameter is kept for backwards compatibility but is ignored.
  * Claude Code's --resume flag expects user-named sessions (set via /rename), not
@@ -1152,7 +1194,7 @@ export function resumeClaude(
       : buildPathPrefix(claudeEnv.PATH || '');
 
     // Always use --continue which resumes the most recent session in the current directory.
-    // This is more reliable than --resume with session IDs since Auto Claude already restores
+    // This is more reliable than --resume with session IDs since Aperant already restores
     // terminals to their correct cwd/projectPath.
     //
     // Note: We clear claudeSessionId because --continue doesn't track specific sessions,
@@ -1387,7 +1429,7 @@ export async function resumeClaudeAsync(
       : buildPathPrefix(claudeEnv.PATH || '');
 
     // Always use --continue which resumes the most recent session in the current directory.
-    // This is more reliable than --resume with session IDs since Auto Claude already restores
+    // This is more reliable than --resume with session IDs since Aperant already restores
     // terminals to their correct cwd/projectPath.
     //
     // Note: We clear claudeSessionId because --continue doesn't track specific sessions,

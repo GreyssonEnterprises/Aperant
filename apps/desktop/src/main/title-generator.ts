@@ -35,7 +35,7 @@ export class TitleGenerator extends EventEmitter {
    * Python path and source path are no longer needed.
    */
   // biome-ignore lint/suspicious/noExplicitAny: kept for backward compatibility
-  configure(_pythonPath?: string, _autoBuildSourcePath?: string): void {
+  configure(_pythonPath?: string, _aperantSourcePath?: string): void {
     // No-op: TypeScript implementation does not need Python path or source path
   }
 

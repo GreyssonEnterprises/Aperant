@@ -3,7 +3,7 @@
  * =======================
  *
  * Reports current build progress from implementation_plan.json.
- * See apps/desktop/src/main/ai/tools/auto-claude/get-build-progress.ts for the TypeScript implementation.
+ * See apps/desktop/src/main/ai/tools/aperant/get-build-progress.ts for the TypeScript implementation.
  *
  * Tool name: mcp__aperant__get_build_progress
  */

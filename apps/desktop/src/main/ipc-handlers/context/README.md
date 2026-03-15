@@ -1,6 +1,6 @@
 # Context Handlers Module
 
-This directory contains the refactored context-related IPC handlers for the Auto Claude UI application. The handlers manage project context, memory systems (both file-based and Graphiti/LadybugDB), and project index operations.
+This directory contains the refactored context-related IPC handlers for the Aperant UI application. The handlers manage project context, memory systems (both file-based and Graphiti/LadybugDB), and project index operations.
 
 ## Architecture
 
@@ -12,9 +12,9 @@ The module is organized into focused, single-responsibility files:
 Shared utility functions for environment configuration and parsing.
 
 **Exports:**
-- `getAutoBuildSourcePath()` - Get auto-build source path from settings
+- `getAperantSourcePath()` - Get aperant source path from settings
 - `parseEnvFile(content)` - Parse .env file content into key-value pairs
-- `loadProjectEnvVars(projectPath, autoBuildPath)` - Load project-specific environment variables
+- `loadProjectEnvVars(projectPath, aperantPath)` - Load project-specific environment variables
 - `loadGlobalSettings()` - Load global application settings
 - `isGraphitiEnabled(projectEnvVars)` - Check if Graphiti memory system is enabled
 - `hasOpenAIKey(projectEnvVars, globalSettings)` - Check if OpenAI API key is available
@@ -29,8 +29,8 @@ Shared utility functions for environment configuration and parsing.
 Handlers for checking Graphiti/memory system configuration status.
 
 **Exports:**
-- `loadGraphitiStateFromSpecs(projectPath, autoBuildPath)` - Load Graphiti state from most recent spec
-- `buildMemoryStatus(projectPath, autoBuildPath, memoryState)` - Build memory status from environment
+- `loadGraphitiStateFromSpecs(projectPath, aperantPath)` - Load Graphiti state from most recent spec
+- `buildMemoryStatus(projectPath, aperantPath, memoryState)` - Build memory status from environment
 - `registerMemoryStatusHandlers(getMainWindow)` - Register IPC handlers
 
 **IPC Channels:**
@@ -136,7 +136,7 @@ test('parseEnvFile handles quotes correctly', () => {
 import { buildMemoryStatus } from './memory-status-handlers';
 
 test('buildMemoryStatus returns correct status', () => {
-  const status = buildMemoryStatus('/path/to/project', 'auto-claude');
+  const status = buildMemoryStatus('/path/to/project', 'aperant');
   expect(status).toHaveProperty('enabled');
   expect(status).toHaveProperty('available');
 });
@@ -152,7 +152,7 @@ test('buildMemoryStatus returns correct status', () => {
 
 ## Related Documentation
 
-- [Project Memory System](../../../../auto-claude/memory.py)
-- [Graphiti Memory Integration](../../../../auto-claude/graphiti_memory.py)
+- [Project Memory System](../../../../aperant/memory.py)
+- [Graphiti Memory Integration](../../../../aperant/graphiti_memory.py)
 - [LadybugDB Integration](../../ladybug-service.ts)
 - [IPC Channels](../../../shared/constants.ts)

@@ -242,7 +242,7 @@ function createProject(): Project {
     id: 'project-1',
     name: 'Test Project',
     path: projectPath,
-    autoBuildPath: '.aperant',
+    aperantPath: '.aperant',
     settings: {
       model: 'default',
       memoryBackend: 'file',

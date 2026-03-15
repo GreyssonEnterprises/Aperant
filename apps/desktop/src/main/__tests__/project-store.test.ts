@@ -97,16 +97,16 @@ describe('ProjectStore', () => {
 
       const project = store.addProject(TEST_PROJECT_PATH);
 
-      expect(project.autoBuildPath).toBe('.aperant');
+      expect(project.aperantPath).toBe('.aperant');
     });
 
-    it('should set empty autoBuildPath if not present', async () => {
+    it('should set empty aperantPath if not present', async () => {
       const { ProjectStore } = await import('../project-store');
       const store = new ProjectStore();
 
       const project = store.addProject(TEST_PROJECT_PATH);
 
-      expect(project.autoBuildPath).toBe('');
+      expect(project.aperantPath).toBe('');
     });
 
     it('should persist project to disk', async () => {
@@ -587,7 +587,7 @@ describe('ProjectStore', () => {
             id: 'test-id-123',
             name: 'Preexisting Project',
             path: '/test/path',
-            autoBuildPath: '',
+            aperantPath: '',
             settings: {
               model: 'sonnet',
               memoryBackend: 'memory',

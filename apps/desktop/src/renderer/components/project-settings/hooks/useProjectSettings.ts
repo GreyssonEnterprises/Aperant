@@ -9,7 +9,7 @@ import { setProjectEnvConfig } from '../../../stores/project-env-store';
 import type {
   Project,
   ProjectSettings as ProjectSettingsType,
-  AutoBuildVersionInfo,
+  AperantVersionInfo,
   ProjectEnvConfig,
   LinearSyncStatus,
   GitHubSyncStatus,
@@ -25,7 +25,7 @@ export interface UseProjectSettingsReturn {
   setError: React.Dispatch<React.SetStateAction<string | null>>;
 
   // Version info
-  versionInfo: AutoBuildVersionInfo | null;
+  versionInfo: AperantVersionInfo | null;
   isCheckingVersion: boolean;
   isUpdating: boolean;
 
@@ -79,7 +79,7 @@ export function useProjectSettings(
   const [settings, setSettings] = useState<ProjectSettingsType>(project.settings);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [versionInfo, setVersionInfo] = useState<AutoBuildVersionInfo | null>(null);
+  const [versionInfo, setVersionInfo] = useState<AperantVersionInfo | null>(null);
   const [isCheckingVersion, setIsCheckingVersion] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -132,7 +132,7 @@ export function useProjectSettings(
   // Check version when dialog opens
   useEffect(() => {
     const checkVersion = async () => {
-      if (open && project.autoBuildPath) {
+      if (open && project.aperantPath) {
         setIsCheckingVersion(true);
         const info = await checkProjectVersion(project.id);
         setVersionInfo(info);
@@ -140,12 +140,12 @@ export function useProjectSettings(
       }
     };
     checkVersion();
-  }, [open, project.id, project.autoBuildPath]);
+  }, [open, project.id, project.aperantPath]);
 
   // Load environment config when dialog opens
   useEffect(() => {
     const loadEnvConfig = async () => {
-      if (open && project.autoBuildPath) {
+      if (open && project.aperantPath) {
         setIsLoadingEnv(true);
         setEnvError(null);
         try {
@@ -166,7 +166,7 @@ export function useProjectSettings(
       }
     };
     loadEnvConfig();
-  }, [open, project.id, project.autoBuildPath]);
+  }, [open, project.id, project.aperantPath]);
 
   // Check Linear connection when API key changes
   useEffect(() => {

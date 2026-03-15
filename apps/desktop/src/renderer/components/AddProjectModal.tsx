@@ -76,7 +76,7 @@ export function AddProjectModal({ open, onOpenChange, onProjectAdded }: AddProje
           } catch {
             // Non-fatal - main branch can be set later in settings
           }
-          onProjectAdded?.(project, !project.autoBuildPath);
+          onProjectAdded?.(project, !project.aperantPath);
           onOpenChange(false);
         }
       }

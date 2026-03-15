@@ -13,7 +13,7 @@
       try {
         // Load project index
         let projectIndex: ProjectIndex | null = null;
-        const indexPath = path.join(project.path, AUTO_BUILD_PATHS.PROJECT_INDEX);
+        const indexPath = path.join(project.path, APERANT_PATHS.PROJECT_INDEX);
         if (existsSync(indexPath)) {
           const content = readFileSync(indexPath, 'utf-8');
           projectIndex = JSON.parse(content);
@@ -28,7 +28,7 @@
         };
 
         // Check for graphiti state in specs
-                const specsBaseDir = getSpecsDir(project.autoBuildPath);
+                const specsBaseDir = getSpecsDir(project.aperantPath);
         const specsDir = path.join(project.path, specsBaseDir);
         if (existsSync(specsDir)) {
           const specDirs = readdirSync(specsDir)
@@ -40,7 +40,7 @@
             .reverse();
 
           for (const specDir of specDirs) {
-            const statePath = path.join(specsDir, specDir, AUTO_BUILD_PATHS.GRAPHITI_STATE);
+            const statePath = path.join(specsDir, specDir, APERANT_PATHS.GRAPHITI_STATE);
             if (existsSync(statePath)) {
               const stateContent = readFileSync(statePath, 'utf-8');
               memoryState = JSON.parse(stateContent);
@@ -64,8 +64,8 @@
         if (!memoryState) {
           // Load project .env file and global settings to check for Graphiti config
           let projectEnvVars: Record<string, string> = {};
-          if (project.autoBuildPath) {
-            const projectEnvPath = path.join(project.path, project.autoBuildPath, '.env');
+          if (project.aperantPath) {
+            const projectEnvPath = path.join(project.path, project.aperantPath, '.env');
             if (existsSync(projectEnvPath)) {
               try {
                 const envContent = readFileSync(projectEnvPath, 'utf-8');
@@ -239,17 +239,17 @@
 
       try {
         // Run the analyzer script to regenerate project_index.json
-        const autoBuildSource = getAutoBuildSourcePath();
+        const aperantSource = getAperantSourcePath();
 
-        if (!autoBuildSource) {
+        if (!aperantSource) {
           return {
             success: false,
             error: 'Auto-build source path not configured'
           };
         }
 
-        const analyzerPath = path.join(autoBuildSource, 'analyzer.py');
-        const indexOutputPath = path.join(project.path, AUTO_BUILD_PATHS.PROJECT_INDEX);
+        const analyzerPath = path.join(aperantSource, 'analyzer.py');
+        const indexOutputPath = path.join(project.path, APERANT_PATHS.PROJECT_INDEX);
 
         // Run analyzer
         await new Promise<void>((resolve, reject) => {
@@ -300,8 +300,8 @@
 
       // Load project .env file to check for Graphiti config
       let projectEnvVars: Record<string, string> = {};
-      if (project.autoBuildPath) {
-        const projectEnvPath = path.join(project.path, project.autoBuildPath, '.env');
+      if (project.aperantPath) {
+        const projectEnvPath = path.join(project.path, project.aperantPath, '.env');
         if (existsSync(projectEnvPath)) {
           try {
             const envContent = readFileSync(projectEnvPath, 'utf-8');
@@ -403,7 +403,7 @@
       const queryLower = query.toLowerCase();
 
       // Get specs directory path
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const specsDir = path.join(project.path, specsBaseDir);
       if (existsSync(specsDir)) {
         const allSpecDirs = readdirSync(specsDir)
@@ -454,7 +454,7 @@
       const memories: MemoryEpisode[] = [];
 
       // Get specs directory path
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const specsDir = path.join(project.path, specsBaseDir);
 
       if (existsSync(specsDir)) {

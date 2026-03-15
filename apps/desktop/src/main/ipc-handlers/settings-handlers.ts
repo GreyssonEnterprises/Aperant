@@ -204,11 +204,11 @@ async function migrateToProviderAccounts(settings: AppSettings): Promise<{ chang
 }
 
 /**
- * Auto-detect the auto-claude prompts path relative to the app location.
+ * Auto-detect the aperant prompts path relative to the app location.
  * Works across platforms (macOS, Windows, Linux) in both dev and production modes.
  * Prompts live in apps/desktop/prompts/ (dev) or extraResources/prompts (prod).
  */
-const detectAutoBuildSourcePath = (): string | null => {
+const detectAperantSourcePath = (): string | null => {
   const possiblePaths: string[] = [];
 
   // Development mode paths
@@ -241,12 +241,12 @@ const detectAutoBuildSourcePath = (): string | null => {
   const debug = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
 
   if (debug) {
-    console.warn('[detectAutoBuildSourcePath] Platform:', process.platform);
-    console.warn('[detectAutoBuildSourcePath] Is dev:', is.dev);
-    console.warn('[detectAutoBuildSourcePath] __dirname:', __dirname);
-    console.warn('[detectAutoBuildSourcePath] app.getAppPath():', app.getAppPath());
-    console.warn('[detectAutoBuildSourcePath] process.cwd():', process.cwd());
-    console.warn('[detectAutoBuildSourcePath] Checking paths:', possiblePaths);
+    console.warn('[detectAperantSourcePath] Platform:', process.platform);
+    console.warn('[detectAperantSourcePath] Is dev:', is.dev);
+    console.warn('[detectAperantSourcePath] __dirname:', __dirname);
+    console.warn('[detectAperantSourcePath] app.getAppPath():', app.getAppPath());
+    console.warn('[detectAperantSourcePath] process.cwd():', process.cwd());
+    console.warn('[detectAperantSourcePath] Checking paths:', possiblePaths);
   }
 
   for (const p of possiblePaths) {
@@ -255,17 +255,17 @@ const detectAutoBuildSourcePath = (): string | null => {
     const exists = existsSync(p) && existsSync(markerPath);
 
     if (debug) {
-      console.warn(`[detectAutoBuildSourcePath] Checking ${p}: ${exists ? '✓ FOUND' : '✗ not found'}`);
+      console.warn(`[detectAperantSourcePath] Checking ${p}: ${exists ? '✓ FOUND' : '✗ not found'}`);
     }
 
     if (exists) {
-      console.warn(`[detectAutoBuildSourcePath] Auto-detected prompts path: ${p}`);
+      console.warn(`[detectAperantSourcePath] Auto-detected prompts path: ${p}`);
       return p;
     }
   }
 
-  console.warn('[detectAutoBuildSourcePath] Could not auto-detect Aperant prompts path. Please configure manually in settings.');
-  console.warn('[detectAutoBuildSourcePath] Set DEBUG=1 environment variable for detailed path checking.');
+  console.warn('[detectAperantSourcePath] Could not auto-detect Aperant prompts path. Please configure manually in settings.');
+  console.warn('[detectAperantSourcePath] Set DEBUG=1 environment variable for detailed path checking.');
   return null;
 };
 
@@ -377,7 +377,7 @@ export function registerSettingsHandlers(
       // Fixes issue where Windows paths persisted on macOS (and vice versa)
       // when settings were synced/transferred between platforms
       // See: https://github.com/AndyMik90/Auto-Claude/issues/XXX
-      const pathFields = ['pythonPath', 'gitPath', 'githubCLIPath', 'gitlabCLIPath', 'claudePath', 'autoBuildPath'] as const;
+      const pathFields = ['pythonPath', 'gitPath', 'githubCLIPath', 'gitlabCLIPath', 'claudePath', 'aperantPath'] as const;
       for (const field of pathFields) {
         const pathValue = settings[field];
         if (pathValue && isPathFromWrongPlatform(pathValue)) {
@@ -389,11 +389,11 @@ export function registerSettingsHandlers(
         }
       }
 
-      // If no manual autoBuildPath is set, try to auto-detect
-      if (!settings.autoBuildPath) {
-        const detectedPath = detectAutoBuildSourcePath();
+      // If no manual aperantPath is set, try to auto-detect
+      if (!settings.aperantPath) {
+        const detectedPath = detectAperantSourcePath();
         if (detectedPath) {
-          settings.autoBuildPath = detectedPath;
+          settings.aperantPath = detectedPath;
         }
       }
 
@@ -450,8 +450,8 @@ export function registerSettingsHandlers(
         writeFileSync(settingsPath, JSON.stringify(newSettings, null, 2), 'utf-8');
 
         // Apply Python path if changed
-        if (settings.pythonPath || settings.autoBuildPath) {
-          agentManager.configure(settings.pythonPath, settings.autoBuildPath);
+        if (settings.pythonPath || settings.aperantPath) {
+          agentManager.configure(settings.pythonPath, settings.aperantPath);
         }
 
         // Configure CLI tools if any paths changed

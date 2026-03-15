@@ -48,7 +48,7 @@ vi.mock('child_process', async (importOriginal) => {
 
 // Mock project-initializer to avoid child_process.execSync issues
 vi.mock('../project-initializer', () => ({
-  getAutoBuildPath: vi.fn(() => '/fake/auto-build'),
+  getAperantPath: vi.fn(() => '/fake/aperant'),
   isInitialized: vi.fn(() => true),
   initializeProject: vi.fn(),
   getProjectStorePath: vi.fn(() => '/fake/store/path')
@@ -126,7 +126,7 @@ vi.mock('../env-utils', () => ({
   getAugmentedEnv: vi.fn(() => ({ ...process.env }))
 }));
 
-// Mock fs.existsSync for getAutoBuildSourcePath path validation
+// Mock fs.existsSync for getAperantSourcePath path validation
 vi.mock('fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs')>();
   return {
@@ -135,10 +135,10 @@ vi.mock('fs', async (importOriginal) => {
       // Normalize path separators for cross-platform compatibility
       // path.join() uses backslashes on Windows, so we normalize to forward slashes
       const normalizedPath = inputPath.replace(/\\/g, '/');
-      // Return true for the fake auto-build path and its expected files
-      if (normalizedPath === '/fake/auto-build' ||
-          normalizedPath === '/fake/auto-build/runners' ||
-          normalizedPath === '/fake/auto-build/runners/spec_runner.py') {
+      // Return true for the fake aperant path and its expected files
+      if (normalizedPath === '/fake/aperant' ||
+          normalizedPath === '/fake/aperant/runners' ||
+          normalizedPath === '/fake/aperant/runners/spec_runner.py') {
         return true;
       }
       return false;

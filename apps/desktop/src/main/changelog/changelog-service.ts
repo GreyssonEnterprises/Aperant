@@ -7,7 +7,7 @@ import { app } from 'electron';
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-import { AUTO_BUILD_PATHS, DEFAULT_CHANGELOG_PATH } from '../../shared/constants';
+import { APERANT_PATHS, DEFAULT_CHANGELOG_PATH } from '../../shared/constants';
 import { getToolPath, getToolInfo } from '../cli-tool-manager';
 import type {
   ChangelogTask,
@@ -40,7 +40,7 @@ import {
  */
 export class ChangelogService extends EventEmitter {
   private claudePath: string;
-  private autoBuildSourcePath: string = '';
+  private aperantSourcePath: string = '';
   private debugEnabled: boolean | null = null;
   private generator: ChangelogGenerator | null = null;
   private versionSuggester: VersionSuggester | null = null;
@@ -71,8 +71,8 @@ export class ChangelogService extends EventEmitter {
       return true;
     }
 
-    // Check auto-claude .env file
-    const env = this.loadAutoBuildEnv();
+    // Check aperant .env file
+    const env = this.loadAperantEnv();
     this.debugEnabled = env.DEBUG === 'true' || env.DEBUG === '1';
     return this.debugEnabled;
   }
@@ -86,18 +86,18 @@ export class ChangelogService extends EventEmitter {
     }
   }
 
-  configure(_pythonPath?: string, autoBuildSourcePath?: string): void {
-    if (autoBuildSourcePath) {
-      this.autoBuildSourcePath = autoBuildSourcePath;
+  configure(_pythonPath?: string, aperantSourcePath?: string): void {
+    if (aperantSourcePath) {
+      this.aperantSourcePath = aperantSourcePath;
     }
   }
 
   /**
-   * Get the auto-claude source path (detects automatically if not configured)
+   * Get the aperant source path (detects automatically if not configured)
    */
-  private getAutoBuildSourcePath(): string | null {
-    if (this.autoBuildSourcePath && existsSync(this.autoBuildSourcePath)) {
-      return this.autoBuildSourcePath;
+  private getAperantSourcePath(): string | null {
+    if (this.aperantSourcePath && existsSync(this.aperantSourcePath)) {
+      return this.aperantSourcePath;
     }
 
     const possiblePaths = [
@@ -116,13 +116,13 @@ export class ChangelogService extends EventEmitter {
   }
 
   /**
-   * Load environment variables from auto-claude .env file
+   * Load environment variables from aperant .env file
    */
-  private loadAutoBuildEnv(): Record<string, string> {
-    const autoBuildSource = this.getAutoBuildSourcePath();
-    if (!autoBuildSource) return {};
+  private loadAperantEnv(): Record<string, string> {
+    const aperantSource = this.getAperantSourcePath();
+    if (!aperantSource) return {};
 
-    const envPath = path.join(autoBuildSource, '.env');
+    const envPath = path.join(aperantSource, '.env');
     if (!existsSync(envPath)) return {};
 
     try {
@@ -156,13 +156,13 @@ export class ChangelogService extends EventEmitter {
 
   /**
    * Ensure prerequisites are met for changelog generation
-   * Validates auto-build source path and Claude CLI availability
+   * Validates aperant source path and Claude CLI availability
    * Returns the resolved Claude CLI path to ensure we use the freshly validated path
    */
-  private ensurePrerequisites(): { autoBuildSource: string; claudePath: string } {
-    const autoBuildSource = this.getAutoBuildSourcePath();
-    if (!autoBuildSource) {
-      throw new Error('Auto-build source path not found');
+  private ensurePrerequisites(): { aperantSource: string; claudePath: string } {
+    const aperantSource = this.getAperantSourcePath();
+    if (!aperantSource) {
+      throw new Error('Aperant source path not found');
     }
 
     const claudeInfo = getToolInfo('claude');
@@ -173,7 +173,7 @@ export class ChangelogService extends EventEmitter {
 
     // Update cached path with freshly resolved value
     this.claudePath = claudeInfo.path;
-    return { autoBuildSource, claudePath: claudeInfo.path };
+    return { aperantSource, claudePath: claudeInfo.path };
   }
 
   /**
@@ -181,15 +181,15 @@ export class ChangelogService extends EventEmitter {
    */
   private getGenerator(): ChangelogGenerator {
     if (!this.generator) {
-      const { autoBuildSource, claudePath } = this.ensurePrerequisites();
+      const { aperantSource, claudePath } = this.ensurePrerequisites();
 
-      const autoBuildEnv = this.loadAutoBuildEnv();
+      const aperantEnv = this.loadAperantEnv();
 
       this.generator = new ChangelogGenerator(
         '',
         claudePath,
-        autoBuildSource,
-        autoBuildEnv,
+        aperantSource,
+        aperantEnv,
         this.isDebugEnabled()
       );
 
@@ -219,12 +219,12 @@ export class ChangelogService extends EventEmitter {
    */
   private getVersionSuggester(): VersionSuggester {
     if (!this.versionSuggester) {
-      const { autoBuildSource, claudePath } = this.ensurePrerequisites();
+      const { aperantSource, claudePath } = this.ensurePrerequisites();
 
       this.versionSuggester = new VersionSuggester(
         '',
         claudePath,
-        autoBuildSource,
+        aperantSource,
         this.isDebugEnabled()
       );
     }
@@ -240,13 +240,13 @@ export class ChangelogService extends EventEmitter {
    * Get completed tasks from a project
    */
   getCompletedTasks(projectPath: string, tasks: Task[], specsBaseDir?: string): ChangelogTask[] {
-    const specsDir = path.join(projectPath, specsBaseDir || AUTO_BUILD_PATHS.SPECS_DIR);
+    const specsDir = path.join(projectPath, specsBaseDir || APERANT_PATHS.SPECS_DIR);
 
     return tasks
       .filter(task => isCompletedTask(task.status, task.reviewReason) && !task.metadata?.archivedAt)
       .map(task => {
         const specDir = path.join(specsDir, task.specId);
-        const hasSpecs = existsSync(specDir) && existsSync(path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE));
+        const hasSpecs = existsSync(specDir) && existsSync(path.join(specDir, APERANT_PATHS.SPEC_FILE));
 
         return {
           id: task.id,
@@ -264,7 +264,7 @@ export class ChangelogService extends EventEmitter {
    * Load spec files for given tasks
    */
   async loadTaskSpecs(projectPath: string, taskIds: string[], tasks: Task[], specsBaseDir?: string): Promise<TaskSpecContent[]> {
-    const specsDir = path.join(projectPath, specsBaseDir || AUTO_BUILD_PATHS.SPECS_DIR);
+    const specsDir = path.join(projectPath, specsBaseDir || APERANT_PATHS.SPECS_DIR);
     this.debug('loadTaskSpecs called', { projectPath, specsDir, taskCount: taskIds.length });
 
     const results: TaskSpecContent[] = [];
@@ -286,26 +286,26 @@ export class ChangelogService extends EventEmitter {
 
       try {
         // Load spec.md
-        const specPath = path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE);
+        const specPath = path.join(specDir, APERANT_PATHS.SPEC_FILE);
         if (existsSync(specPath)) {
           content.spec = readFileSync(specPath, 'utf-8');
           this.debug('Loaded spec.md', { specId: task.specId, length: content.spec.length });
         }
 
         // Load requirements.json
-        const requirementsPath = path.join(specDir, AUTO_BUILD_PATHS.REQUIREMENTS);
+        const requirementsPath = path.join(specDir, APERANT_PATHS.REQUIREMENTS);
         if (existsSync(requirementsPath)) {
           content.requirements = JSON.parse(readFileSync(requirementsPath, 'utf-8'));
         }
 
         // Load qa_report.md
-        const qaReportPath = path.join(specDir, AUTO_BUILD_PATHS.QA_REPORT);
+        const qaReportPath = path.join(specDir, APERANT_PATHS.QA_REPORT);
         if (existsSync(qaReportPath)) {
           content.qaReport = readFileSync(qaReportPath, 'utf-8');
         }
 
         // Load implementation_plan.json
-        const planPath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+        const planPath = path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN);
         if (existsSync(planPath)) {
           content.implementationPlan = JSON.parse(readFileSync(planPath, 'utf-8')) as ImplementationPlan;
         }

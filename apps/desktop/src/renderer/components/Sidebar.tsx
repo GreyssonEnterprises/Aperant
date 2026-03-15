@@ -67,6 +67,7 @@ interface SidebarProps {
   onNewTaskClick: () => void;
   activeView?: SidebarView;
   onViewChange?: (view: SidebarView) => void;
+  onMigrationNeeded?: (project: Project) => void;
 }
 
 interface NavItem {
@@ -105,7 +106,8 @@ export function Sidebar({
   onSettingsClick,
   onNewTaskClick,
   activeView = 'kanban',
-  onViewChange
+  onViewChange,
+  onMigrationNeeded
 }: SidebarProps) {
   const { t } = useTranslation(['navigation', 'dialogs', 'common']);
   const projects = useProjectStore((state) => state.projects);
@@ -156,7 +158,7 @@ export function Sidebar({
     let isCurrent = true;
 
     const initializeEnvConfig = async () => {
-      if (selectedProject?.id && selectedProject?.autoBuildPath) {
+      if (selectedProject?.id && selectedProject?.aperantPath) {
         // Only reload if the project ID differs from what we last loaded
         if (selectedProject.id !== lastLoadedProjectIdRef.current) {
           lastLoadedProjectIdRef.current = selectedProject.id;
@@ -165,7 +167,7 @@ export function Sidebar({
           if (!isCurrent) return;
         }
       } else {
-        // Clear the store if no project is selected or has no autoBuildPath
+        // Clear the store if no project is selected or has no aperantPath
         lastLoadedProjectIdRef.current = null;
         clearProjectEnvConfig();
       }
@@ -176,7 +178,7 @@ export function Sidebar({
     return () => {
       isCurrent = false;
     };
-  }, [selectedProject?.id, selectedProject?.autoBuildPath]);
+  }, [selectedProject?.id, selectedProject?.aperantPath]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -235,8 +237,18 @@ export function Sidebar({
     checkGit();
   }, [selectedProject]);
 
-  const handleProjectAdded = (project: Project, needsInit: boolean) => {
+  const handleProjectAdded = async (project: Project, needsInit: boolean) => {
     if (needsInit) {
+      // Check for migration before showing init dialog
+      try {
+        const requiresMigration = await window.electronAPI.needsMigration(project.id);
+        if (requiresMigration) {
+          onMigrationNeeded?.(project);
+          return;
+        }
+      } catch (error) {
+        console.error('Failed to check migration status:', error);
+      }
       setPendingProject(project);
       setShowInitDialog(true);
     }
@@ -477,7 +489,7 @@ export function Sidebar({
                 className="w-full"
                 size={isCollapsed ? "icon" : "default"}
                 onClick={onNewTaskClick}
-                disabled={!selectedProjectId || !selectedProject?.autoBuildPath}
+                disabled={!selectedProjectId || !selectedProject?.aperantPath}
               >
                 <Plus className={isCollapsed ? "h-4 w-4" : "mr-2 h-4 w-4"} />
                 {!isCollapsed && t('actions.newTask')}
@@ -487,7 +499,7 @@ export function Sidebar({
               <TooltipContent side="right">{t('actions.newTask')}</TooltipContent>
             )}
           </Tooltip>
-          {!isCollapsed && selectedProject && !selectedProject.autoBuildPath && (
+          {!isCollapsed && selectedProject && !selectedProject.aperantPath && (
             <p className="mt-2 text-xs text-muted-foreground text-center">
               {t('messages.initializeToCreateTasks')}
             </p>
@@ -495,7 +507,7 @@ export function Sidebar({
         </div>
       </div>
 
-      {/* Initialize Auto Claude Dialog */}
+      {/* Initialize Aperant Dialog */}
       <Dialog open={showInitDialog} onOpenChange={(open) => {
         // Only allow closing if user manually closes (not during initialization)
         if (!open && !isInitializing) {
@@ -521,7 +533,7 @@ export function Sidebar({
                 <li>{t('dialogs:initialize.setupSpecs')}</li>
               </ul>
             </div>
-            {!settings.autoBuildPath && (
+            {!settings.aperantPath && (
               <div className="mt-4 rounded-lg border border-warning/50 bg-warning/10 p-4 text-sm">
                 <div className="flex items-start gap-2">
                   <AlertCircle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
@@ -541,7 +553,7 @@ export function Sidebar({
             </Button>
             <Button
               onClick={handleInitialize}
-              disabled={isInitializing || !settings.autoBuildPath}
+              disabled={isInitializing || !settings.aperantPath}
             >
               {isInitializing ? (
                 <>

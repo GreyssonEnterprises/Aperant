@@ -5,7 +5,7 @@ import type {
   ProjectSettings,
   IPCResult,
   InitializationResult,
-  AutoBuildVersionInfo,
+  AperantVersionInfo,
   ProjectEnvConfig,
   GitStatus,
   KanbanPreferences,
@@ -29,9 +29,9 @@ export interface ProjectAPI {
     settings: Partial<ProjectSettings>
   ) => Promise<IPCResult>;
   initializeProject: (projectId: string) => Promise<IPCResult<InitializationResult>>;
-  checkProjectVersion: (projectId: string) => Promise<IPCResult<AutoBuildVersionInfo>>;
+  checkProjectVersion: (projectId: string) => Promise<IPCResult<AperantVersionInfo>>;
   needsMigration: (projectId: string) => Promise<boolean>;
-  migrateProject: (projectId: string) => Promise<{ success: boolean; error?: string }>;
+  migrateProject: (projectId: string) => Promise<IPCResult<InitializationResult>>;
 
   // Tab State (persisted in main process for reliability)
   getTabState: () => Promise<IPCResult<TabState>>;
@@ -157,13 +157,13 @@ export const createProjectAPI = (): ProjectAPI => ({
   initializeProject: (projectId: string): Promise<IPCResult<InitializationResult>> =>
     ipcRenderer.invoke(IPC_CHANNELS.PROJECT_INITIALIZE, projectId),
 
-  checkProjectVersion: (projectId: string): Promise<IPCResult<AutoBuildVersionInfo>> =>
+  checkProjectVersion: (projectId: string): Promise<IPCResult<AperantVersionInfo>> =>
     ipcRenderer.invoke(IPC_CHANNELS.PROJECT_CHECK_VERSION, projectId),
 
   needsMigration: (projectId: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC_CHANNELS.PROJECT_NEEDS_MIGRATION, projectId),
 
-  migrateProject: (projectId: string): Promise<{ success: boolean; error?: string }> =>
+  migrateProject: (projectId: string): Promise<IPCResult<InitializationResult>> =>
     ipcRenderer.invoke(IPC_CHANNELS.PROJECT_MIGRATE, projectId),
 
   // Tab State (persisted in main process for reliability)

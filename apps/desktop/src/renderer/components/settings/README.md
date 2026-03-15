@@ -10,7 +10,7 @@ settings/
 ├── common/                          # Common UI components
 │   ├── EmptyProjectState.tsx        # Empty state when no project selected
 │   ├── ErrorDisplay.tsx             # Error message display
-│   ├── InitializationGuard.tsx      # Guards for Auto-Build requirement
+│   ├── InitializationGuard.tsx      # Guards for Aperant requirement
 │   └── index.ts                     # Exports
 ├── integrations/                    # Third-party integrations
 │   ├── LinearIntegration.tsx        # Linear setup (241 lines)
@@ -46,7 +46,7 @@ settings/
 - Returns null when no errors present
 
 **InitializationGuard** (29 lines)
-- Guards features requiring Auto-Build initialization
+- Guards features requiring Aperant initialization
 - Shows informative message when not initialized
 - Renders children when guard passes
 
@@ -115,7 +115,7 @@ import { EmptyProjectState, ErrorDisplay, InitializationGuard } from './common';
 
 // Guard with initialization check
 <InitializationGuard
-  initialized={!!project.autoBuildPath}
+  initialized={!!project.aperantPath}
   title="Feature Name"
   description="Feature description"
 >

@@ -33,7 +33,7 @@ export function registerTaskLogsHandlers(getMainWindow: () => BrowserWindow | nu
         // Defense-in-depth: project.path is normally absolute from ProjectStore,
         // but we guard here against edge cases (e.g., manually edited store file)
         const absoluteProjectPath = ensureAbsolutePath(project.path);
-        const specsRelPath = getSpecsDir(project.autoBuildPath);
+        const specsRelPath = getSpecsDir(project.aperantPath);
         const specDir = path.join(absoluteProjectPath, specsRelPath, specId);
 
         debugLog('[TASK_LOGS_GET] Path resolution:', {
@@ -87,7 +87,7 @@ export function registerTaskLogsHandlers(getMainWindow: () => BrowserWindow | nu
         }
 
         const absoluteProjectPath = ensureAbsolutePath(project.path);
-        const specsRelPath = getSpecsDir(project.autoBuildPath);
+        const specsRelPath = getSpecsDir(project.aperantPath);
         const specDir = path.join(absoluteProjectPath, specsRelPath, specId);
 
         debugLog('[TASK_LOGS_WATCH] Starting watch:', {

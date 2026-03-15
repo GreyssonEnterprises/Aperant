@@ -133,7 +133,7 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto-claude">{t('general.agentFrameworkAutoClaude')}</SelectItem>
+                  <SelectItem value="aperant">{t('general.agentFrameworkAutoClaude')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -258,14 +258,14 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
           )}
         </div>
         <div className="space-y-3">
-          <Label htmlFor="autoBuildPath" className="text-sm font-medium text-foreground">{t('general.autoClaudePath')}</Label>
+          <Label htmlFor="aperantPath" className="text-sm font-medium text-foreground">{t('general.autoClaudePath')}</Label>
           <p className="text-sm text-muted-foreground">{t('general.autoClaudePathDescription')}</p>
           <Input
-            id="autoBuildPath"
+            id="aperantPath"
             placeholder={t('general.autoClaudePathPlaceholder')}
             className="w-full max-w-lg"
-            value={settings.autoBuildPath || ''}
-            onChange={(e) => onSettingsChange({ ...settings, autoBuildPath: e.target.value })}
+            value={settings.aperantPath || ''}
+            onChange={(e) => onSettingsChange({ ...settings, aperantPath: e.target.value })}
           />
         </div>
       </div>

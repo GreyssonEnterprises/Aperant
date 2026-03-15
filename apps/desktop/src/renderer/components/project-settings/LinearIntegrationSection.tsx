@@ -100,7 +100,7 @@ export function LinearIntegrationSection({
                 <div className="flex-1">
                   <p className="text-sm font-medium text-foreground">Import Existing Tasks</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Select which Linear issues to import into AutoBuild as tasks.
+                    Select which Linear issues to import into Aperant as tasks.
                   </p>
                   <Button
                     size="sm"
@@ -138,7 +138,7 @@ export function LinearIntegrationSection({
           {envConfig.linearRealtimeSync && (
             <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 ml-6">
               <p className="text-xs text-warning">
-                When enabled, new Linear issues will be automatically imported into AutoBuild.
+                When enabled, new Linear issues will be automatically imported into Aperant.
                 Make sure to configure your team/project filters below to control which issues are imported.
               </p>
             </div>

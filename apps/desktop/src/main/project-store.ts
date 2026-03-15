@@ -3,8 +3,8 @@ import { readFileSync, existsSync, mkdirSync, readdirSync, Dirent } from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import type { Project, ProjectSettings, Task, TaskStatus, TaskMetadata, ImplementationPlan, ReviewReason, PlanSubtask, KanbanPreferences, ExecutionPhase } from '../shared/types';
-import { DEFAULT_PROJECT_SETTINGS, AUTO_BUILD_PATHS, getSpecsDir, JSON_ERROR_PREFIX, JSON_ERROR_TITLE_SUFFIX, TASK_STATUS_PRIORITY } from '../shared/constants';
-import { getAutoBuildPath, isInitialized } from './project-initializer';
+import { DEFAULT_PROJECT_SETTINGS, APERANT_PATHS, getSpecsDir, JSON_ERROR_PREFIX, JSON_ERROR_TITLE_SUFFIX, TASK_STATUS_PRIORITY } from '../shared/constants';
+import { getAperantPath, isInitialized } from './project-initializer';
 import { getTaskWorktreeDir } from './worktree-paths';
 import { findAllSpecPaths } from './utils/spec-path-helpers';
 import { ensureAbsolutePath } from './utils/path-helpers';
@@ -98,10 +98,10 @@ export class ProjectStore {
     const existing = this.data.projects.find((p) => p.path === absolutePath);
     if (existing) {
       // Validate that .aperant folder still exists for existing project
-      // If manually deleted, reset autoBuildPath so UI prompts for reinitialization
-      if (existing.autoBuildPath && !isInitialized(existing.path)) {
-        console.warn(`[ProjectStore] .aperant folder was deleted for project "${existing.name}" - resetting autoBuildPath`);
-        existing.autoBuildPath = '';
+      // If manually deleted, reset aperantPath so UI prompts for reinitialization
+      if (existing.aperantPath && !isInitialized(existing.path)) {
+        console.warn(`[ProjectStore] .aperant folder was deleted for project "${existing.name}" - resetting aperantPath`);
+        existing.aperantPath = '';
         existing.updatedAt = new Date();
         this.save();
       }
@@ -112,13 +112,13 @@ export class ProjectStore {
     const projectName = name || path.basename(absolutePath);
 
     // Determine aperant path
-    const autoBuildPath = getAutoBuildPath(absolutePath) || '';
+    const aperantPath = getAperantPath(absolutePath) || '';
 
     const project: Project = {
       id: uuidv4(),
       name: projectName,
       path: absolutePath, // Store absolute path
-      autoBuildPath,
+      aperantPath: aperantPath,
       settings: { ...DEFAULT_PROJECT_SETTINGS },
       createdAt: new Date(),
       updatedAt: new Date()
@@ -131,12 +131,12 @@ export class ProjectStore {
   }
 
   /**
-   * Update project's autoBuildPath after initialization
+   * Update project's aperantPath after initialization
    */
-  updateAutoBuildPath(projectId: string, autoBuildPath: string): Project | undefined {
+  updateAperantPath(projectId: string, aperantPath: string): Project | undefined {
     const project = this.data.projects.find((p) => p.id === projectId);
     if (project) {
-      project.autoBuildPath = autoBuildPath;
+      project.aperantPath = aperantPath;
       project.updatedAt = new Date();
       this.save();
     }
@@ -214,8 +214,8 @@ export class ProjectStore {
 
   /**
    * Validate all projects to ensure their .aperant folders still exist.
-   * If a project has autoBuildPath set but the folder was deleted,
-   * reset autoBuildPath to empty string so the UI prompts for reinitialization.
+   * If a project has aperantPath set but the folder was deleted,
+   * reset aperantPath to empty string so the UI prompts for reinitialization.
    *
    * @returns Array of project IDs that were reset due to missing .aperant folder
    */
@@ -224,8 +224,8 @@ export class ProjectStore {
     let hasChanges = false;
 
     for (const project of this.data.projects) {
-      // Skip projects that aren't initialized (autoBuildPath is empty)
-      if (!project.autoBuildPath) {
+      // Skip projects that aren't initialized (aperantPath is empty)
+      if (!project.aperantPath) {
         continue;
       }
 
@@ -238,7 +238,7 @@ export class ProjectStore {
       // Check if .aperant folder still exists
       if (!isInitialized(project.path)) {
         console.warn(`[ProjectStore] .aperant folder missing for project "${project.name}" at ${project.path}`);
-        project.autoBuildPath = '';
+        project.aperantPath = '';
         project.updatedAt = new Date();
         resetProjectIds.push(project.id);
         hasChanges = true;
@@ -295,7 +295,7 @@ export class ProjectStore {
     }
 
     const allTasks: Task[] = [];
-    const specsBaseDir = getSpecsDir(project.autoBuildPath);
+    const specsBaseDir = getSpecsDir(project.aperantPath);
 
     // 1. Scan main project specs directory (source of truth for task existence)
     const mainSpecsDir = path.join(project.path, specsBaseDir);
@@ -420,8 +420,8 @@ export class ProjectStore {
 
       try {
         const specPath = path.join(specsDir, dir.name);
-        const planPath = path.join(specPath, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
-        const specFilePath = path.join(specPath, AUTO_BUILD_PATHS.SPEC_FILE);
+        const planPath = path.join(specPath, APERANT_PATHS.IMPLEMENTATION_PLAN);
+        const specFilePath = path.join(specPath, APERANT_PATHS.SPEC_FILE);
 
         // Try to read implementation plan
         let plan: ImplementationPlan | null = null;
@@ -448,7 +448,7 @@ export class ProjectStore {
         }
 
         let description = '';
-        const requirementsPath = path.join(specPath, AUTO_BUILD_PATHS.REQUIREMENTS);
+        const requirementsPath = path.join(specPath, APERANT_PATHS.REQUIREMENTS);
         // PRIORITY 1: Read original user task description from requirements.json
         if (existsSync(requirementsPath)) {
           try {
@@ -779,7 +779,7 @@ export class ProjectStore {
       return false;
     }
 
-    const specsBaseDir = getSpecsDir(project.autoBuildPath);
+    const specsBaseDir = getSpecsDir(project.aperantPath);
     const archivedAt = new Date().toISOString();
     let hasErrors = false;
 
@@ -836,7 +836,7 @@ export class ProjectStore {
    * Update roadmap features linked to archived tasks
    */
   private updateRoadmapForArchivedTasks(project: Project, taskIds: string[]): void {
-    const roadmapFile = path.join(project.path, AUTO_BUILD_PATHS.ROADMAP_DIR, AUTO_BUILD_PATHS.ROADMAP_FILE);
+    const roadmapFile = path.join(project.path, APERANT_PATHS.ROADMAP_DIR, APERANT_PATHS.ROADMAP_FILE);
     updateRoadmapFeatureOutcome(roadmapFile, taskIds, 'archived', '[ProjectStore]').catch((err) => {
       console.warn('[ProjectStore] Failed to update roadmap for archived tasks:', err);
     });
@@ -854,7 +854,7 @@ export class ProjectStore {
       return false;
     }
 
-    const specsBaseDir = getSpecsDir(project.autoBuildPath);
+    const specsBaseDir = getSpecsDir(project.aperantPath);
     let hasErrors = false;
 
     for (const taskId of taskIds) {
@@ -895,7 +895,7 @@ export class ProjectStore {
     }
 
     // Revert linked roadmap features from 'archived' back to 'in_progress'
-    const roadmapFile = path.join(project.path, AUTO_BUILD_PATHS.ROADMAP_DIR, AUTO_BUILD_PATHS.ROADMAP_FILE);
+    const roadmapFile = path.join(project.path, APERANT_PATHS.ROADMAP_DIR, APERANT_PATHS.ROADMAP_FILE);
     revertRoadmapFeatureOutcome(roadmapFile, taskIds, '[ProjectStore]').catch((err) => {
       console.warn('[ProjectStore] Failed to revert roadmap for unarchived tasks:', err);
     });

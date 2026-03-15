@@ -19,7 +19,7 @@
 
 import path from 'path';
 import { readFileSync, mkdirSync } from 'fs';
-import { AUTO_BUILD_PATHS, getSpecsDir } from '../../../shared/constants';
+import { APERANT_PATHS, getSpecsDir } from '../../../shared/constants';
 import type { TaskStatus, Project, Task } from '../../../shared/types';
 import { projectStore } from '../../project-store';
 import type { TaskEventPayload } from '../../agent/task-event-schema';
@@ -69,9 +69,9 @@ function isFileNotFoundError(err: unknown): boolean {
  * Get the plan file path for a task
  */
 export function getPlanPath(project: Project, task: Task): string {
-  const specsBaseDir = getSpecsDir(project.autoBuildPath);
+  const specsBaseDir = getSpecsDir(project.aperantPath);
   const specDir = path.join(project.path, specsBaseDir, task.specId);
-  return path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+  return path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN);
 }
 
 /**

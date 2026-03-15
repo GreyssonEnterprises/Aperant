@@ -262,8 +262,8 @@ export function getLocalSourcePath(projectPath: string): string | null {
  * Check if project is initialized (has .aperant directory)
  */
 export function isInitialized(projectPath: string): boolean {
-  const dotAutoBuildPath = path.join(projectPath, '.aperant');
-  return existsSync(dotAutoBuildPath);
+  const dotAperantPath = path.join(projectPath, '.aperant');
+  return existsSync(dotAperantPath);
 }
 
 /**
@@ -299,9 +299,9 @@ export function initializeProject(projectPath: string): InitializationResult {
   }
 
   // Check if already initialized
-  const dotAutoBuildPath = path.join(projectPath, '.aperant');
+  const dotAperantPath = path.join(projectPath, '.aperant');
 
-  if (existsSync(dotAutoBuildPath)) {
+  if (existsSync(dotAperantPath)) {
     debug('Already initialized - .aperant exists');
     return {
       success: false,
@@ -310,14 +310,14 @@ export function initializeProject(projectPath: string): InitializationResult {
   }
 
   try {
-    debug('Creating .aperant data directory', { dotAutoBuildPath });
+    debug('Creating .aperant data directory', { dotAperantPath });
 
     // Create the .aperant directory
-    mkdirSync(dotAutoBuildPath, { recursive: true });
+    mkdirSync(dotAperantPath, { recursive: true });
 
     // Create data directories
     for (const dataDir of DATA_DIRECTORIES) {
-      const dirPath = path.join(dotAutoBuildPath, dataDir);
+      const dirPath = path.join(dotAperantPath, dataDir);
       debug('Creating data directory', { dataDir, dirPath });
       mkdirSync(dirPath, { recursive: true });
       writeFileSync(path.join(dirPath, '.gitkeep'), '', 'utf-8');
@@ -343,9 +343,9 @@ export function initializeProject(projectPath: string): InitializationResult {
  * Useful if new directories are added in future versions.
  */
 export function ensureDataDirectories(projectPath: string): InitializationResult {
-  const dotAutoBuildPath = path.join(projectPath, '.aperant');
+  const dotAperantPath = path.join(projectPath, '.aperant');
 
-  if (!existsSync(dotAutoBuildPath)) {
+  if (!existsSync(dotAperantPath)) {
     return {
       success: false,
       error: 'Project not initialized. Run initialize first.'
@@ -354,7 +354,7 @@ export function ensureDataDirectories(projectPath: string): InitializationResult
 
   try {
     for (const dataDir of DATA_DIRECTORIES) {
-      const dirPath = path.join(dotAutoBuildPath, dataDir);
+      const dirPath = path.join(dotAperantPath, dataDir);
       if (!existsSync(dirPath)) {
         debug('Creating missing data directory', { dataDir, dirPath });
         mkdirSync(dirPath, { recursive: true });
@@ -377,12 +377,12 @@ export function ensureDataDirectories(projectPath: string): InitializationResult
  * The aperant/ folder (if it exists) is the SOURCE CODE being developed,
  * not an installation. This allows Aperant to be used to develop itself.
  */
-export function getAutoBuildPath(projectPath: string): string | null {
-  const dotAutoBuildPath = path.join(projectPath, '.aperant');
+export function getAperantPath(projectPath: string): string | null {
+  const dotAperantPath = path.join(projectPath, '.aperant');
 
-  debug('getAutoBuildPath called', { projectPath, dotAutoBuildPath });
+  debug('getAperantPath called', { projectPath, dotAperantPath });
 
-  if (existsSync(dotAutoBuildPath)) {
+  if (existsSync(dotAperantPath)) {
     debug('Returning .aperant (installed version)');
     return '.aperant';
   }
@@ -420,13 +420,26 @@ export function migrateProject(projectPath: string): InitializationResult {
     // Rename the directory
     renameSync(oldPath, newPath);
 
+    // Rename root-level files
+    const filesToRename = [
+      ['.auto-claude-security.json', '.aperant-security.json'],
+      ['.auto-claude-status', '.aperant-status'],
+    ];
+    for (const [oldName, newName] of filesToRename) {
+      const oldFilePath = path.join(projectPath, oldName);
+      const newFilePath = path.join(projectPath, newName);
+      if (existsSync(oldFilePath) && !existsSync(newFilePath)) {
+        renameSync(oldFilePath, newFilePath);
+      }
+    }
+
     // Update .gitignore: replace .auto-claude/ with .aperant/
     const gitignorePath = path.join(projectPath, '.gitignore');
     try {
       let content = readFileSync(gitignorePath, 'utf-8');
-      content = content.replace(/\.auto-claude\//g, '.aperant/');
-      content = content.replace(/\.auto-claude-security\.json/g, '.aperant-security.json');
-      content = content.replace(/\.auto-claude-status/g, '.aperant-status');
+      content = content.replace(/^\.auto-claude\/$/gm, '.aperant/');
+      content = content.replace(/^\.auto-claude-security\.json$/gm, '.aperant-security.json');
+      content = content.replace(/^\.auto-claude-status$/gm, '.aperant-status');
       writeFileSync(gitignorePath, content, 'utf-8');
     } catch {
       // .gitignore update is non-critical

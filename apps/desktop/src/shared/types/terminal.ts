@@ -259,8 +259,8 @@ export interface TerminalWorktreeResult {
 }
 
 /**
- * Information about a worktree not managed by Auto Claude
- * Discovered via `git worktree list` excluding Auto Claude paths
+ * Information about a worktree not managed by Aperant
+ * Discovered via `git worktree list` excluding Aperant paths
  */
 export interface OtherWorktreeInfo {
   /** Full path to the worktree */

@@ -164,7 +164,7 @@ export function detectWorktreeBranch(
     }).trim();
 
     // SECURITY: Use strict exact-match validation (not prefix matching) to prevent
-    // accidentally deleting a different task's auto-claude branch. When git rev-parse
+    // accidentally deleting a different task's aperant branch. When git rev-parse
     // returns an unexpected branch, we MUST fall back to the expected pattern rather
     // than risking deletion of the wrong branch. This is critical for data safety.
     if (detectedBranch === expectedBranch) {

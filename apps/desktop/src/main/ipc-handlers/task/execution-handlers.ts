@@ -1,5 +1,5 @@
 import { ipcMain, BrowserWindow } from 'electron';
-import { IPC_CHANNELS, AUTO_BUILD_PATHS, getSpecsDir } from '../../../shared/constants';
+import { IPC_CHANNELS, APERANT_PATHS, getSpecsDir } from '../../../shared/constants';
 import type { IPCResult, TaskStartOptions, TaskStatus, ImageAttachment } from '../../../shared/types';
 import path from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
@@ -170,7 +170,7 @@ export function registerTaskExecutionHandlers(
         ? (projectStore.getProject(task.projectId) ?? foundProject)
         : foundProject;
 
-      // Check git status - Auto Claude requires git for worktree-based builds
+      // Check git status - Aperant requires git for worktree-based builds
       const gitStatus = checkGitStatus(project.path);
       if (!gitStatus.isGitRepo) {
         console.warn('[TASK_START] Project is not a git repository:', project.path);
@@ -211,13 +211,13 @@ export function registerTaskExecutionHandlers(
 
       // Check if implementation_plan.json has valid subtasks BEFORE XState handling.
       // This is more reliable than task.subtasks.length which may not be loaded yet.
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const specDir = path.join(
         project.path,
         specsBaseDir,
         task.specId
       );
-      const planFilePath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+      const planFilePath = path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN);
       let planHasSubtasks = false;
       const planContent = safeReadFileSync(planFilePath);
       if (planContent) {
@@ -291,7 +291,7 @@ export function registerTaskExecutionHandlers(
 
       // Check if spec.md exists (indicates spec creation was already done or in progress)
       // Check main project path for spec file (spec is created before worktree)
-      const specFilePath = path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE);
+      const specFilePath = path.join(specDir, APERANT_PATHS.SPEC_FILE);
       const hasSpec = existsSync(specFilePath);
 
       // Check if this task needs spec creation first (no spec file = not yet created)
@@ -409,7 +409,7 @@ export function registerTaskExecutionHandlers(
       }
 
       // Check if dev mode is enabled for this project
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const specDir = path.join(
         project.path,
         specsBaseDir,
@@ -423,7 +423,7 @@ export function registerTaskExecutionHandlers(
 
       if (approved) {
         // Write approval to QA report
-        const qaReportPath = path.join(specDir, AUTO_BUILD_PATHS.QA_REPORT);
+        const qaReportPath = path.join(specDir, APERANT_PATHS.QA_REPORT);
         try {
           writeFileSync(
             qaReportPath,
@@ -681,13 +681,13 @@ export function registerTaskExecutionHandlers(
       // Validate status transition - 'human_review' requires actual work to have been done
       // This prevents tasks from being incorrectly marked as ready for review when execution failed
       if (status === 'human_review') {
-        const specsBaseDirForValidation = getSpecsDir(project.autoBuildPath);
+        const specsBaseDirForValidation = getSpecsDir(project.aperantPath);
         const specDirForValidation = path.join(
           project.path,
           specsBaseDirForValidation,
           task.specId
         );
-        const specFilePath = path.join(specDirForValidation, AUTO_BUILD_PATHS.SPEC_FILE);
+        const specFilePath = path.join(specDirForValidation, APERANT_PATHS.SPEC_FILE);
 
         // Check if spec.md exists and has meaningful content (at least 100 chars)
         const MIN_SPEC_CONTENT_LENGTH = 100;
@@ -710,7 +710,7 @@ export function registerTaskExecutionHandlers(
       }
 
       // Get the spec directory and plan path using shared utility
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const specDir = path.join(project.path, specsBaseDir, task.specId);
       const planPath = getPlanPath(project, task);
 
@@ -802,11 +802,11 @@ export function registerTaskExecutionHandlers(
           });
 
           // Check if spec.md exists
-          const specFilePath = path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE);
+          const specFilePath = path.join(specDir, APERANT_PATHS.SPEC_FILE);
           const hasSpec = existsSync(specFilePath);
           const needsSpecCreation = !hasSpec;
           // FIX (#1562): Check actual plan file for subtasks, not just task.subtasks.length
-          const updatePlanFilePath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+          const updatePlanFilePath = path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN);
           let updatePlanHasSubtasks = false;
           const updatePlanContent = safeReadFileSync(updatePlanFilePath);
           if (updatePlanContent) {
@@ -914,7 +914,7 @@ export function registerTaskExecutionHandlers(
       }
 
       // Get the spec directory - use task.specsPath if available (handles worktree vs main)
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const specDir = task.specsPath || path.join(
         project.path,
         specsBaseDir,
@@ -1006,28 +1006,28 @@ export function registerTaskExecutionHandlers(
       // If we write to main project but task is in worktree, the worktree's old status takes precedence on refresh.
       const specDir = task.specsPath || path.join(
         project.path,
-        getSpecsDir(project.autoBuildPath),
+        getSpecsDir(project.aperantPath),
         task.specId
       );
 
       // Update implementation_plan.json
-      const planPath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+      const planPath = path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN);
       console.log(`[Recovery] Writing to plan file at: ${planPath} (task location: ${task.location || 'main'})`);
 
       // Also update the OTHER location if task exists in both main and worktree
       // This ensures consistency regardless of which version getTasks() prefers
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const mainSpecDir = path.join(project.path, specsBaseDir, task.specId);
       const worktreePath = findTaskWorktree(project.path, task.specId);
       const worktreeSpecDir = worktreePath ? path.join(worktreePath, specsBaseDir, task.specId) : null;
 
       // Collect all plan file paths that need updating
       const planPathsToUpdate: string[] = [planPath];
-      if (mainSpecDir !== specDir && existsSync(path.join(mainSpecDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN))) {
-        planPathsToUpdate.push(path.join(mainSpecDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN));
+      if (mainSpecDir !== specDir && existsSync(path.join(mainSpecDir, APERANT_PATHS.IMPLEMENTATION_PLAN))) {
+        planPathsToUpdate.push(path.join(mainSpecDir, APERANT_PATHS.IMPLEMENTATION_PLAN));
       }
-      if (worktreeSpecDir && worktreeSpecDir !== specDir && existsSync(path.join(worktreeSpecDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN))) {
-        planPathsToUpdate.push(path.join(worktreeSpecDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN));
+      if (worktreeSpecDir && worktreeSpecDir !== specDir && existsSync(path.join(worktreeSpecDir, APERANT_PATHS.IMPLEMENTATION_PLAN))) {
+        planPathsToUpdate.push(path.join(worktreeSpecDir, APERANT_PATHS.IMPLEMENTATION_PLAN));
       }
       console.log(`[Recovery] Will update ${planPathsToUpdate.length} plan file(s):`, planPathsToUpdate);
 
@@ -1327,7 +1327,7 @@ export function registerTaskExecutionHandlers(
             // Check if spec.md exists to determine whether to run spec creation or task execution
             // Check main project path for spec file (spec is created before worktree)
             // mainSpecDir is declared earlier in the handler scope
-            const specFilePath = path.join(mainSpecDir, AUTO_BUILD_PATHS.SPEC_FILE);
+            const specFilePath = path.join(mainSpecDir, APERANT_PATHS.SPEC_FILE);
             const hasSpec = existsSync(specFilePath);
             const needsSpecCreation = !hasSpec;
 

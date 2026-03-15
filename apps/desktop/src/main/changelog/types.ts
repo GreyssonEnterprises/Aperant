@@ -6,7 +6,7 @@
 export interface ChangelogConfig {
   pythonPath: string;
   claudePath: string;
-  autoBuildSourcePath: string;
+  aperantSourcePath: string;
 }
 
 export interface PromptBuildOptions {

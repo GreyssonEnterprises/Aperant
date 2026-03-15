@@ -22,7 +22,7 @@ export class VersionSuggester {
   constructor(
     private pythonPath: string,
     private claudePath: string,
-    private autoBuildSourcePath: string,
+    private aperantSourcePath: string,
     debugEnabled: boolean
   ) {
     this.debugEnabled = debugEnabled;
@@ -57,7 +57,7 @@ export class VersionSuggester {
       // Use python3/python as fallback command (Python subprocess path removed in Vercel AI SDK migration)
       const pythonCommand = this.pythonPath || 'python3';
       const childProcess = spawn(pythonCommand, ['-c', script], {
-        cwd: this.autoBuildSourcePath,
+        cwd: this.aperantSourcePath,
         env: spawnEnv
       });
 

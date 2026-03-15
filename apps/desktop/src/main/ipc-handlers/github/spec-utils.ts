@@ -4,7 +4,7 @@
 
 import path from 'path';
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
-import { AUTO_BUILD_PATHS, getSpecsDir } from '../../../shared/constants';
+import { APERANT_PATHS, getSpecsDir } from '../../../shared/constants';
 import type { Project, TaskMetadata } from '../../../shared/types';
 import { withSpecNumberLock } from '../../utils/spec-number-lock';
 import { debugLog } from './utils/logger';
@@ -101,7 +101,7 @@ export async function createSpecForIssue(
   labels: string[] = [],
   baseBranch?: string
 ): Promise<SpecCreationData> {
-  const specsBaseDir = getSpecsDir(project.autoBuildPath);
+  const specsBaseDir = getSpecsDir(project.aperantPath);
   const specsDir = path.join(project.path, specsBaseDir);
 
   if (!existsSync(specsDir)) {
@@ -117,7 +117,7 @@ export async function createSpecForIssue(
   // Use coordinated spec numbering with lock to prevent collisions
   return await withSpecNumberLock(project.path, async (lock) => {
     // Get next spec number from global scan (main + all worktrees)
-    const specNumber = lock.getNextSpecNumber(project.autoBuildPath);
+    const specNumber = lock.getNextSpecNumber(project.aperantPath);
     const slugifiedTitle = slugifyTitle(safeTitle);
     const specId = `${String(specNumber).padStart(3, '0')}-${slugifiedTitle}`;
 
@@ -139,7 +139,7 @@ export async function createSpecForIssue(
     };
     // lgtm[js/http-to-file-access] - specDir is controlled, slugifiedTitle sanitizes input
     writeFileSync(
-      path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN),
+      path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN),
       JSON.stringify(implementationPlan, null, 2),
       'utf-8'
     );
@@ -151,7 +151,7 @@ export async function createSpecForIssue(
     };
     // lgtm[js/http-to-file-access] - specDir is controlled, slugifiedTitle sanitizes input
     writeFileSync(
-      path.join(specDir, AUTO_BUILD_PATHS.REQUIREMENTS),
+      path.join(specDir, APERANT_PATHS.REQUIREMENTS),
       JSON.stringify(requirements, null, 2),
       'utf-8'
     );
@@ -234,7 +234,7 @@ Please analyze this issue and provide:
  * Used to immediately update the plan file so the frontend shows the correct status
  */
 export function updateImplementationPlanStatus(specDir: string, status: string): void {
-  const planPath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+  const planPath = path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN);
 
   try {
     const content = readFileSync(planPath, 'utf-8');

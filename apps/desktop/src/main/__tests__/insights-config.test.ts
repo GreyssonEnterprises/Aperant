@@ -45,7 +45,7 @@ describe('InsightsConfig', () => {
 
   it('should build process env with profile settings', async () => {
     const config = new InsightsConfig();
-    vi.spyOn(config, 'loadAutoBuildEnv').mockReturnValue({ CUSTOM_ENV: '1' });
+    vi.spyOn(config, 'loadAperantEnv').mockReturnValue({ CUSTOM_ENV: '1' });
 
     const env = await config.getProcessEnv();
 

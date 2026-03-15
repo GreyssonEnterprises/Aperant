@@ -33,7 +33,7 @@ export class TerminalNameGenerator extends EventEmitter {
    * No-op configure() kept for backward compatibility.
    * Python source path is no longer needed.
    */
-  configure(_autoBuildSourcePath?: string): void {
+  configure(_aperantSourcePath?: string): void {
     // No-op: TypeScript implementation does not need a source path
   }
 

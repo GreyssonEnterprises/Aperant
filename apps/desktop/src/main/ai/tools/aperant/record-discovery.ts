@@ -3,7 +3,7 @@
  * =====================
  *
  * Records a codebase discovery to session memory (codebase_map.json).
- * See apps/desktop/src/main/ai/tools/auto-claude/record-discovery.ts for the TypeScript implementation.
+ * See apps/desktop/src/main/ai/tools/aperant/record-discovery.ts for the TypeScript implementation.
  *
  * Tool name: mcp__aperant__record_discovery
  */

@@ -1,5 +1,5 @@
 import { ipcMain, nativeImage } from 'electron';
-import { IPC_CHANNELS, AUTO_BUILD_PATHS, getSpecsDir, VALID_THINKING_LEVELS, sanitizeThinkingLevel } from '../../../shared/constants';
+import { IPC_CHANNELS, APERANT_PATHS, getSpecsDir, VALID_THINKING_LEVELS, sanitizeThinkingLevel } from '../../../shared/constants';
 import type { IPCResult, Task, TaskMetadata, TaskOutcome } from '../../../shared/types';
 import path from 'path';
 import { execFileSync } from 'child_process';
@@ -113,7 +113,7 @@ async function updateLinkedRoadmapFeature(
   specId: string,
   taskOutcome: TaskOutcome
 ): Promise<void> {
-  const roadmapFile = path.join(projectPath, AUTO_BUILD_PATHS.ROADMAP_DIR, AUTO_BUILD_PATHS.ROADMAP_FILE);
+  const roadmapFile = path.join(projectPath, APERANT_PATHS.ROADMAP_DIR, APERANT_PATHS.ROADMAP_FILE);
   await updateRoadmapFeatureOutcome(roadmapFile, [specId], taskOutcome, '[TASK_CRUD]');
 }
 
@@ -172,7 +172,7 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
       }
 
       // Generate a unique spec ID based on existing specs
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const specsDir = path.join(project.path, specsBaseDir);
 
       // Find next available spec number
@@ -282,7 +282,7 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
         phases: []
       };
 
-      const planPath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+      const planPath = path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN);
       writeFileSync(planPath, JSON.stringify(implementationPlan, null, 2), 'utf-8');
 
       // Save task metadata if provided (sanitize thinking levels before writing)
@@ -308,7 +308,7 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
         }));
       }
 
-      const requirementsPath = path.join(specDir, AUTO_BUILD_PATHS.REQUIREMENTS);
+      const requirementsPath = path.join(specDir, APERANT_PATHS.REQUIREMENTS);
       writeFileSync(requirementsPath, JSON.stringify(requirements, null, 2), 'utf-8');
 
       // Create the task object
@@ -391,7 +391,7 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
 
       // Find ALL locations where this task exists (main + any remaining worktree dirs)
       // Following the archiveTasks() pattern from project-store.ts
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const specPaths = findAllSpecPaths(project.path, specsBaseDir, task.specId);
 
       // If spec directory doesn't exist anywhere, return success (already removed)
@@ -462,8 +462,8 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
           return { success: false, error: 'Task not found' };
         }
 
-        const autoBuildDir = project.autoBuildPath || '.aperant';
-        const specDir = path.join(project.path, autoBuildDir, 'specs', task.specId);
+        const aperantDir = project.aperantPath || '.aperant';
+        const specDir = path.join(project.path, aperantDir, 'specs', task.specId);
 
         if (!existsSync(specDir)) {
           return { success: false, error: 'Spec directory not found' };
@@ -478,7 +478,7 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
         }
 
         // Update implementation_plan.json
-        const planPath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+        const planPath = path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN);
         try {
           const planContent = readFileSync(planPath, 'utf-8');
           const plan = JSON.parse(planContent);
@@ -500,7 +500,7 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
         }
 
         // Update spec.md if it exists
-        const specPath = path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE);
+        const specPath = path.join(specDir, APERANT_PATHS.SPEC_FILE);
         try {
           let specContent = readFileSync(specPath, 'utf-8');
 
@@ -674,10 +674,10 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
           console.error(`[IPC] TASK_LOAD_IMAGE_THUMBNAIL: Unknown project: "${projectPath}"`);
           return { success: false, error: 'Unknown project' };
         }
-        const autoBuildPath = project.autoBuildPath || '.aperant';
+        const aperantPath = project.aperantPath || '.aperant';
 
         // Build full path to the image
-        const specsDir = getSpecsDir(autoBuildPath);
+        const specsDir = getSpecsDir(aperantPath);
         const fullImagePath = path.join(projectPath, specsDir, specId, imagePath);
 
         // Validate path to prevent path traversal attacks

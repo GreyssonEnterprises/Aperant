@@ -78,7 +78,7 @@ export interface WorktreeResult {
  *                       the remote ref (preserves gitignored files)
  * @param pushNewBranches If true, push the branch to origin and set upstream
  *                        tracking after worktree creation. Defaults to true.
- * @param autoBuildPath  Optional custom data directory (e.g. ".aperant").
+ * @param aperantPath  Optional custom data directory (e.g. ".aperant").
  *                       Passed to getSpecsDir() for spec-copy logic.
  */
 export async function createOrGetWorktree(
@@ -87,7 +87,7 @@ export async function createOrGetWorktree(
   baseBranch = 'main',
   useLocalBranch = false,
   pushNewBranches = true,
-  autoBuildPath?: string,
+  aperantPath?: string,
 ): Promise<WorktreeResult> {
   const worktreePath = join(projectPath, '.aperant/worktrees/tasks', specId);
   const branchName = `aperant/${specId}`;
@@ -243,7 +243,7 @@ export async function createOrGetWorktree(
   // newly-created worktree checkout. Copy it from the main project so
   // that agents can read spec.md, implementation_plan.json, etc.
   // ------------------------------------------------------------------
-  const specsRelDir = getSpecsDir(autoBuildPath); // e.g. ".aperant/specs"
+  const specsRelDir = getSpecsDir(aperantPath); // e.g. ".aperant/specs"
   const sourceSpecDir = join(projectPath, specsRelDir, specId);
   const destSpecDir = join(worktreePath, specsRelDir, specId);
 

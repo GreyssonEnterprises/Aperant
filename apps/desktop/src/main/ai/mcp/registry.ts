@@ -103,7 +103,7 @@ const PUPPETEER_SERVER: McpServerConfig = {
  * Aperant MCP server - custom build management tools.
  * Used by planner, coder, and QA agents for build progress tracking.
  */
-function createAutoClaudeServer(specDir: string): McpServerConfig {
+function createAperantServer(specDir: string): McpServerConfig {
   return {
     id: 'aperant',
     name: 'Aperant',
@@ -112,7 +112,7 @@ function createAutoClaudeServer(specDir: string): McpServerConfig {
     transport: {
       type: 'stdio',
       command: 'node',
-      args: ['auto-claude-mcp-server.js'],
+      args: ['aperant-mcp-server.js'],
       env: { SPEC_DIR: specDir },
     },
   };
@@ -177,7 +177,7 @@ export function getMcpServerConfig(
 
     case 'aperant': {
       const specDir = options.specDir ?? '';
-      return createAutoClaudeServer(specDir);
+      return createAperantServer(specDir);
     }
 
     default:

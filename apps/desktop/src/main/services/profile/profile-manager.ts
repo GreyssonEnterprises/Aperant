@@ -1,12 +1,12 @@
 /**
  * Profile Manager - File I/O for API profiles
  *
- * Handles loading and saving profiles.json from the auto-claude directory.
+ * Handles loading and saving profiles.json from the aperant directory.
  * Provides graceful handling for missing or corrupted files.
  * Uses file locking to prevent race conditions in concurrent operations.
  */
 
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync, mkdirSync, copyFileSync } from 'fs';
 import path from 'path';
 import { app } from 'electron';
 // @ts-expect-error - no types available for proper-lockfile
@@ -18,7 +18,16 @@ import type { APIProfile, ProfilesFile } from '@shared/types/profile';
  */
 export function getProfilesFilePath(): string {
   const userDataPath = app.getPath('userData');
-  return path.join(userDataPath, 'aperant', 'profiles.json');
+  const newPath = path.join(userDataPath, 'aperant', 'profiles.json');
+  const oldPath = path.join(userDataPath, 'auto-claude', 'profiles.json');
+
+  // Migrate from old path if new doesn't exist yet
+  if (!existsSync(newPath) && existsSync(oldPath)) {
+    mkdirSync(path.dirname(newPath), { recursive: true });
+    copyFileSync(oldPath, newPath);
+  }
+
+  return newPath;
 }
 
 /**
@@ -110,7 +119,7 @@ export async function loadProfilesFile(): Promise<ProfilesFile> {
 
 /**
  * Save profiles.json to disk
- * Creates the auto-claude directory if it doesn't exist
+ * Creates the aperant directory if it doesn't exist
  * Ensures secure file permissions (user read/write only)
  */
 export async function saveProfilesFile(data: ProfilesFile): Promise<void> {

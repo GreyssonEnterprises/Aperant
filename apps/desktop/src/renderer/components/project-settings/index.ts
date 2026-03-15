@@ -6,7 +6,7 @@ export { useProjectSettings } from './hooks/useProjectSettings';
 export type { UseProjectSettingsReturn } from './hooks/useProjectSettings';
 
 // New refactored components for ProjectSettings dialog
-export { AutoBuildIntegration } from './AutoBuildIntegration';
+export { AperantIntegration } from './AperantIntegration';
 export { LinearIntegrationSection } from './LinearIntegrationSection';
 export { GitHubIntegrationSection } from './GitHubIntegrationSection';
 export { MemoryBackendSection } from './MemoryBackendSection';

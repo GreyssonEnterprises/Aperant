@@ -8,7 +8,7 @@ import { IPC_CHANNELS } from '../shared/constants';
 import { safeSendToRenderer } from './ipc-handlers/utils';
 import { getPlanPath, persistPlanStatusAndReasonSync } from './ipc-handlers/task/plan-file-utils';
 import { findTaskWorktree } from './worktree-paths';
-import { getSpecsDir, AUTO_BUILD_PATHS } from '../shared/constants';
+import { getSpecsDir, APERANT_PATHS } from '../shared/constants';
 import { existsSync } from 'fs';
 import path from 'path';
 
@@ -305,12 +305,12 @@ export class TaskStateManager {
     const worktreePath = findTaskWorktree(project.path, task.specId);
     if (!worktreePath) return;
 
-    const specsBaseDir = getSpecsDir(project.autoBuildPath);
+    const specsBaseDir = getSpecsDir(project.aperantPath);
     const worktreePlanPath = path.join(
       worktreePath,
       specsBaseDir,
       task.specId,
-      AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN
+      APERANT_PATHS.IMPLEMENTATION_PLAN
     );
     if (existsSync(worktreePlanPath)) {
       persistPlanStatusAndReasonSync(worktreePlanPath, status, reviewReason, project.id, xstateState, executionPhase);

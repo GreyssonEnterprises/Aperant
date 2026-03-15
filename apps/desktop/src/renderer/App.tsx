@@ -161,7 +161,7 @@ export function App() {
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrateError, setMigrateError] = useState<string | null>(null);
 
-  // GitHub setup state (shown after Auto Claude init)
+  // GitHub setup state (shown after Aperant init)
   const [showGitHubSetup, setShowGitHubSetup] = useState(false);
   const [gitHubSetupProject, setGitHubSetupProject] = useState<Project | null>(null);
 
@@ -384,10 +384,10 @@ export function App() {
     if (isInitializing) return;
 
     // Don't reopen dialog after successful initialization
-    // (project update with autoBuildPath may not have propagated yet)
+    // (project update with aperantPath may not have propagated yet)
     if (initSuccess) return;
 
-    if (selectedProject && !selectedProject.autoBuildPath && skippedInitProjectId !== selectedProject.id) {
+    if (selectedProject && !selectedProject.aperantPath && skippedInitProjectId !== selectedProject.id) {
       // Project exists but isn't initialized - show init dialog
       setPendingProject(selectedProject);
       setInitError(null); // Clear any previous errors
@@ -429,7 +429,7 @@ export function App() {
               } catch {
                 // Non-critical - fall through to init check
               }
-              if (!project.autoBuildPath) {
+              if (!project.aperantPath) {
                 setPendingProject(project);
                 setInitError(null);
                 setInitSuccess(false);
@@ -755,7 +755,7 @@ export function App() {
       if (result.success) {
         setMigrateError(null);
         setShowMigrateDialog(false);
-        // Refresh projects so the updated autoBuildPath is reflected
+        // Refresh projects so the updated aperantPath is reflected
         await loadProjects();
         setMigrationProject(null);
       } else {
@@ -769,9 +769,17 @@ export function App() {
   };
 
   const handleSkipMigrate = () => {
+    const project = migrationProject;
     setShowMigrateDialog(false);
-    setMigrationProject(null);
     setMigrateError(null);
+    setMigrationProject(null);
+    // After skipping migration, show the init dialog so a fresh .aperant/ is created
+    if (project && !project.aperantPath) {
+      setPendingProject(project);
+      setInitError(null);
+      setInitSuccess(false);
+      setShowInitDialog(true);
+    }
   };
 
   const handleInitialize = async () => {
@@ -896,6 +904,11 @@ export function App() {
           onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
           activeView={activeView}
           onViewChange={setActiveView}
+          onMigrationNeeded={(project) => {
+            setMigrationProject(project);
+            setMigrateError(null);
+            setShowMigrateDialog(true);
+          }}
         />
 
         {/* Main content */}
@@ -1075,7 +1088,7 @@ export function App() {
           onProjectAdded={handleProjectAdded}
         />
 
-        {/* Migrate Project Data Dialog - shown when .auto-claude exists but .aperant does not */}
+        {/* Migrate Project Data Dialog - shown when legacy data dir exists but .aperant does not */}
         <Dialog open={showMigrateDialog} onOpenChange={(open) => {
           if (!open && !isMigrating) {
             handleSkipMigrate();
@@ -1120,7 +1133,7 @@ export function App() {
           </DialogContent>
         </Dialog>
 
-        {/* Initialize Auto Claude Dialog */}
+        {/* Initialize Aperant Dialog */}
         <Dialog open={showInitDialog} onOpenChange={(open) => {
           console.warn('[InitDialog] onOpenChange called', { open, pendingProject: !!pendingProject, isInitializing, initSuccess });
           // Only trigger skip if user manually closed the dialog
@@ -1148,7 +1161,7 @@ export function App() {
                   <li>{t('initialize.setupSpecs')}</li>
                 </ul>
               </div>
-              {!settings.autoBuildPath && (
+              {!settings.aperantPath && (
                 <div className="mt-4 rounded-lg border border-warning/50 bg-warning/10 p-4 text-sm">
                   <div className="flex items-start gap-2">
                     <AlertCircle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
@@ -1181,7 +1194,7 @@ export function App() {
               </Button>
               <Button
                 onClick={handleInitialize}
-                disabled={isInitializing || !settings.autoBuildPath}
+                disabled={isInitializing || !settings.aperantPath}
               >
                 {isInitializing ? (
                   <>
@@ -1199,7 +1212,7 @@ export function App() {
           </DialogContent>
         </Dialog>
 
-        {/* GitHub Setup Modal - shows after Auto Claude init to configure GitHub */}
+        {/* GitHub Setup Modal - shows after Aperant init to configure GitHub */}
         {gitHubSetupProject && (
           <GitHubSetupModal
             open={showGitHubSetup}

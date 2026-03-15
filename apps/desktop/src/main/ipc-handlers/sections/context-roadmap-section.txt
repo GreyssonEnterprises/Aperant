@@ -12,8 +12,8 @@
 
       const roadmapPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.ROADMAP_DIR,
-        AUTO_BUILD_PATHS.ROADMAP_FILE
+        APERANT_PATHS.ROADMAP_DIR,
+        APERANT_PATHS.ROADMAP_FILE
       );
 
       if (!existsSync(roadmapPath)) {
@@ -160,8 +160,8 @@
 
       const roadmapPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.ROADMAP_DIR,
-        AUTO_BUILD_PATHS.ROADMAP_FILE
+        APERANT_PATHS.ROADMAP_DIR,
+        APERANT_PATHS.ROADMAP_FILE
       );
 
       if (!existsSync(roadmapPath)) {
@@ -208,8 +208,8 @@
 
       const roadmapPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.ROADMAP_DIR,
-        AUTO_BUILD_PATHS.ROADMAP_FILE
+        APERANT_PATHS.ROADMAP_DIR,
+        APERANT_PATHS.ROADMAP_FILE
       );
 
       if (!existsSync(roadmapPath)) {
@@ -242,7 +242,7 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join('\n'
 `;
 
         // Generate proper spec directory (like task creation)
-                const specsBaseDir = getSpecsDir(project.autoBuildPath);
+                const specsBaseDir = getSpecsDir(project.aperantPath);
         const specsDir = path.join(project.path, specsBaseDir);
 
         // Ensure specs directory exists
@@ -289,14 +289,14 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join('\n'
           status: 'pending',
           phases: []
         };
-        writeFileSync(path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN), JSON.stringify(implementationPlan, null, 2));
+        writeFileSync(path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN), JSON.stringify(implementationPlan, null, 2));
 
         // Create requirements.json
         const requirements = {
           task_description: taskDescription,
           workflow_type: 'feature'
         };
-        writeFileSync(path.join(specDir, AUTO_BUILD_PATHS.REQUIREMENTS), JSON.stringify(requirements, null, 2));
+        writeFileSync(path.join(specDir, APERANT_PATHS.REQUIREMENTS), JSON.stringify(requirements, null, 2));
 
         // Build metadata
         const metadata: TaskMetadata = {
@@ -381,7 +381,7 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join('\n'
       try {
         // Load project index
         let projectIndex: ProjectIndex | null = null;
-        const indexPath = path.join(project.path, AUTO_BUILD_PATHS.PROJECT_INDEX);
+        const indexPath = path.join(project.path, APERANT_PATHS.PROJECT_INDEX);
         if (existsSync(indexPath)) {
           const content = readFileSync(indexPath, 'utf-8');
           projectIndex = JSON.parse(content);
@@ -396,7 +396,7 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join('\n'
         };
 
         // Check for graphiti state in specs
-                const specsBaseDir = getSpecsDir(project.autoBuildPath);
+                const specsBaseDir = getSpecsDir(project.aperantPath);
         const specsDir = path.join(project.path, specsBaseDir);
         if (existsSync(specsDir)) {
           const specDirs = readdirSync(specsDir)
@@ -408,7 +408,7 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join('\n'
             .reverse();
 
           for (const specDir of specDirs) {
-            const statePath = path.join(specsDir, specDir, AUTO_BUILD_PATHS.GRAPHITI_STATE);
+            const statePath = path.join(specsDir, specDir, APERANT_PATHS.GRAPHITI_STATE);
             if (existsSync(statePath)) {
               const stateContent = readFileSync(statePath, 'utf-8');
               memoryState = JSON.parse(stateContent);
@@ -432,8 +432,8 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join('\n'
         if (!memoryState) {
           // Load project .env file and global settings to check for Graphiti config
           let projectEnvVars: Record<string, string> = {};
-          if (project.autoBuildPath) {
-            const projectEnvPath = path.join(project.path, project.autoBuildPath, '.env');
+          if (project.aperantPath) {
+            const projectEnvPath = path.join(project.path, project.aperantPath, '.env');
             if (existsSync(projectEnvPath)) {
               try {
                 const envContent = readFileSync(projectEnvPath, 'utf-8');
@@ -607,17 +607,17 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join('\n'
 
       try {
         // Run the analyzer script to regenerate project_index.json
-        const autoBuildSource = getAutoBuildSourcePath();
+        const aperantSource = getAperantSourcePath();
 
-        if (!autoBuildSource) {
+        if (!aperantSource) {
           return {
             success: false,
             error: 'Auto-build source path not configured'
           };
         }
 
-        const analyzerPath = path.join(autoBuildSource, 'analyzer.py');
-        const indexOutputPath = path.join(project.path, AUTO_BUILD_PATHS.PROJECT_INDEX);
+        const analyzerPath = path.join(aperantSource, 'analyzer.py');
+        const indexOutputPath = path.join(project.path, APERANT_PATHS.PROJECT_INDEX);
 
         // Run analyzer
         await new Promise<void>((resolve, reject) => {
@@ -668,8 +668,8 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join('\n'
 
       // Load project .env file to check for Graphiti config
       let projectEnvVars: Record<string, string> = {};
-      if (project.autoBuildPath) {
-        const projectEnvPath = path.join(project.path, project.autoBuildPath, '.env');
+      if (project.aperantPath) {
+        const projectEnvPath = path.join(project.path, project.aperantPath, '.env');
         if (existsSync(projectEnvPath)) {
           try {
             const envContent = readFileSync(projectEnvPath, 'utf-8');
@@ -771,7 +771,7 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join('\n'
       const queryLower = query.toLowerCase();
 
       // Get specs directory path
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const specsDir = path.join(project.path, specsBaseDir);
       if (existsSync(specsDir)) {
         const allSpecDirs = readdirSync(specsDir)
@@ -822,7 +822,7 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join('\n'
       const memories: MemoryEpisode[] = [];
 
       // Get specs directory path
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specsBaseDir = getSpecsDir(project.aperantPath);
       const specsDir = path.join(project.path, specsBaseDir);
 
       if (existsSync(specsDir)) {

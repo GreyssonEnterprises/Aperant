@@ -5,7 +5,7 @@
 import path from 'path';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import type { IpcMainInvokeEvent } from 'electron';
-import { AUTO_BUILD_PATHS, getSpecsDir } from '../../../shared/constants';
+import { APERANT_PATHS, getSpecsDir } from '../../../shared/constants';
 import type {
   IPCResult,
   Task,
@@ -154,7 +154,7 @@ function createSpecFiles(
     spec_file: 'spec.md'
   };
   writeFileSync(
-    path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN),
+    path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN),
     JSON.stringify(initialPlan, null, 2),
     'utf-8'
   );
@@ -173,7 +173,7 @@ ${idea.rationale}
 ---
 *This spec was created from ideation and is pending detailed specification.*
 `;
-  writeFileSync(path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE), specContent, 'utf-8');
+  writeFileSync(path.join(specDir, APERANT_PATHS.SPEC_FILE), specContent, 'utf-8');
 }
 
 /**
@@ -191,8 +191,8 @@ export async function convertIdeaToTask(
 
   const ideationPath = path.join(
     project.path,
-    AUTO_BUILD_PATHS.IDEATION_DIR,
-    AUTO_BUILD_PATHS.IDEATION_FILE
+    APERANT_PATHS.IDEATION_DIR,
+    APERANT_PATHS.IDEATION_FILE
   );
 
   // Quick check that ideation file exists (actual read happens inside lock)
@@ -201,7 +201,7 @@ export async function convertIdeaToTask(
   }
 
   // Get specs directory path
-  const specsBaseDir = getSpecsDir(project.autoBuildPath);
+  const specsBaseDir = getSpecsDir(project.aperantPath);
   const specsDir = path.join(project.path, specsBaseDir);
 
   // Ensure specs directory exists
@@ -236,7 +236,7 @@ export async function convertIdeaToTask(
       }
 
       // Get next spec number from global scan (main + all worktrees)
-      const nextNum = lock.getNextSpecNumber(project.autoBuildPath);
+      const nextNum = lock.getNextSpecNumber(project.aperantPath);
       const slugifiedTitle = slugifyTitle(idea.title);
       const specId = `${String(nextNum).padStart(3, '0')}-${slugifiedTitle}`;
       const specDir = path.join(specsDir, specId);

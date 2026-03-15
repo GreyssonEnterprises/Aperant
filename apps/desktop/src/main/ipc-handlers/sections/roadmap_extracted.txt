@@ -12,8 +12,8 @@
 
       const roadmapPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.ROADMAP_DIR,
-        AUTO_BUILD_PATHS.ROADMAP_FILE
+        APERANT_PATHS.ROADMAP_DIR,
+        APERANT_PATHS.ROADMAP_FILE
       );
 
       if (!existsSync(roadmapPath)) {
@@ -160,8 +160,8 @@
 
       const roadmapPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.ROADMAP_DIR,
-        AUTO_BUILD_PATHS.ROADMAP_FILE
+        APERANT_PATHS.ROADMAP_DIR,
+        APERANT_PATHS.ROADMAP_FILE
       );
 
       if (!existsSync(roadmapPath)) {
@@ -208,8 +208,8 @@
 
       const roadmapPath = path.join(
         project.path,
-        AUTO_BUILD_PATHS.ROADMAP_DIR,
-        AUTO_BUILD_PATHS.ROADMAP_FILE
+        APERANT_PATHS.ROADMAP_DIR,
+        APERANT_PATHS.ROADMAP_FILE
       );
 
       if (!existsSync(roadmapPath)) {
@@ -242,7 +242,7 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join('\n'
 `;
 
         // Generate proper spec directory (like task creation)
-                const specsBaseDir = getSpecsDir(project.autoBuildPath);
+                const specsBaseDir = getSpecsDir(project.aperantPath);
         const specsDir = path.join(project.path, specsBaseDir);
 
         // Ensure specs directory exists
@@ -289,14 +289,14 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join('\n'
           status: 'pending',
           phases: []
         };
-        writeFileSync(path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN), JSON.stringify(implementationPlan, null, 2));
+        writeFileSync(path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN), JSON.stringify(implementationPlan, null, 2));
 
         // Create requirements.json
         const requirements = {
           task_description: taskDescription,
           workflow_type: 'feature'
         };
-        writeFileSync(path.join(specDir, AUTO_BUILD_PATHS.REQUIREMENTS), JSON.stringify(requirements, null, 2));
+        writeFileSync(path.join(specDir, APERANT_PATHS.REQUIREMENTS), JSON.stringify(requirements, null, 2));
 
         // Build metadata
         const metadata: TaskMetadata = {

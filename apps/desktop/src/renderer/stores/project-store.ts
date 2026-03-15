@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Project, ProjectSettings, AutoBuildVersionInfo, InitializationResult } from '../../shared/types';
+import type { Project, ProjectSettings, AperantVersionInfo, InitializationResult } from '../../shared/types';
 
 // localStorage keys for persisting project state (legacy - now using IPC)
 const LAST_SELECTED_PROJECT_KEY = 'lastSelectedProjectId';
@@ -406,11 +406,11 @@ export async function updateProjectSettings(
 }
 
 /**
- * Check auto-claude version status for a project
+ * Check aperant version status for a project
  */
 export async function checkProjectVersion(
   projectId: string
-): Promise<AutoBuildVersionInfo | null> {
+): Promise<AperantVersionInfo | null> {
   try {
     const result = await window.electronAPI.checkProjectVersion(projectId);
     if (result.success && result.data) {
@@ -423,7 +423,7 @@ export async function checkProjectVersion(
 }
 
 /**
- * Initialize auto-claude in a project
+ * Initialize aperant in a project
  */
 export async function initializeProject(
   projectId: string
@@ -437,10 +437,10 @@ export async function initializeProject(
 
     if (result.success && result.data) {
       console.log('[ProjectStore] IPC succeeded, result.data:', result.data);
-      // Update the project's autoBuildPath in local state
+      // Update the project's aperantPath in local state
       if (result.data.success) {
-        console.log('[ProjectStore] Updating project autoBuildPath to .aperant');
-        store.updateProject(projectId, { autoBuildPath: '.aperant' });
+        console.log('[ProjectStore] Updating project aperantPath to .aperant');
+        store.updateProject(projectId, { aperantPath: '.aperant' });
       } else {
         console.log('[ProjectStore] result.data.success is false, not updating project');
       }

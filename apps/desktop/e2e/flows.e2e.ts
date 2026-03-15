@@ -231,9 +231,9 @@ test.describe('E2E Flow Verification (Mock-based)', () => {
     const projectPath = TEST_PROJECT_DIR;
     expect(existsSync(projectPath)).toBe(true);
 
-    // Check for auto-claude directory detection
-    const autoBuildPath = path.join(projectPath, 'auto-claude');
-    expect(existsSync(autoBuildPath)).toBe(true);
+    // Check for aperant directory detection
+    const aperantPath = path.join(projectPath, '.aperant');
+    expect(existsSync(aperantPath)).toBe(true);
 
     cleanupTestEnvironment();
   });

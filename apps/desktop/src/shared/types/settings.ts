@@ -269,8 +269,8 @@ export interface AppSettings {
   githubCLIPath?: string;
   gitlabCLIPath?: string;
   claudePath?: string;
-  autoBuildPath?: string;
-  autoUpdateAutoBuild: boolean;
+  aperantPath?: string;
+  autoUpdateAperant: boolean;
   autoNameTerminals: boolean;
   notifications: NotificationSettings;
   // Global API keys (used as defaults for all projects)

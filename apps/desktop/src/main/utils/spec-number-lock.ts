@@ -133,7 +133,7 @@ export class SpecNumberLock {
   /**
    * Get the next available spec number (must be called while lock is held)
    */
-  getNextSpecNumber(autoBuildPath?: string): number {
+  getNextSpecNumber(aperantPath?: string): number {
     if (!this.acquired) {
       throw new SpecNumberLockError(
         'Lock must be acquired before getting next spec number'
@@ -147,7 +147,7 @@ export class SpecNumberLock {
     let maxNumber = 0;
 
     // Determine specs directory base path
-    const specsBase = autoBuildPath || '.aperant';
+    const specsBase = aperantPath || '.aperant';
 
     // 1. Scan main project specs
     const mainSpecsDir = path.join(this.projectDir, specsBase, 'specs');

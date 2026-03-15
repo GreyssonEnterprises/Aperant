@@ -16,6 +16,7 @@
 
 import * as path from 'path';
 import * as os from 'os';
+import { existsSync } from 'fs';
 import { isLinux } from './platform';
 
 const APP_NAME = 'aperant';
@@ -73,16 +74,28 @@ export function getAppCacheDir(): string {
  * This is where graph databases are stored (previously ~/.aperant/memories)
  */
 export function getMemoriesDir(): string {
-  // For compatibility, we still support the legacy path
-  const legacyPath = path.join(os.homedir(), '.aperant', 'memories');
+  // New path under ~/.aperant/memories
+  const newPath = path.join(os.homedir(), '.aperant', 'memories');
+
+  // Legacy path from before the rebrand
+  const legacyPath = path.join(os.homedir(), '.auto-claude', 'memories');
 
   // On Linux with XDG variables set (AppImage, Flatpak, Snap), use XDG path
   if (isLinux() && (process.env.XDG_DATA_HOME || process.env.APPIMAGE || process.env.SNAP || process.env.FLATPAK_ID)) {
     return path.join(getXdgDataHome(), APP_NAME, 'memories');
   }
 
-  // Default to legacy path for backwards compatibility
-  return legacyPath;
+  // Use new path if it exists, otherwise fall back to legacy
+  if (existsSync(newPath)) {
+    return newPath;
+  }
+
+  if (existsSync(legacyPath)) {
+    return legacyPath;
+  }
+
+  // Default to new path for fresh installs
+  return newPath;
 }
 
 /**

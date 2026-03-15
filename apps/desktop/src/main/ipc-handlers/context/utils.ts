@@ -7,22 +7,22 @@ export interface EnvironmentVars {
 }
 
 export interface GlobalSettings {
-  autoBuildPath?: string;
+  aperantPath?: string;
   globalOpenAIApiKey?: string;
 }
 
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 
 /**
- * Get the auto-build source path from settings
+ * Get the aperant source path from settings
  */
-export function getAutoBuildSourcePath(): string | null {
+export function getAperantSourcePath(): string | null {
   if (existsSync(settingsPath)) {
     try {
       const content = readFileSync(settingsPath, 'utf-8');
       const settings = JSON.parse(content);
-      if (settings.autoBuildPath && existsSync(settings.autoBuildPath)) {
-        return settings.autoBuildPath;
+      if (settings.aperantPath && existsSync(settings.aperantPath)) {
+        return settings.aperantPath;
       }
     } catch {
       // Fall through to null
@@ -63,12 +63,12 @@ export function parseEnvFile(envContent: string): EnvironmentVars {
 /**
  * Load environment variables from project .env file
  */
-export function loadProjectEnvVars(projectPath: string, autoBuildPath?: string): EnvironmentVars {
-  if (!autoBuildPath) {
+export function loadProjectEnvVars(projectPath: string, aperantPath?: string): EnvironmentVars {
+  if (!aperantPath) {
     return {};
   }
 
-  const projectEnvPath = path.join(projectPath, autoBuildPath, '.env');
+  const projectEnvPath = path.join(projectPath, aperantPath, '.env');
   if (!existsSync(projectEnvPath)) {
     return {};
   }

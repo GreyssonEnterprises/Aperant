@@ -420,9 +420,9 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
               </p>
             </div>
             <Switch
-              checked={settings.autoUpdateAutoBuild}
+              checked={settings.autoUpdateAperant}
               onCheckedChange={(checked) =>
-                onSettingsChange({ ...settings, autoUpdateAutoBuild: checked })
+                onSettingsChange({ ...settings, autoUpdateAperant: checked })
               }
             />
           </div>

@@ -24,7 +24,7 @@ settings/
 │   ├── index.ts
 │   ├── EmptyProjectState.tsx   (Empty state UI)
 │   ├── ErrorDisplay.tsx        (Error message display)
-│   └── InitializationGuard.tsx (Auto-Build requirement guard)
+│   └── InitializationGuard.tsx (Aperant requirement guard)
 ├── integrations/               (Third-party service integrations)
 │   ├── index.ts
 │   ├── LinearIntegration.tsx   (Complete Linear setup)
@@ -53,7 +53,7 @@ settings/
 - **Props**: `error`, `envError`
 
 #### `InitializationGuard.tsx`
-- **Purpose**: Guards features requiring Auto-Build initialization
+- **Purpose**: Guards features requiring Aperant initialization
 - **Lines**: 25
 - **Exports**: `InitializationGuard`
 - **Props**: `initialized`, `title`, `description`, `children`

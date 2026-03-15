@@ -3,7 +3,7 @@
  * ==================
  *
  * Records a gotcha or pitfall to specDir/memory/gotchas.md.
- * See apps/desktop/src/main/ai/tools/auto-claude/record-gotcha.ts for the TypeScript implementation.
+ * See apps/desktop/src/main/ai/tools/aperant/record-gotcha.ts for the TypeScript implementation.
  *
  * Tool name: mcp__aperant__record_gotcha
  */

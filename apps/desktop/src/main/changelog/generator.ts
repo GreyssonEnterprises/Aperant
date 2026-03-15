@@ -28,8 +28,8 @@ export class ChangelogGenerator extends EventEmitter {
   constructor(
     private pythonPath: string,
     private claudePath: string,
-    private autoBuildSourcePath: string,
-    private autoBuildEnv: Record<string, string>,
+    private aperantSourcePath: string,
+    private aperantEnv: Record<string, string>,
     debugEnabled: boolean
   ) {
     super();
@@ -146,7 +146,7 @@ export class ChangelogGenerator extends EventEmitter {
     // Use python3/python as fallback command (Python subprocess path removed in Vercel AI SDK migration)
     const pythonCommand = this.pythonPath || 'python3';
     const childProcess = spawn(pythonCommand, ['-c', script], {
-      cwd: this.autoBuildSourcePath,
+      cwd: this.aperantSourcePath,
       env: spawnEnv
     });
 
@@ -306,7 +306,7 @@ export class ChangelogGenerator extends EventEmitter {
 
     const spawnEnv: Record<string, string> = {
       ...augmentedEnv,
-      ...this.autoBuildEnv,
+      ...this.aperantEnv,
       ...profileEnv, // Include active Claude profile config
       // Ensure critical env vars are set for claude CLI
       // Use USERPROFILE on Windows, HOME on Unix

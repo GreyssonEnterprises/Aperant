@@ -1,8 +1,8 @@
 /**
- * Auto-Claude Custom Tools
- * ========================
+ * Aperant Custom Tools
+ * ====================
  *
- * Barrel export for all auto-claude builtin tools.
+ * Barrel export for all aperant builtin tools.
  * These replace the Python tools_pkg/tools/* implementations.
  *
  * Tool names follow the mcp__aperant__* convention to match the

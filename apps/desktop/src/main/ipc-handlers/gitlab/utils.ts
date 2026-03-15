@@ -143,8 +143,8 @@ async function fileExists(filePath: string): Promise<boolean> {
  * Returns null if GitLab is explicitly disabled via GITLAB_ENABLED=false
  */
 export async function getGitLabConfig(project: Project): Promise<GitLabConfig | null> {
-  if (!project.autoBuildPath) return null;
-  const envPath = path.join(project.path, project.autoBuildPath, '.env');
+  if (!project.aperantPath) return null;
+  const envPath = path.join(project.path, project.aperantPath, '.env');
   if (!(await fileExists(envPath))) return null;
 
   try {

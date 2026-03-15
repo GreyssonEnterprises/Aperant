@@ -6,7 +6,7 @@ import type { AgentEvents } from './agent-events';
 import { AgentProcessManager } from './agent-process';
 import { RoadmapConfig } from './types';
 import type { IdeationConfig, Idea } from '../../shared/types';
-import { AUTO_BUILD_PATHS } from '../../shared/constants';
+import { APERANT_PATHS } from '../../shared/constants';
 import { detectRateLimit, createSDKRateLimitInfo } from '../rate-limit-detector';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { transformIdeaFromSnakeCase, transformSessionFromSnakeCase } from '../ipc-handlers/ideation/transformers';
@@ -83,8 +83,8 @@ export class AgentQueueManager {
     isRunning: boolean
   ): Promise<void> {
     try {
-      const roadmapDir = path.join(projectPath, AUTO_BUILD_PATHS.ROADMAP_DIR);
-      const progressPath = path.join(roadmapDir, AUTO_BUILD_PATHS.GENERATION_PROGRESS);
+      const roadmapDir = path.join(projectPath, APERANT_PATHS.ROADMAP_DIR);
+      const progressPath = path.join(roadmapDir, APERANT_PATHS.GENERATION_PROGRESS);
 
       // Ensure roadmap directory exists
       if (!existsSync(roadmapDir)) {
@@ -120,8 +120,8 @@ export class AgentQueueManager {
     try {
       const progressPath = path.join(
         projectPath,
-        AUTO_BUILD_PATHS.ROADMAP_DIR,
-        AUTO_BUILD_PATHS.GENERATION_PROGRESS
+        APERANT_PATHS.ROADMAP_DIR,
+        APERANT_PATHS.GENERATION_PROGRESS
       );
 
       if (existsSync(progressPath)) {

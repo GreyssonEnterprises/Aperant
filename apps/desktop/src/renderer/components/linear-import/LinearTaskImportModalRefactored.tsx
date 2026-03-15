@@ -75,7 +75,7 @@ export function LinearTaskImportModalRefactored({
             Import Linear Tasks
           </DialogTitle>
           <DialogDescription>
-            Select tasks from Linear to import into AutoBuild
+            Select tasks from Linear to import into Aperant
           </DialogDescription>
         </DialogHeader>
 

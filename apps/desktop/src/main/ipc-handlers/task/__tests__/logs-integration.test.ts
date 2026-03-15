@@ -101,7 +101,7 @@ describe('Task Logs Integration (IPC → Service → State)', () => {
       const mockProject = {
         id: 'project-123',
         path: '/absolute/path/to/project',
-        autoBuildPath: '.aperant'
+        aperantPath: '.aperant'
       };
 
       const mockLogs: TaskLogs = {
@@ -173,7 +173,7 @@ describe('Task Logs Integration (IPC → Service → State)', () => {
       const mockProject = {
         id: 'project-123',
         path: './relative/path',
-        autoBuildPath: '.aperant'
+        aperantPath: '.aperant'
       };
 
       const mockLogs: TaskLogs = {
@@ -228,7 +228,7 @@ describe('Task Logs Integration (IPC → Service → State)', () => {
       const mockProject = {
         id: 'project-123',
         path: '/absolute/path/to/project',
-        autoBuildPath: '.aperant'
+        aperantPath: '.aperant'
       };
 
       (projectStore.getProject as Mock).mockReturnValue(mockProject);
@@ -250,7 +250,7 @@ describe('Task Logs Integration (IPC → Service → State)', () => {
       const mockProject = {
         id: 'project-123',
         path: '/absolute/path/to/project',
-        autoBuildPath: '.aperant'
+        aperantPath: '.aperant'
       };
 
       (projectStore.getProject as Mock).mockReturnValue(mockProject);
@@ -274,7 +274,7 @@ describe('Task Logs Integration (IPC → Service → State)', () => {
       const mockProject = {
         id: 'project-123',
         path: '/absolute/path/to/project',
-        autoBuildPath: '.aperant'
+        aperantPath: '.aperant'
       };
 
       (projectStore.getProject as Mock).mockReturnValue(mockProject);
@@ -298,7 +298,7 @@ describe('Task Logs Integration (IPC → Service → State)', () => {
       const mockProject = {
         id: 'project-123',
         path: '/absolute/path/to/project',
-        autoBuildPath: '.aperant'
+        aperantPath: '.aperant'
       };
 
       (projectStore.getProject as Mock).mockReturnValue(mockProject);
@@ -343,7 +343,7 @@ describe('Task Logs Integration (IPC → Service → State)', () => {
       const mockProject = {
         id: 'project-123',
         path: '/absolute/path/to/project',
-        autoBuildPath: '.aperant'
+        aperantPath: '.aperant'
       };
 
       (projectStore.getProject as Mock).mockReturnValue(mockProject);
@@ -369,7 +369,7 @@ describe('Task Logs Integration (IPC → Service → State)', () => {
       const mockProject = {
         id: 'project-123',
         path: '/absolute/path/to/project',
-        autoBuildPath: '.aperant'
+        aperantPath: '.aperant'
       };
 
       (projectStore.getProject as Mock).mockReturnValue(mockProject);
@@ -422,7 +422,7 @@ describe('Task Logs Integration (IPC → Service → State)', () => {
       const mockProjectRelative = {
         id: 'project-123',
         path: './my-project',
-        autoBuildPath: '.aperant'
+        aperantPath: '.aperant'
       };
 
       (projectStore.getProject as Mock).mockReturnValue(mockProjectRelative);
@@ -463,7 +463,7 @@ describe('Task Logs Integration (IPC → Service → State)', () => {
       const mockProject = {
         id: 'project-123',
         path: '/absolute/path/to/project',
-        autoBuildPath: '.aperant'
+        aperantPath: '.aperant'
       };
 
       (projectStore.getProject as Mock).mockReturnValue(mockProject);

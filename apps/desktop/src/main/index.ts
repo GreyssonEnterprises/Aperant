@@ -444,17 +444,17 @@ app.whenReady().then(() => {
   // Initialize agent manager
   agentManager = new AgentManager();
 
-  // Load settings and configure agent manager with Python and auto-claude paths
+  // Load settings and configure agent manager with Python and aperant paths
   // Uses EAFP pattern (try/catch) instead of LBYL (existsSync) to avoid TOCTOU race conditions
   const settingsPath = join(app.getPath('userData'), 'settings.json');
   try {
     const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
 
-    // Validate and migrate autoBuildPath - must contain planner.md (prompts directory)
+    // Validate and migrate aperantPath - must contain planner.md (prompts directory)
     // Uses EAFP pattern (try/catch with accessSync) instead of existsSync to avoid TOCTOU race conditions
-    let validAutoBuildPath = settings.autoBuildPath;
-    if (validAutoBuildPath) {
-      const plannerMdPath = join(validAutoBuildPath, 'planner.md');
+    let validAperantPath = settings.aperantPath;
+    if (validAperantPath) {
+      const plannerMdPath = join(validAperantPath, 'planner.md');
       let plannerExists = false;
       try {
         accessSync(plannerMdPath);
@@ -465,12 +465,12 @@ app.whenReady().then(() => {
 
       if (!plannerExists) {
         // Migration: Try to fix stale paths from old project structure
-        // Old structure: /path/to/project/auto-claude or apps/backend
+        // Old structure: /path/to/project/aperant or apps/backend
         // New structure: /path/to/project/apps/desktop/prompts
         let migrated = false;
         const possibleCorrections = [
-          join(validAutoBuildPath.replace(/[/\\]auto-claude[/\\]*$/, ''), 'apps', 'desktop', 'prompts'),
-          join(validAutoBuildPath.replace(/[/\\]backend[/\\]*$/, ''), 'desktop', 'prompts'),
+          join(validAperantPath.replace(/[/\\]auto-claude[/\\]*$/, ''), 'apps', 'desktop', 'prompts'),
+          join(validAperantPath.replace(/[/\\]backend[/\\]*$/, ''), 'desktop', 'prompts'),
         ];
         for (const correctedPath of possibleCorrections) {
           const correctedPlannerPath = join(correctedPath, 'planner.md');
@@ -483,31 +483,31 @@ app.whenReady().then(() => {
           }
 
           if (correctedPathExists) {
-            console.log('[main] Migrating autoBuildPath from old structure:', validAutoBuildPath, '->', correctedPath);
-            settings.autoBuildPath = correctedPath;
-            validAutoBuildPath = correctedPath;
+            console.log('[main] Migrating aperantPath from old structure:', validAperantPath, '->', correctedPath);
+            settings.aperantPath = correctedPath;
+            validAperantPath = correctedPath;
             migrated = true;
 
             // Save the corrected setting - we're the only process modifying settings at startup
             try {
               writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
-              console.log('[main] Successfully saved migrated autoBuildPath to settings');
+              console.log('[main] Successfully saved migrated aperantPath to settings');
             } catch (writeError) {
-              console.warn('[main] Failed to save migrated autoBuildPath:', writeError);
+              console.warn('[main] Failed to save migrated aperantPath:', writeError);
             }
             break;
           }
         }
 
         if (!migrated) {
-          console.warn('[main] Configured autoBuildPath is invalid (missing planner.md), will use auto-detection:', validAutoBuildPath);
-          validAutoBuildPath = undefined; // Let auto-detection find the correct path
+          console.warn('[main] Configured aperantPath is invalid (missing planner.md), will use auto-detection:', validAperantPath);
+          validAperantPath = undefined; // Let auto-detection find the correct path
 
           // Clear the stale setting so this warning doesn't repeat every startup
           try {
-            delete settings.autoBuildPath;
+            delete settings.aperantPath;
             writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
-            console.log('[main] Cleared stale autoBuildPath from settings');
+            console.log('[main] Cleared stale aperantPath from settings');
           } catch {
             // Non-critical - warning will just repeat next startup
           }
@@ -515,12 +515,12 @@ app.whenReady().then(() => {
       }
     }
 
-    if (settings.pythonPath || validAutoBuildPath) {
+    if (settings.pythonPath || validAperantPath) {
       console.warn('[main] Configuring AgentManager with settings:', {
         pythonPath: settings.pythonPath,
-        autoBuildPath: validAutoBuildPath
+        aperantPath: validAperantPath
       });
-      agentManager.configure(settings.pythonPath, validAutoBuildPath);
+      agentManager.configure(settings.pythonPath, validAperantPath);
     }
   } catch (error: unknown) {
     // ENOENT means no settings file yet - that's fine, use defaults

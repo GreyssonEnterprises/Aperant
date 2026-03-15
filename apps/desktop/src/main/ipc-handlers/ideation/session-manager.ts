@@ -4,7 +4,7 @@
 
 import path from 'path';
 import type { IpcMainInvokeEvent } from 'electron';
-import { AUTO_BUILD_PATHS } from '../../../shared/constants';
+import { APERANT_PATHS } from '../../../shared/constants';
 import type { IPCResult, IdeationSession } from '../../../shared/types';
 import { projectStore } from '../../project-store';
 import { transformIdeaFromSnakeCase } from './transformers';
@@ -24,8 +24,8 @@ export async function getIdeationSession(
 
   const ideationPath = path.join(
     project.path,
-    AUTO_BUILD_PATHS.IDEATION_DIR,
-    AUTO_BUILD_PATHS.IDEATION_FILE
+    APERANT_PATHS.IDEATION_DIR,
+    APERANT_PATHS.IDEATION_FILE
   );
 
   const rawIdeation = readIdeationFile(ideationPath);

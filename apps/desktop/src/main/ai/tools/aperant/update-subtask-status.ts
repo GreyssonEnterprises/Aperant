@@ -3,7 +3,7 @@
  * ==========================
  *
  * Updates the status of a subtask in implementation_plan.json.
- * See apps/desktop/src/main/ai/tools/auto-claude/update-subtask-status.ts for the TypeScript implementation.
+ * See apps/desktop/src/main/ai/tools/aperant/update-subtask-status.ts for the TypeScript implementation.
  *
  * Tool name: mcp__aperant__update_subtask_status
  */

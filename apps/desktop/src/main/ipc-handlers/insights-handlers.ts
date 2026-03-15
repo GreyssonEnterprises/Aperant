@@ -5,7 +5,7 @@ import { existsSync, readdirSync, mkdirSync, writeFileSync } from "fs";
 import {
   IPC_CHANNELS,
   getSpecsDir,
-  AUTO_BUILD_PATHS,
+  APERANT_PATHS,
 } from "../../shared/constants";
 import type {
   IPCResult,
@@ -132,14 +132,14 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
         return { success: false, error: "Project not found" };
       }
 
-      if (!project.autoBuildPath) {
+      if (!project.aperantPath) {
         return { success: false, error: "Aperant not initialized for this project" };
       }
 
       try {
         // Generate a unique spec ID based on existing specs
         // Get specs directory path
-        const specsBaseDir = getSpecsDir(project.autoBuildPath);
+        const specsBaseDir = getSpecsDir(project.aperantPath);
         const specsDir = path.join(project.path, specsBaseDir);
 
         // Find next available spec number
@@ -190,7 +190,7 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
           phases: [],
         };
 
-        const planPath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+        const planPath = path.join(specDir, APERANT_PATHS.IMPLEMENTATION_PLAN);
         writeFileSync(planPath, JSON.stringify(implementationPlan, null, 2), 'utf-8');
 
         // Save task metadata
