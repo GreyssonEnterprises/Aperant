@@ -185,8 +185,8 @@ export interface ElectronAPI {
   updateProjectSettings: (projectId: string, settings: Partial<ProjectSettings>) => Promise<IPCResult>;
   initializeProject: (projectId: string) => Promise<IPCResult<InitializationResult>>;
   checkProjectVersion: (projectId: string) => Promise<IPCResult<AutoBuildVersionInfo>>;
-  needsMigration: (projectPath: string) => Promise<boolean>;
-  migrateProject: (projectPath: string) => Promise<{ success: boolean; error?: string }>;
+  needsMigration: (projectId: string) => Promise<boolean>;
+  migrateProject: (projectId: string) => Promise<{ success: boolean; error?: string }>;
 
   // Tab State (persisted in main process for reliability)
   getTabState: () => Promise<IPCResult<TabState>>;

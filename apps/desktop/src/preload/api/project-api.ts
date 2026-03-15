@@ -30,8 +30,8 @@ export interface ProjectAPI {
   ) => Promise<IPCResult>;
   initializeProject: (projectId: string) => Promise<IPCResult<InitializationResult>>;
   checkProjectVersion: (projectId: string) => Promise<IPCResult<AutoBuildVersionInfo>>;
-  needsMigration: (projectPath: string) => Promise<boolean>;
-  migrateProject: (projectPath: string) => Promise<{ success: boolean; error?: string }>;
+  needsMigration: (projectId: string) => Promise<boolean>;
+  migrateProject: (projectId: string) => Promise<{ success: boolean; error?: string }>;
 
   // Tab State (persisted in main process for reliability)
   getTabState: () => Promise<IPCResult<TabState>>;
@@ -160,11 +160,11 @@ export const createProjectAPI = (): ProjectAPI => ({
   checkProjectVersion: (projectId: string): Promise<IPCResult<AutoBuildVersionInfo>> =>
     ipcRenderer.invoke(IPC_CHANNELS.PROJECT_CHECK_VERSION, projectId),
 
-  needsMigration: (projectPath: string): Promise<boolean> =>
-    ipcRenderer.invoke('project:needs-migration', projectPath),
+  needsMigration: (projectId: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC_CHANNELS.PROJECT_NEEDS_MIGRATION, projectId),
 
-  migrateProject: (projectPath: string): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke('project:migrate', projectPath),
+  migrateProject: (projectId: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.PROJECT_MIGRATE, projectId),
 
   // Tab State (persisted in main process for reliability)
   getTabState: (): Promise<IPCResult<TabState>> =>

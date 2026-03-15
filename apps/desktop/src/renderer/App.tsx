@@ -419,7 +419,7 @@ export function App() {
               openProjectTab(project.id);
               // Check migration before init
               try {
-                const requiresMigration = await window.electronAPI.needsMigration(project.path);
+                const requiresMigration = await window.electronAPI.needsMigration(project.id);
                 if (requiresMigration) {
                   setMigrationProject(project);
                   setMigrateError(null);
@@ -662,7 +662,7 @@ export function App() {
 
     // Check for migration before showing init dialog
     try {
-      const requiresMigration = await window.electronAPI.needsMigration(project.path);
+      const requiresMigration = await window.electronAPI.needsMigration(project.id);
       if (requiresMigration) {
         setMigrationProject(project);
         setMigrateError(null);
@@ -670,7 +670,7 @@ export function App() {
         return;
       }
     } catch (error) {
-      console.error('[App] Failed to check migration status:', error);
+      debugLog('[App] Failed to check migration status:', error);
     }
 
     if (needsInit) {
@@ -751,8 +751,9 @@ export function App() {
     setIsMigrating(true);
     setMigrateError(null);
     try {
-      const result = await window.electronAPI.migrateProject(migrationProject.path);
+      const result = await window.electronAPI.migrateProject(migrationProject.id);
       if (result.success) {
+        setMigrateError(null);
         setShowMigrateDialog(false);
         // Refresh projects so the updated autoBuildPath is reflected
         await loadProjects();

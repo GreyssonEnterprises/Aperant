@@ -431,6 +431,8 @@ export function migrateProject(projectPath: string): InitializationResult {
     } catch {
       // .gitignore update is non-critical
     }
+    // Ensure .aperant/ is ignored even if .auto-claude/ was never in .gitignore
+    ensureGitignoreEntries(projectPath, ['.aperant/']);
 
     debug('Migration complete: .auto-claude → .aperant');
     return { success: true };

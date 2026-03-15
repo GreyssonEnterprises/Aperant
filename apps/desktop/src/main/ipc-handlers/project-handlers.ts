@@ -448,13 +448,17 @@ export function registerProjectHandlers(
   // ============================================
 
   // Check if project needs migration from .auto-claude to .aperant
-  ipcMain.handle('project:needs-migration', async (_event, projectPath: string) => {
-    return needsMigration(projectPath);
+  ipcMain.handle(IPC_CHANNELS.PROJECT_NEEDS_MIGRATION, async (_, projectId: string) => {
+    const project = projectStore.getProject(projectId);
+    if (!project) return false;
+    return needsMigration(project.path);
   });
 
   // Migrate project from .auto-claude to .aperant
-  ipcMain.handle('project:migrate', async (_event, projectPath: string) => {
-    return migrateProject(projectPath);
+  ipcMain.handle(IPC_CHANNELS.PROJECT_MIGRATE, async (_, projectId: string) => {
+    const project = projectStore.getProject(projectId);
+    if (!project) return { success: false, error: 'Project not found' };
+    return migrateProject(project.path);
   });
 
   // ============================================
