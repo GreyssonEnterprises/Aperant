@@ -123,8 +123,39 @@ export interface MockFetchResponse {
   json: () => Promise<unknown>;
 }
 
-export function setupMockGitHubFetch(mock: MockFetchResponse): void {
-  global.fetch = vi.fn(() => Promise.resolve(mock as Response)) as unknown as typeof fetch;
+/**
+ * Setup mock fetch for GitHub API
+ *
+ * Configures global.fetch to return mocked GitHub responses.
+ * Returns the mock function for test assertions.
+ * Use with vi.restoreAllMocks() in afterEach cleanup.
+ *
+ * @param mock - Mock response data or error
+ * @returns The mock fetch function for assertions
+ *
+ * @example
+ * ```ts
+ * beforeEach(() => {
+ *   mockFetch = setupMockGitHubFetch({
+ *     ok: true,
+ *     status: 200,
+ *     json: async () => mockSuccessfulPR(42)
+ *   });
+ * });
+ *
+ * afterEach(() => {
+ *   vi.restoreAllMocks();
+ * });
+ *
+ * test('fetches PR data', async () => {
+ *   expect(mockFetch).toHaveBeenCalled();
+ * });
+ * ```
+ */
+export function setupMockGitHubFetch(mock: MockFetchResponse): ReturnType<typeof vi.fn> {
+  const mockFetch = vi.fn(() => Promise.resolve(mock as Response)) as unknown as typeof fetch;
+  global.fetch = mockFetch;
+  return mockFetch as unknown as ReturnType<typeof vi.fn>;
 }
 
 /**

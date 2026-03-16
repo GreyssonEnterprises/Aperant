@@ -26,20 +26,27 @@ import type { PRReviewResult, PRReviewProgress } from '../../preload/api/modules
  * ```
  */
 export function createMockProject(overrides: Partial<Project> = {}): Project {
-  const now = new Date().toISOString();
+  const now = new Date();
   return {
     id: 'project-test-id',
     name: 'Test Project',
     path: '/tmp/test-project',
+    autoBuildPath: '/tmp/test-project/.auto-claude',
+    settings: {
+      model: 'claude-3-5-sonnet-20241022',
+      memoryBackend: 'file',
+      linearSync: false,
+      notifications: {
+        onTaskComplete: true,
+        onTaskFailed: true,
+        onReviewNeeded: true,
+        sound: false
+      }
+    },
     createdAt: now,
     updatedAt: now,
-    githubRepo: 'test/repo',
-    githubConfig: {
-      token: 'ghp_test_token',
-      repo: 'test/repo'
-    },
     ...overrides
-  } as Project;
+  };
 }
 
 /**
