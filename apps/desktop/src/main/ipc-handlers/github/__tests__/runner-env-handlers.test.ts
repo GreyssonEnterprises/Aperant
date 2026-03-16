@@ -146,12 +146,18 @@ vi.mock('../../../ai/runners/github/duplicate-detector', () => ({
   })),
 }));
 
+// Hoisted mock functions for circular dependency resolution
+const mockGithubFetch = vi.fn();
+const mockGithubFetchWithRetry = vi.fn();
+
 vi.mock('../utils', () => ({
   getGitHubConfig: vi.fn(() => ({
     token: 'mock-github-token',
     repo: 'owner/repo',
   })),
-  githubFetch: vi.fn(),
+  githubFetch: mockGithubFetch,
+  githubFetchWithRetry: mockGithubFetchWithRetry,
+  validateGitHubToken: vi.fn(() => Promise.resolve({ valid: true })),
   normalizeRepoReference: vi.fn((r: string) => r),
 }));
 
@@ -280,12 +286,9 @@ describe('GitHub TypeScript runner usage', () => {
   });
 
   it('calls ParallelOrchestratorReviewer for PR review', async () => {
-    const { githubFetch } = await import('../utils');
-    const githubFetchMock = vi.mocked(githubFetch);
-
     // Mock GitHub API calls made by the PR review handler
     // Note: order matters — more specific patterns must come before general ones
-    githubFetchMock.mockImplementation(async (_token: string, endpoint: string) => {
+    const mockImplementation = async (_token: string, endpoint: string) => {
       if (endpoint === '/user') return { login: 'testuser' };
       if (endpoint.includes('/assignees')) return {};
       if (endpoint.includes('/check-runs')) return { check_runs: [], total_count: 0 };
@@ -312,7 +315,10 @@ describe('GitHub TypeScript runner usage', () => {
         labels: [],
       };
       return {};
-    });
+    };
+
+    mockGithubFetch.mockImplementation(mockImplementation);
+    mockGithubFetchWithRetry.mockImplementation(mockImplementation);
 
     // Return the shape that ParallelOrchestratorReviewer.review() produces
     mockOrchestratorReview.mockResolvedValue({
