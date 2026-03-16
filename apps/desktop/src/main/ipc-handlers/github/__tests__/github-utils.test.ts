@@ -118,7 +118,7 @@ describe('githubFetch', () => {
 
       await expect(
         githubFetch('test-token', '/repos/test/repo/issues')
-      ).rejects.toThrow('GitHub API error: 500 - Internal Server Error: Database connection failed');
+      ).rejects.toThrow('GitHub API error (500): Internal Server Error: Database connection failed');
     });
 
     it('should throw detailed error for 401 Unauthorized', async () => {
@@ -132,7 +132,7 @@ describe('githubFetch', () => {
 
       await expect(
         githubFetch('invalid-token', '/repos/test/repo/issues')
-      ).rejects.toThrow('GitHub API error: 401 - {"message": "Bad credentials", "documentation_url": "https://docs.github.com/rest"}');
+      ).rejects.toThrow('GitHub API error (401): Bad credentials');
     });
 
     it('should throw detailed error for 404 Not Found', async () => {
@@ -146,7 +146,7 @@ describe('githubFetch', () => {
 
       await expect(
         githubFetch('test-token', '/repos/nonexistent/repo/issues')
-      ).rejects.toThrow('GitHub API error: 404 - {"message": "Not Found", "documentation_url": "https://docs.github.com/rest"}');
+      ).rejects.toThrow('GitHub API error (404): Not Found');
     });
 
     it('should throw detailed error for 429 Rate Limit', async () => {
@@ -160,7 +160,7 @@ describe('githubFetch', () => {
 
       await expect(
         githubFetch('test-token', '/repos/test/repo/issues')
-      ).rejects.toThrow('GitHub API error: 429 - {"message": "API rate limit exceeded for user ID 123", "documentation_url": "https://docs.github.com/rest"}');
+      ).rejects.toThrow('GitHub API error (429): API rate limit exceeded for user ID 123');
     });
 
     it('should handle empty response body in error case', async () => {
@@ -174,7 +174,7 @@ describe('githubFetch', () => {
 
       await expect(
         githubFetch('test-token', '/repos/test/repo/issues')
-      ).rejects.toThrow('GitHub API error: 500 - ');
+      ).rejects.toThrow('GitHub API error (500):');
     });
 
     it('should handle failed text() parsing with fallback message', async () => {
@@ -190,7 +190,7 @@ describe('githubFetch', () => {
 
       await expect(
         githubFetch('test-token', '/repos/test/repo/issues')
-      ).rejects.toThrow('GitHub API error: 503 - Request failed');
+      ).rejects.toThrow('GitHub API error (503): Request failed');
     });
 
     it('should include User-Agent header in error requests', async () => {
@@ -229,7 +229,7 @@ describe('githubFetch', () => {
 
       await expect(
         githubFetch('test-token', '/repos/test/repo/issues')
-      ).rejects.toThrow('GitHub API error: 502 - <html><body>Bad Gateway</body></html>');
+      ).rejects.toThrow('GitHub API error (502): <html><body>Bad Gateway</body></html>');
     });
 
     it('should handle JSON error responses', async () => {
@@ -243,7 +243,7 @@ describe('githubFetch', () => {
 
       await expect(
         githubFetch('test-token', '/repos/test/repo/issues')
-      ).rejects.toThrow('GitHub API error: 422 - {"message": "Validation Failed", "errors": [{"resource": "Issue", "field": "title", "code": "missing"}]}');
+      ).rejects.toThrow('GitHub API error (422): Validation Failed');
     });
 
     it('should preserve error details with status and body', async () => {
@@ -279,7 +279,7 @@ describe('githubFetch', () => {
 
       await expect(
         githubFetch('test-token', '/test')
-      ).rejects.toThrow('GitHub API error: 204 - ');
+      ).rejects.toThrow('GitHub API error (204):');
     });
 
     it('should handle null token', async () => {
