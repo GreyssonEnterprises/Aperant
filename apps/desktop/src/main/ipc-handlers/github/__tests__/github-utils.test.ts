@@ -3,7 +3,7 @@
  * Tests githubFetch() error handling, header configuration, and response parsing
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { githubFetch } from '../utils';
+import { githubFetch, githubFetchWithRetry, validateGitHubToken } from '../utils';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -323,5 +323,295 @@ describe('githubFetch', () => {
         })
       );
     });
+  });
+});
+
+describe('githubFetchWithRetry', () => {
+  beforeEach(() => {
+    mockFetch.mockClear();
+  });
+
+  it('should retry on 500 errors with exponential backoff', async () => {
+    const mockResponse = {
+      ok: false,
+      status: 500,
+      text: async () => 'Internal Server Error',
+      headers: new Headers()
+    };
+    const mockSuccess = {
+      ok: true,
+      status: 200,
+      json: async () => ({ data: 'success' }),
+      headers: new Headers()
+    };
+
+    mockFetch.mockResolvedValueOnce(mockResponse)
+                  .mockResolvedValueOnce(mockResponse)
+                  .mockResolvedValueOnce(mockSuccess);
+
+    const result = await githubFetchWithRetry('test-token', '/test');
+
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(result).toEqual({ data: 'success' });
+  }, 10000);
+
+  it('should NOT retry on 401 Unauthorized', async () => {
+    const mockResponse = {
+      ok: false,
+      status: 401,
+      text: async () => '{"message": "Bad credentials"}',
+      headers: new Headers()
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse);
+
+    await expect(
+      githubFetchWithRetry('test-token', '/test')
+    ).rejects.toThrow('GitHub API error (401): Bad credentials');
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('should NOT retry on 404 Not Found', async () => {
+    const mockResponse = {
+      ok: false,
+      status: 404,
+      text: async () => '{"message": "Not Found"}',
+      headers: new Headers()
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse);
+
+    await expect(
+      githubFetchWithRetry('test-token', '/test')
+    ).rejects.toThrow('GitHub API error (404): Not Found');
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('should NOT retry on 429 Rate Limit', async () => {
+    const mockResponse = {
+      ok: false,
+      status: 429,
+      text: async () => '{"message": "API rate limit exceeded"}',
+      headers: new Headers()
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse);
+
+    await expect(
+      githubFetchWithRetry('test-token', '/test')
+    ).rejects.toThrow('GitHub API error (429): API rate limit exceeded');
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('should respect custom maxRetries', async () => {
+    const mockResponse = {
+      ok: false,
+      status: 503,
+      text: async () => 'Service Unavailable',
+      headers: new Headers()
+    };
+    mockFetch.mockResolvedValue(mockResponse);
+
+    await expect(
+      githubFetchWithRetry('test-token', '/test', {}, 1)
+    ).rejects.toThrow();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('should retry on 502 Bad Gateway', async () => {
+    const mockResponse = {
+      ok: false,
+      status: 502,
+      text: async () => 'Bad Gateway',
+      headers: new Headers()
+    };
+    const mockSuccess = {
+      ok: true,
+      status: 200,
+      json: async () => ({ data: 'success' }),
+      headers: new Headers()
+    };
+
+    mockFetch.mockResolvedValueOnce(mockResponse)
+                  .mockResolvedValueOnce(mockSuccess);
+
+    const result = await githubFetchWithRetry('test-token', '/test');
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ data: 'success' });
+  });
+
+  it('should retry on 503 Service Unavailable', async () => {
+    const mockResponse = {
+      ok: false,
+      status: 503,
+      text: async () => 'Service Unavailable',
+      headers: new Headers()
+    };
+    const mockSuccess = {
+      ok: true,
+      status: 200,
+      json: async () => ({ data: 'success' }),
+      headers: new Headers()
+    };
+
+    mockFetch.mockResolvedValueOnce(mockResponse)
+                  .mockResolvedValueOnce(mockSuccess);
+
+    const result = await githubFetchWithRetry('test-token', '/test');
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ data: 'success' });
+  });
+
+  it('should throw after max retries exhausted', async () => {
+    const mockResponse = {
+      ok: false,
+      status: 500,
+      text: async () => 'Internal Server Error',
+      headers: new Headers()
+    };
+    mockFetch.mockResolvedValue(mockResponse);
+
+    await expect(
+      githubFetchWithRetry('test-token', '/test', {}, 2)
+    ).rejects.toThrow('GitHub API error (500): Internal Server Error');
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('should pass custom options to githubFetch', async () => {
+    const mockSuccess = {
+      ok: true,
+      status: 200,
+      json: async () => ({ data: 'success' }),
+      headers: new Headers()
+    };
+    mockFetch.mockResolvedValueOnce(mockSuccess);
+
+    const result = await githubFetchWithRetry('test-token', '/test', {
+      method: 'POST',
+      body: JSON.stringify({ test: 'data' })
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.github.com/test',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ test: 'data' })
+      })
+    );
+    expect(result).toEqual({ data: 'success' });
+  });
+});
+
+describe('validateGitHubToken', () => {
+  beforeEach(() => {
+    mockFetch.mockClear();
+  });
+
+  it('should return valid: true for good token', async () => {
+    const mockResponse = {
+      ok: true,
+      status: 200,
+      json: async () => ({ login: 'testuser' }),
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse);
+
+    const result = await validateGitHubToken('good-token');
+
+    expect(result).toEqual({ valid: true });
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.github.com/user',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'Authorization': 'Bearer good-token',
+          'User-Agent': 'Aperant'
+        })
+      })
+    );
+  });
+
+  it('should return valid: false with error message for 401', async () => {
+    const mockResponse = {
+      ok: false,
+      status: 401,
+      text: async () => '{"message": "Bad credentials"}',
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse);
+
+    const result = await validateGitHubToken('bad-token');
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('401');
+    expect(result.error).toContain('Bad credentials');
+  });
+
+  it('should return valid: false for 403 Forbidden', async () => {
+    const mockResponse = {
+      ok: false,
+      status: 403,
+      text: async () => '{"message": "Forbidden"}',
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse);
+
+    const result = await validateGitHubToken('expired-token');
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('403');
+  });
+
+  it('should handle network errors', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+    const result = await validateGitHubToken('test-token');
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('Network error');
+  });
+
+  it('should handle empty token safely', async () => {
+    const result = await validateGitHubToken('');
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe('Token is empty');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('should truncate long error messages to 100 characters', async () => {
+    const longErrorMessage = 'A'.repeat(150);
+    const mockResponse = {
+      ok: false,
+      status: 500,
+      text: async () => longErrorMessage,
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse);
+
+    const result = await validateGitHubToken('test-token');
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('500');
+    const prefixLength = 'Token validation failed: 500 - '.length;
+    expect(result.error!.length).toBeLessThanOrEqual(prefixLength + 100);
+    expect(result.error!.length).toBeGreaterThan(prefixLength + 90);
+  });
+
+  it('should handle failed text() parsing with fallback', async () => {
+    const mockResponse = {
+      ok: false,
+      status: 500,
+      text: async () => {
+        throw new Error('Parse error');
+      },
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse);
+
+    const result = await validateGitHubToken('test-token');
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('Unknown error');
+    expect(result.error).toContain('500');
   });
 });

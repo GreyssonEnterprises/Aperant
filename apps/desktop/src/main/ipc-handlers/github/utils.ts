@@ -11,8 +11,42 @@ import { parseEnvFile } from '../utils';
 import type { GitHubConfig } from './types';
 import { getAugmentedEnv } from '../../env-utils';
 import { getToolPath } from '../../cli-tool-manager';
+import { debugLog } from './utils/logger';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Retry configuration for githubFetchWithRetry
+ */
+const MAX_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 1000;
+const RETRY_EXPONENTIAL_BASE = 2;
+
+/**
+ * Parse GitHub API error response to extract detailed error message
+ * @param errorBody - Raw error response body
+ * @returns Detailed error message from JSON or original body
+ */
+function parseGitHubErrorResponse(errorBody: string): string {
+  try {
+    const errorJson = JSON.parse(errorBody);
+    if (errorJson.message) {
+      return errorJson.message;
+    }
+  } catch {
+    // Not JSON, use original body
+  }
+  return errorBody;
+}
+
+/**
+ * Sanitize token to ensure it's a valid non-empty string
+ * @param token - Token to sanitize
+ * @returns Empty string if token is invalid, otherwise the token
+ */
+function sanitizeToken(token: string): string {
+  return typeof token === 'string' && token.length > 0 ? token : '';
+}
 
 /**
  * ETag cache entry for conditional requests
@@ -261,7 +295,7 @@ export async function githubFetch(
     : `https://api.github.com${endpoint}`;
 
   // CodeQL: file data in outbound request - validate token is a non-empty string before use
-  const safeToken = typeof token === 'string' && token.length > 0 ? token : '';
+  const safeToken = sanitizeToken(token);
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -274,18 +308,7 @@ export async function githubFetch(
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => 'Request failed');
-
-    // Try to parse JSON error for better messages
-    let detailedError = errorBody;
-    try {
-      const errorJson = JSON.parse(errorBody);
-      if (errorJson.message) {
-        detailedError = errorJson.message;
-      }
-    } catch {
-      // Not JSON, use original body
-    }
-
+    const detailedError = parseGitHubErrorResponse(errorBody);
     throw new Error(`GitHub API error (${response.status}): ${detailedError}`);
   }
 
@@ -339,18 +362,7 @@ export async function githubFetchWithETag(
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => 'Request failed');
-
-    // Try to parse JSON error for better messages
-    let detailedError = errorBody;
-    try {
-      const errorJson = JSON.parse(errorBody);
-      if (errorJson.message) {
-        detailedError = errorJson.message;
-      }
-    } catch {
-      // Not JSON, use original body
-    }
-
+    const detailedError = parseGitHubErrorResponse(errorBody);
     throw new Error(`GitHub API error (${response.status}): ${detailedError}`);
   }
 
@@ -386,7 +398,7 @@ export async function githubFetchWithRetry(
   token: string,
   endpoint: string,
   options: RequestInit = {},
-  maxRetries = 3
+  maxRetries = MAX_RETRIES
 ): Promise<unknown> {
   let lastError: Error | null = null;
 
@@ -400,9 +412,9 @@ export async function githubFetchWithRetry(
       // Only retry on 5xx errors (server errors, not client errors)
       const isServerError = errorMessage.match(/GitHub API error \(5\d\d\):/);
 
-      if (isServerError && attempt < maxRetries - 1) {
-        const delay = 2 ** attempt * 1000; // 1s, 2s, 4s exponential backoff
-        console.warn(`[GitHub API] 5xx error detected, retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`);
+      if (isServerError && attempt < maxRetries) {
+        const delay = RETRY_EXPONENTIAL_BASE ** attempt * RETRY_BASE_DELAY_MS;
+        debugLog('GitHub API', `5xx error detected, retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
@@ -418,7 +430,10 @@ export async function githubFetchWithRetry(
  * @returns true if token is valid, false otherwise
  */
 export async function validateGitHubToken(token: string): Promise<{ valid: boolean; error?: string }> {
-  const safeToken = typeof token === 'string' && token.length > 0 ? token : '';
+  const safeToken = sanitizeToken(token);
+  if (!safeToken) {
+    return { valid: false, error: 'Token is empty' };
+  }
 
   try {
     const response = await fetch('https://api.github.com/user', {
