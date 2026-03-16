@@ -88,7 +88,11 @@ describe('resolveModelId', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
-    process.env = { ...originalEnv };
+    // Reset environment variables, explicitly clearing model overrides
+    // that may be set in the test environment
+    delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+    delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
+    delete process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL;
   });
 
   afterEach(() => {
