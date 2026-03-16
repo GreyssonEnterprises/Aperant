@@ -18,9 +18,9 @@ export {
   mockGraphQLResponse,
   mockRateLimitError
 } from './github-mocks';
-export type { MockFetchResponse } from './github-mocks';
-export type { GitHubErrorBody } from './github-mocks';
-export type { GraphQLError } from './github-mocks';
+
+// GitHub API types
+export type { MockFetchResponse, GitHubErrorBody, GraphQLError } from './github-mocks';
 
 // Vercel AI SDK mocks
 export {
@@ -30,6 +30,9 @@ export {
   mockToolResult,
   mockConversationHistory
 } from './ai-sdk-mocks';
+
+// Vercel AI SDK types
+export type { MockGenerateTextResult, MockStreamStep } from './ai-sdk-mocks';
 
 // PR fixtures
 export {
@@ -54,3 +57,6 @@ export {
   createMockScanResult,
   PRContextBuilder
 } from './mock-factories';
+
+// Mock factory types
+export type { MockScanResult } from './mock-factories';
