@@ -269,6 +269,8 @@ function createProject(): Project {
 
 describe('GitHub TypeScript runner usage', () => {
   beforeEach(() => {
+    // Note: Using clearAllMocks() here instead of resetAllMocks() to preserve mock implementations
+    // TODO: Convert to resetAllMocks() and reset implementations in beforeEach
     vi.clearAllMocks();
     mockIpcMain.reset();
     projectRef.current = createProject();
@@ -317,6 +319,11 @@ describe('GitHub TypeScript runner usage', () => {
       return {};
     };
 
+    // TODO: Currently the code uses githubFetch in some places.
+    // This test stubs both to avoid test failures, but ideally the code
+    // should be refactored to consistently use githubFetchWithRetry.
+    // When that's done, this test should only stub mockGithubFetchWithRetry
+    // and validate that mockGithubFetch is NOT called.
     mockGithubFetch.mockImplementation(mockImplementation);
     mockGithubFetchWithRetry.mockImplementation(mockImplementation);
 
