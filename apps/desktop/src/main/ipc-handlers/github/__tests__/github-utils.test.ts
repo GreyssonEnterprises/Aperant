@@ -564,13 +564,16 @@ describe('validateGitHubToken', () => {
   });
 
   it('should handle network errors', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('Network error'));
+    // Mock all retry attempts (4 total: initial + 3 retries) since improved error classification now detects this as retryable
+    for (let i = 0; i < 4; i++) {
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+    }
 
     const result = await validateGitHubToken('test-token');
 
     expect(result.valid).toBe(false);
     expect(result.error).toContain('Network error');
-  });
+  }, 10000); // Increase timeout to accommodate retry delays (1s + 2s + 4s = 7s total)
 
   it('should handle empty token safely', async () => {
     const result = await validateGitHubToken('');
