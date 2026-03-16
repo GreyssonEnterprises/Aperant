@@ -31,7 +31,7 @@ vi.mock('../../../client/factory', () => ({
 
 // Mock parseLLMJson
 vi.mock('../../../schema/structured-output', () => ({
-  parseLLMJson: vi.fn((text: string, schema: unknown) => {
+  parseLLMJson: vi.fn((text: string) => {
     // Simple mock that parses JSON if valid
     try {
       return JSON.parse(text);
@@ -55,7 +55,6 @@ import {
   type PRReviewFinding,
   type PRContext,
   type PRReviewEngineConfig,
-  type ProgressCallback,
 } from '../pr-review-engine';
 import { SIMPLE_PR_CONTEXT, COMPLEX_PR_CONTEXT, PR_WITH_AI_COMMENTS } from '@shared/test-utils';
 
