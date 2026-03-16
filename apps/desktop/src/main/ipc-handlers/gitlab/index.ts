@@ -5,9 +5,7 @@
  */
 
 import type { BrowserWindow } from 'electron';
-import { ipcMain } from 'electron';
 import type { AgentManager } from '../../agent';
-import { IPC_CHANNELS } from '../../../shared/constants';
 
 import { registerGitlabOAuthHandlers } from './oauth-handlers';
 import { registerRepositoryHandlers } from './repository-handlers';
