@@ -175,18 +175,16 @@ export function createMockFinding(overrides: Partial<PRReviewFinding> = {}): PRR
  * ```
  */
 export function createMockReviewResult(overrides: Partial<PRReviewResult> = {}): PRReviewResult {
-  // Create findings that match the API type (without verification_failed category)
-  const mockFinding = createMockFinding();
-  const apiFinding: PRReviewResult['findings'][number] = {
-    ...mockFinding,
-    category: mockFinding.category === 'verification_failed' ? 'quality' : mockFinding.category
-  };
+  // createMockFinding returns a broader ReviewCategory type that includes 'verification_failed'
+  // but the API type only accepts the narrower set. Since createMockFinding always returns
+  // 'quality', we cast directly to the narrower type.
+  const mockFinding = createMockFinding() as PRReviewResult['findings'][number];
 
   return {
     prNumber: 42,
     repo: 'test/repo',
     success: true,
-    findings: [apiFinding],
+    findings: [mockFinding],
     summary: 'LGTM, looks good to merge',
     overallStatus: 'approve',
     reviewedAt: new Date().toISOString(),
