@@ -6,7 +6,7 @@
  * - Switching to OAuth (null profileId)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { APIProfile, ProfilesFile } from '@shared/types/profile';
 
 // Hoist mocked functions to avoid circular dependency in atomicModifyProfiles
@@ -72,9 +72,15 @@ function getTestConnectionHandler() {
 }
 
 describe('profile-handlers - setActiveProfile', () => {
+  let cleanup: () => void;
+
   beforeEach(() => {
     vi.clearAllMocks();
-    registerProfileHandlers();
+    cleanup = registerProfileHandlers();
+  });
+
+  afterEach(() => {
+    cleanup?.();
   });
   const mockProfiles: APIProfile[] = [
     {
@@ -220,9 +226,15 @@ describe('profile-handlers - setActiveProfile', () => {
 });
 
 describe('profile-handlers - testConnection', () => {
+  let cleanup: () => void;
+
   beforeEach(() => {
     vi.clearAllMocks();
-    registerProfileHandlers();
+    cleanup = registerProfileHandlers();
+  });
+
+  afterEach(() => {
+    cleanup?.();
   });
 
   describe('successful connection tests', () => {

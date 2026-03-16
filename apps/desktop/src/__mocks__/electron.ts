@@ -25,6 +25,12 @@ export const app = {
 class MockIpcMain extends EventEmitter {
   private handlers: Map<string, Function> = new Map();
 
+  constructor() {
+    super();
+    // Increase maxListeners to accommodate test suites that register many handlers
+    this.setMaxListeners(50);
+  }
+
   handle(channel: string, handler: Function): void {
     this.handlers.set(channel, handler);
   }
@@ -35,6 +41,12 @@ class MockIpcMain extends EventEmitter {
 
   removeHandler(channel: string): void {
     this.handlers.delete(channel);
+  }
+
+  // Reset all handlers and listeners (for test cleanup)
+  reset(): void {
+    this.handlers.clear();
+    this.removeAllListeners();
   }
 
   // Helper for tests to invoke handlers
