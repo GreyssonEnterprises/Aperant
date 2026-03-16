@@ -4,6 +4,11 @@
 import { vi, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync } from 'fs';
 import path from 'path';
+import { EventEmitter } from 'events';
+
+// Increase default maxListeners for all EventEmitters in tests
+// This prevents MaxListenersExceededWarning when multiple test files register handlers
+EventEmitter.defaultMaxListeners = 100;
 
 // Mock localStorage for tests that need it
 const localStorageMock = (() => {
@@ -57,7 +62,7 @@ beforeEach(() => {
 
   // Use a unique subdirectory per test to avoid race conditions in parallel tests
   const testId = `test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const _testDir = path.join(TEST_DATA_DIR, testId);
+  void path.join(TEST_DATA_DIR, testId); // Reserved for future use
 
   try {
     if (existsSync(TEST_DATA_DIR)) {
@@ -77,9 +82,20 @@ beforeEach(() => {
 });
 
 // Clean up test directory after each test
-afterEach(() => {
+afterEach(async () => {
   vi.clearAllMocks();
   vi.resetModules();
+
+  // Reset MockIpcMain to clear all handlers and prevent EventEmitter leaks
+  // Import dynamically to avoid circular import issues
+  try {
+    const electron = await import('../__mocks__/electron');
+    if (typeof (electron.ipcMain as any).reset === 'function') {
+      (electron.ipcMain as any).reset();
+    }
+  } catch {
+    // Ignore if mock isn't available
+  }
 });
 
 // Mock window.electronAPI for renderer tests

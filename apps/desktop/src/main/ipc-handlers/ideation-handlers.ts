@@ -122,6 +122,7 @@ export function registerIdeationHandlers(
   agentManager.on("ideation-stopped", handleIdeationStopped);
 
   return (): void => {
+    // Remove agentManager event listeners
     agentManager.off("ideation-progress", handleIdeationProgress);
     agentManager.off("ideation-log", handleIdeationLog);
     agentManager.off("ideation-type-complete", handleIdeationTypeComplete);
@@ -129,5 +130,10 @@ export function registerIdeationHandlers(
     agentManager.off("ideation-complete", handleIdeationComplete);
     agentManager.off("ideation-error", handleIdeationError);
     agentManager.off("ideation-stopped", handleIdeationStopped);
+
+    // Remove ipcMain event listeners
+    const emitter = ipcMain as { removeAllListeners?: (event: string) => void };
+    emitter.removeAllListeners?.(IPC_CHANNELS.IDEATION_GENERATE);
+    emitter.removeAllListeners?.(IPC_CHANNELS.IDEATION_REFRESH);
   };
 }
