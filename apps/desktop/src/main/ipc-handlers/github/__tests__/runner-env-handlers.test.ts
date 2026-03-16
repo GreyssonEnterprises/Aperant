@@ -269,9 +269,8 @@ function createProject(): Project {
 
 describe('GitHub TypeScript runner usage', () => {
   beforeEach(() => {
-    // Note: Using clearAllMocks() here instead of resetAllMocks() to preserve mock implementations
-    // TODO: Convert to resetAllMocks() and reset implementations in beforeEach
-    vi.clearAllMocks();
+    // Reset all mocks to clean state (resets both call history and implementations)
+    vi.resetAllMocks();
     mockIpcMain.reset();
     projectRef.current = createProject();
   });
