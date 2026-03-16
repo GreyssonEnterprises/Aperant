@@ -185,8 +185,8 @@ export const PR_WITH_SECURITY_ISSUE: PRContext = {
       deletions: 0,
       status: 'added',
       patch: `@@ -0,0 +1,8 @@
-+export const API_KEY = 'sk_live_1234567890abcdef';
-+export const API_SECRET = 'secret_live_abcdefghij';
++export const API_KEY = '<REDACTED_API_KEY>';
++export const API_SECRET = '<REDACTED_SECRET>';
 +
 +export async function fetchAPI(endpoint: string) {
 +  const response = await fetch(endpoint, {
@@ -230,7 +230,7 @@ index 0000000..1111111
 --- /dev/null
 +++ b/src/config/api.ts
 @@ -0,0 +1,8 @@
-+export const API_KEY = 'sk_live_1234567890abcdef';
++export const API_KEY = '<REDACTED_API_KEY>';
 +
 diff --git a/src/database/query.ts b/src/database/query.ts
 new file mode 100644
