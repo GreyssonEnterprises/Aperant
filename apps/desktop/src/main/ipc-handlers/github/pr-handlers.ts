@@ -17,7 +17,7 @@ import {
   DEFAULT_FEATURE_MODELS,
   DEFAULT_FEATURE_THINKING,
 } from "../../../shared/constants";
-import { getGitHubConfig, githubFetch, normalizeRepoReference } from "./utils";
+import { getGitHubConfig, githubFetch, githubFetchWithRetry, validateGitHubToken, normalizeRepoReference } from "./utils";
 import { readSettingsFile } from "../../settings-utils";
 import { getAugmentedEnv } from "../../env-utils";
 import { getMemoryService } from "../context/memory-service-factory";
@@ -1466,8 +1466,8 @@ async function fetchPRContext(
   config: { token: string; repo: string },
   prNumber: number
 ): Promise<PRContext> {
-  // Fetch PR metadata
-  const pr = (await githubFetch(
+  // Fetch PR metadata (with retry for 5xx errors)
+  const pr = (await githubFetchWithRetry(
     config.token,
     `/repos/${config.repo}/pulls/${prNumber}`
   )) as {
@@ -1483,8 +1483,8 @@ async function fetchPRContext(
     labels?: Array<{ name: string }>;
   };
 
-  // Fetch files with patches
-  const files = (await githubFetch(
+  // Fetch files with patches (with retry for 5xx errors)
+  const files = (await githubFetchWithRetry(
     config.token,
     `/repos/${config.repo}/pulls/${prNumber}/files?per_page=100`
   )) as Array<{
@@ -1495,8 +1495,8 @@ async function fetchPRContext(
     patch?: string;
   }>;
 
-  // Fetch commits
-  const commits = (await githubFetch(
+  // Fetch commits (with retry for 5xx errors)
+  const commits = (await githubFetchWithRetry(
     config.token,
     `/repos/${config.repo}/pulls/${prNumber}/commits?per_page=100`
   )) as Array<{
@@ -2075,7 +2075,7 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
 
     try {
       await withProjectOrNull(projectId, async (project) => {
-        const { sendProgress, sendComplete } = createIPCCommunicators<
+        const { sendProgress, sendComplete, sendError } = createIPCCommunicators<
           PRReviewProgress,
           PRReviewResult
         >(
@@ -2125,6 +2125,17 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
           const config = getGitHubConfig(project);
           if (config) {
             try {
+              // Validate GitHub token before making API calls
+              const tokenValidation = await validateGitHubToken(config.token);
+              if (!tokenValidation.valid) {
+                debugLog("GitHub token validation failed", {
+                  error: tokenValidation.error,
+                });
+                sendError({ error: `GitHub authentication failed: ${tokenValidation.error || 'Invalid token'}` });
+                return;
+              }
+              debugLog("GitHub token validated successfully");
+
               // Get current user
               const user = (await githubFetch(config.token, "/user")) as { login: string };
               debugLog("Auto-assigning user to PR", { prNumber, username: user.login });

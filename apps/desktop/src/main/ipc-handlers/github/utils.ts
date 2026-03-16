@@ -274,7 +274,19 @@ export async function githubFetch(
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => 'Request failed');
-    throw new Error(`GitHub API error: ${response.status} - ${errorBody}`);
+
+    // Try to parse JSON error for better messages
+    let detailedError = errorBody;
+    try {
+      const errorJson = JSON.parse(errorBody);
+      if (errorJson.message) {
+        detailedError = errorJson.message;
+      }
+    } catch {
+      // Not JSON, use original body
+    }
+
+    throw new Error(`GitHub API error (${response.status}): ${detailedError}`);
   }
 
   return response.json();
@@ -327,7 +339,19 @@ export async function githubFetchWithETag(
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => 'Request failed');
-    throw new Error(`GitHub API error: ${response.status} - ${errorBody}`);
+
+    // Try to parse JSON error for better messages
+    let detailedError = errorBody;
+    try {
+      const errorJson = JSON.parse(errorBody);
+      if (errorJson.message) {
+        detailedError = errorJson.message;
+      }
+    } catch {
+      // Not JSON, use original body
+    }
+
+    throw new Error(`GitHub API error (${response.status}): ${detailedError}`);
   }
 
   const data = await response.json();
@@ -352,4 +376,71 @@ export async function githubFetchWithETag(
     fromCache: false,
     rateLimitInfo
   };
+}
+
+/**
+ * Make a GitHub API request with retry logic for 5xx errors
+ * 500, 502, 503, 504 errors are automatically retried with exponential backoff
+ */
+export async function githubFetchWithRetry(
+  token: string,
+  endpoint: string,
+  options: RequestInit = {},
+  maxRetries = 3
+): Promise<unknown> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await githubFetch(token, endpoint, options);
+    } catch (error) {
+      lastError = error as Error;
+      const errorMessage = (error as Error).message;
+
+      // Only retry on 5xx errors (server errors, not client errors)
+      const isServerError = errorMessage.match(/GitHub API error \(5\d\d\):/);
+
+      if (isServerError && attempt < maxRetries - 1) {
+        const delay = 2 ** attempt * 1000; // 1s, 2s, 4s exponential backoff
+        console.warn(`[GitHub API] 5xx error detected, retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      break;
+    }
+  }
+
+  throw lastError;
+}
+
+/**
+ * Validate GitHub token by making a lightweight API call
+ * @returns true if token is valid, false otherwise
+ */
+export async function validateGitHubToken(token: string): Promise<{ valid: boolean; error?: string }> {
+  const safeToken = typeof token === 'string' && token.length > 0 ? token : '';
+
+  try {
+    const response = await fetch('https://api.github.com/user', {
+      headers: {
+        'Authorization': `Bearer ${safeToken}`,
+        'User-Agent': 'Aperant',
+      },
+    });
+
+    if (response.ok) {
+      return { valid: true };
+    }
+
+    const errorBody = await response.text().catch(() => 'Unknown error');
+    return {
+      valid: false,
+      error: `Token validation failed: ${response.status} - ${errorBody.substring(0, 100)}`
+    };
+  } catch (error) {
+    return {
+      valid: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
 }
