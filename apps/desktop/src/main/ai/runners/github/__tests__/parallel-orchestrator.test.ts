@@ -95,6 +95,10 @@ function createConfig(overrides: Partial<ParallelOrchestratorConfig> = {}): Para
   };
 }
 
+// Helper for creating streamText mock results with structured output
+// Note: This differs from shared mockStreamText by including an 'output' field
+// for AI SDK structured output (Output.object()), which is required for testing
+// the parallel orchestrator's synthesis and validation phases.
 function createMockStreamResult(
   text: string,
   object: unknown = null,
@@ -250,6 +254,12 @@ describe('ParallelOrchestratorReviewer - review() Happy Path', () => {
     expect(mockStreamText).toHaveBeenCalledTimes(4);
     expect(result.agentsInvoked).toEqual(['security', 'quality', 'logic', 'codebase-fit']);
   });
+
+  // Note: Cross-validation tests require integration-level testing due to:
+  // - MD5-based finding ID generation (file:line:title hash)
+  // - Synthesis phase requires exact finding ID matching in kept_finding_ids
+  // - Cross-validation groups by file:lineGroup(5):category
+  // These are tested in integration tests with actual AI SDK responses
 });
 
 // =============================================================================
