@@ -6,7 +6,7 @@
  * Import from this file for cleaner imports:
  *
  * ```ts
- * import { createMockProject, createMockFinding } from '@/shared/test-utils';
+ * import { createMockProject, createMockFinding } from '@shared/test-utils';
  * ```
  */
 

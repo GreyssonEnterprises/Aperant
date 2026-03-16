@@ -120,6 +120,7 @@ export interface MockFetchResponse {
   ok: boolean;
   status: number;
   statusText?: string;
+  headers?: Headers;
   json: () => Promise<unknown>;
 }
 
@@ -199,17 +200,19 @@ export function mockGraphQLResponse(data: Record<string, unknown>, errors: Graph
  * @returns Mock rate limit error
  */
 export function mockRateLimitError(retryAfter: number = 60): MockFetchResponse {
+  const headers = new Headers({
+    'x-ratelimit-remaining': '0',
+    'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + retryAfter),
+    'retry-after': String(retryAfter),
+  });
   return {
     ok: false,
     status: 403,
     statusText: 'Forbidden',
+    headers,
     json: async () => ({
       message: 'API rate limit exceeded',
-      documentation_url: 'https://docs.github.com/rest/rate-limit',
-      headers: {
-        'x-ratelimit-remaining': '0',
-        'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + retryAfter)
-      }
+      documentation_url: 'https://docs.github.com/rest/rate-limit'
     })
   };
 }

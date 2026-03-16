@@ -36,9 +36,8 @@ function getInsightsFeatureSettings(): InsightsModelConfig {
 
 /**
  * Register all insights-related IPC handlers
- * @returns Cleanup function to remove all listeners
  */
-export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | null): () => void {
+export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | null): void {
   // ============================================
   // Insights Operations
   // ============================================
@@ -431,18 +430,4 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
   insightsService.on("session-updated", (projectId: string, session: unknown) => {
     safeSendToRenderer(getMainWindow, IPC_CHANNELS.INSIGHTS_SESSION_UPDATED, projectId, session);
   });
-
-  // Return cleanup function to remove all listeners
-  return (): void => {
-    // Remove ipcMain.on() listener (EventEmitter)
-    const ipcMainEmitter = ipcMain as { removeAllListeners?: (event: string) => void };
-    ipcMainEmitter.removeAllListeners?.(IPC_CHANNELS.INSIGHTS_SEND_MESSAGE);
-
-    // Remove insightsService.on() listeners (EventEmitter)
-    insightsService.removeAllListeners("stream-chunk");
-    insightsService.removeAllListeners("status");
-    insightsService.removeAllListeners("error");
-    insightsService.removeAllListeners("sdk-rate-limit");
-    insightsService.removeAllListeners("session-updated");
-  };
 }

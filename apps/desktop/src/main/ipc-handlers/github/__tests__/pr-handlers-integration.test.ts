@@ -38,13 +38,19 @@ vi.mock('../../ai/client/factory', () => ({
 }));
 
 // Mock github utils
-vi.mock('../utils', () => ({
-  githubFetch: vi.fn(),
-  clearETagCache: vi.fn(),
-  getGitHubConfig: vi.fn(),
-  normalizeRepoReference: vi.fn((repo: string) => repo),
-  githubGraphQL: vi.fn(),
-}));
+vi.mock('../utils', async () => {
+  const actual = await vi.importActual<typeof import('../utils')>('../utils');
+  return {
+    ...actual,
+    githubFetch: vi.fn(),
+    githubFetchWithRetry: vi.fn(),
+    validateGitHubToken: vi.fn(),
+    clearETagCache: vi.fn(),
+    getGitHubConfig: vi.fn(),
+    normalizeRepoReference: vi.fn((repo: string) => repo),
+    githubGraphQL: vi.fn(),
+  };
+});
 
 // Mock memory service
 vi.mock('../../context/memory-service-factory', () => ({

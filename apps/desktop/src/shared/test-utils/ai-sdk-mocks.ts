@@ -6,8 +6,6 @@
  * Supports single-pass review and multi-turn agent session mocking.
  */
 
-import { vi } from 'vitest';
-
 /**
  * Mock generateText response for single-pass review
  *
@@ -107,6 +105,21 @@ export interface MockStreamStep {
   }>;
 }
 
+/**
+ * Counter for generating deterministic tool call IDs
+ */
+let toolCallIdCounter = 0;
+
+/**
+ * Generate a deterministic tool call ID
+ *
+ * @param toolName - Name of the tool
+ * @returns Deterministic tool call ID
+ */
+function generateToolCallId(toolName: string): string {
+  return `mock-${toolName}-${toolCallIdCounter++}`;
+}
+
 export function mockStreamText(steps: MockStreamStep[] = []): {
   toDataStreamStream: () => ReadableStream;
   text: string;
@@ -120,9 +133,16 @@ export function mockStreamText(steps: MockStreamStep[] = []): {
   fullStream: AsyncIterable<unknown>;
 } {
   const allText = steps.map(s => s.text || '').join('');
-  const allToolCalls = steps.flatMap(s =>
-    (s.toolCalls || []).map(tc => ({
-      toolCallId: `mock-${tc.toolName}-${Date.now()}`,
+
+  // Precompute deterministic toolCallIds for each tool call in each step
+  const stepToolCallIds: Array<Array<string>> = steps.map(step =>
+    (step.toolCalls || []).map(tc => generateToolCallId(tc.toolName))
+  );
+
+  // Build allToolCalls using precomputed IDs
+  const allToolCalls = steps.flatMap((step, stepIndex) =>
+    (step.toolCalls || []).map((tc, toolIndex) => ({
+      toolCallId: stepToolCallIds[stepIndex][toolIndex],
       toolName: tc.toolName,
       args: tc.args
     }))
@@ -137,12 +157,25 @@ export function mockStreamText(steps: MockStreamStep[] = []): {
       };
 
       if (step.toolCalls && step.toolCalls.length > 0) {
+        const stepIndex = steps.indexOf(step);
         for (const tc of step.toolCalls) {
+          const toolIndex = step.toolCalls!.indexOf(tc);
           yield {
             type: 'tool-call',
             toolName: tc.toolName,
-            toolCallId: `mock-${tc.toolName}-${Date.now()}`,
+            toolCallId: stepToolCallIds[stepIndex][toolIndex],
             args: tc.args
+          };
+        }
+      }
+
+      // Emit toolResults if present
+      if (step.toolResults && step.toolResults.length > 0) {
+        for (const tr of step.toolResults) {
+          yield {
+            type: 'tool-result',
+            toolCallId: tr.toolCallId,
+            result: tr.result
           };
         }
       }
@@ -221,24 +254,36 @@ export function createMockAIClient(
  *
  * @param toolName - Name of the tool
  * @param result - Tool execution result
+ * @param toolCallId - Optional explicit tool call ID (for deterministic testing)
  * @returns Mock tool result
  *
  * @example
  * ```ts
+ * // Auto-generated ID (non-deterministic)
  * const mockResult = mockToolResult('read_file', {
  *   file_path: 'src/test.ts',
  *   content: 'export const test = true;'
  * });
+ *
+ * // Explicit ID (deterministic, correlates with mockStreamText)
+ * const mockResult = mockToolResult('read_file', {
+ *   file_path: 'src/test.ts',
+ *   content: 'export const test = true;'
+ * }, 'mock-read_file-0');
  * ```
  */
-export function mockToolResult<T = unknown>(toolName: string, result: T): {
+export function mockToolResult<T = unknown>(
+  toolName: string,
+  result: T,
+  toolCallId?: string
+): {
   toolCallId: string;
   toolName: string;
   args: Record<string, unknown>;
   result: T;
 } {
   return {
-    toolCallId: `mock-${toolName}-${Date.now()}`,
+    toolCallId: toolCallId || generateToolCallId(toolName),
     toolName,
     args: {},
     result

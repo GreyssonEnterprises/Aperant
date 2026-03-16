@@ -356,12 +356,21 @@ export function registerProfileHandlers(): () => void {
     }
   );
 
-  // Return cleanup function to remove EventEmitter listeners
-  // Note: ipcMain.handle() handlers are not removed as there's no stable API for that
-  // The .on() listeners are the ones causing MaxListenersExceededWarning
+  // Return cleanup function to remove IPC handlers and EventEmitter listeners
   return (): void => {
+    // Remove ipcMain.handle() registrations
+    const handlerEmitter = ipcMain as { removeHandler?: (channel: string) => void };
+    [
+      IPC_CHANNELS.PROFILES_GET,
+      IPC_CHANNELS.PROFILES_SAVE,
+      IPC_CHANNELS.PROFILES_UPDATE,
+      IPC_CHANNELS.PROFILES_DELETE,
+      IPC_CHANNELS.PROFILES_SET_ACTIVE,
+      IPC_CHANNELS.PROFILES_TEST_CONNECTION,
+      IPC_CHANNELS.PROFILES_DISCOVER_MODELS,
+    ].forEach((channel) => handlerEmitter.removeHandler?.(channel));
+
     // Remove on() registrations (these are EventEmitter listeners)
-    // Use type-safe approach for test environment where ipcMain may be a mock
     const emitter = ipcMain as { removeAllListeners?: (event: string) => void };
     emitter.removeAllListeners?.(IPC_CHANNELS.PROFILES_TEST_CONNECTION_CANCEL);
     emitter.removeAllListeners?.(IPC_CHANNELS.PROFILES_DISCOVER_MODELS_CANCEL);

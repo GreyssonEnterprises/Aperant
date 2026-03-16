@@ -416,7 +416,7 @@ describe('githubFetchWithRetry', () => {
       githubFetchWithRetry('test-token', '/test', {}, 1)
     ).rejects.toThrow();
 
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it('should retry on 502 Bad Gateway', async () => {
@@ -478,7 +478,7 @@ describe('githubFetchWithRetry', () => {
       githubFetchWithRetry('test-token', '/test', {}, 2)
     ).rejects.toThrow('GitHub API error (500): Internal Server Error');
 
-    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 
   it('should pass custom options to githubFetch', async () => {
@@ -580,38 +580,59 @@ describe('validateGitHubToken', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it('should truncate long error messages to 100 characters', async () => {
-    const longErrorMessage = 'A'.repeat(150);
+  it('should mark 5xx errors as retryable', async () => {
     const mockResponse = {
       ok: false,
       status: 500,
-      text: async () => longErrorMessage,
+      text: async () => 'Internal Server Error',
     };
+    // Provide 4 mocks for retry attempts (0, 1, 2, 3)
+    mockFetch.mockResolvedValueOnce(mockResponse);
+    mockFetch.mockResolvedValueOnce(mockResponse);
+    mockFetch.mockResolvedValueOnce(mockResponse);
     mockFetch.mockResolvedValueOnce(mockResponse);
 
     const result = await validateGitHubToken('test-token');
 
     expect(result.valid).toBe(false);
     expect(result.error).toContain('500');
-    const prefixLength = 'Token validation failed: 500 - '.length;
-    expect(result.error!.length).toBeLessThanOrEqual(prefixLength + 100);
-    expect(result.error!.length).toBeGreaterThan(prefixLength + 90);
-  });
+    expect(result.retryable).toBe(true);
+  }, 10000); // 10s timeout to accommodate retry delays
 
   it('should handle failed text() parsing with fallback', async () => {
-    const mockResponse = {
+    // Create fresh mock objects for each retry attempt
+    const createMockResponse = () => ({
       ok: false,
       status: 500,
       text: async () => {
         throw new Error('Parse error');
       },
+    });
+    // Provide 4 mocks for retry attempts (0, 1, 2, 3)
+    mockFetch.mockResolvedValueOnce(createMockResponse());
+    mockFetch.mockResolvedValueOnce(createMockResponse());
+    mockFetch.mockResolvedValueOnce(createMockResponse());
+    mockFetch.mockResolvedValueOnce(createMockResponse());
+
+    const result = await validateGitHubToken('test-token');
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('Unknown error');
+    expect(result.retryable).toBe(true);
+  }, 10000); // 10s timeout to accommodate retry delays
+
+  it('should mark 401/403 as non-retryable auth failures', async () => {
+    const mockResponse = {
+      ok: false,
+      status: 401,
+      text: async () => 'Bad credentials',
     };
     mockFetch.mockResolvedValueOnce(mockResponse);
 
     const result = await validateGitHubToken('test-token');
 
     expect(result.valid).toBe(false);
-    expect(result.error).toContain('Unknown error');
-    expect(result.error).toContain('500');
+    expect(result.error).toContain('Invalid credentials');
+    expect(result.retryable).toBe(false);
   });
 });

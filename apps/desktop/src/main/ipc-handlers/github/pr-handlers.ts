@@ -2131,7 +2131,16 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
                 debugLog("GitHub token validation failed", {
                   error: tokenValidation.error,
                 });
-                sendError({ error: `GitHub authentication failed: ${tokenValidation.error || 'Invalid token'}` });
+
+                // Clean up registry since we registered before CI wait
+                runningReviews.delete(reviewKey);
+                ciWaitAbortControllers.delete(reviewKey);
+
+                // Notify state manager of the error
+                const errorMessage = `GitHub authentication failed: ${tokenValidation.error || 'Invalid token'}`;
+                stateManager.handleError(projectId, prNumber, errorMessage);
+
+                sendError({ prNumber, error: errorMessage });
                 return;
               }
               debugLog("GitHub token validated successfully");

@@ -31,12 +31,11 @@ function debugLog(message: string): void {
 
 /**
  * Register all GitLab IPC handlers
- * @returns Cleanup function to remove all listeners
  */
 export function registerGitlabHandlers(
   agentManager: AgentManager,
   getMainWindow: () => BrowserWindow | null
-): () => void {
+): void {
   debugLog('Registering all GitLab handlers');
 
   // OAuth and authentication handlers (glab CLI)
@@ -70,23 +69,6 @@ export function registerGitlabHandlers(
   registerTriageHandlers(getMainWindow);
 
   debugLog('All GitLab handlers registered');
-
-  // Return cleanup - removes EventEmitter listeners from sub-handlers
-  return (): void => {
-    const emitter = ipcMain as { removeAllListeners?: (event: string) => void };
-
-    // Autofix listeners
-    emitter.removeAllListeners?.(IPC_CHANNELS.GITLAB_AUTOFIX_START);
-    emitter.removeAllListeners?.(IPC_CHANNELS.GITLAB_AUTOFIX_BATCH);
-    emitter.removeAllListeners?.(IPC_CHANNELS.GITLAB_AUTOFIX_ANALYZE_PREVIEW);
-
-    // MR review listeners
-    emitter.removeAllListeners?.(IPC_CHANNELS.GITLAB_MR_REVIEW);
-    emitter.removeAllListeners?.(IPC_CHANNELS.GITLAB_MR_FOLLOWUP_REVIEW);
-
-    // Triage listeners
-    emitter.removeAllListeners?.(IPC_CHANNELS.GITLAB_TRIAGE_RUN);
-  };
 }
 
 // Re-export individual registration functions for custom usage

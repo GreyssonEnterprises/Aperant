@@ -402,7 +402,7 @@ export async function githubFetchWithRetry(
 ): Promise<unknown> {
   let lastError: Error | null = null;
 
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await githubFetch(token, endpoint, options);
     } catch (error) {
@@ -427,35 +427,91 @@ export async function githubFetchWithRetry(
 
 /**
  * Validate GitHub token by making a lightweight API call
- * @returns true if token is valid, false otherwise
+ *
+ * Retries transient failures (5xx errors, network issues) to avoid treating
+ * temporary GitHub outages as permanent credential failures.
+ *
+ * @param token - GitHub token to validate
+ * @returns Token validation result with retryable flag for transient errors
  */
-export async function validateGitHubToken(token: string): Promise<{ valid: boolean; error?: string }> {
+export async function validateGitHubToken(
+  token: string
+): Promise<{ valid: boolean; error?: string; retryable?: boolean }> {
   const safeToken = sanitizeToken(token);
   if (!safeToken) {
-    return { valid: false, error: 'Token is empty' };
+    return { valid: false, error: 'Token is empty', retryable: false };
   }
 
-  try {
-    const response = await fetch('https://api.github.com/user', {
-      headers: {
-        'Authorization': `Bearer ${safeToken}`,
-        'User-Agent': 'Aperant',
-      },
-    });
+  let lastError: Error | null = null;
 
-    if (response.ok) {
-      return { valid: true };
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch('https://api.github.com/user', {
+        headers: {
+          'Authorization': `Bearer ${safeToken}`,
+          'User-Agent': 'Aperant',
+        },
+      });
+
+      if (response.ok) {
+        return { valid: true };
+      }
+
+      // Auth failures (401/403) are permanent, not retryable
+      if (response.status === 401 || response.status === 403) {
+        const errorBody = await response.text().catch(() => 'Unknown error');
+        return {
+          valid: false,
+          error: `Invalid credentials: ${response.status} - ${errorBody.substring(0, 100)}`,
+          retryable: false
+        };
+      }
+
+      // 5xx server errors are retryable
+      if (response.status >= 500 && attempt < MAX_RETRIES) {
+        const delay = RETRY_EXPONENTIAL_BASE ** attempt * RETRY_BASE_DELAY_MS;
+        debugLog('GitHub API', `5xx error during token validation, retrying in ${delay}ms... (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
+      // Other client errors (4xx except 401/403) are not retryable
+      const errorBody = await response.text().catch(() => 'Unknown error');
+      return {
+        valid: false,
+        error: `Token validation failed: ${response.status} - ${errorBody.substring(0, 100)}`,
+        retryable: response.status >= 500
+      };
+    } catch (error) {
+      lastError = error as Error;
+      const errorMessage = (error as Error).message;
+
+      // Network errors are retryable (ECONNREFUSED, ETIMEDOUT, etc.)
+      const isNetworkError =
+        errorMessage.includes('ECONNREFUSED') ||
+        errorMessage.includes('ETIMEDOUT') ||
+        errorMessage.includes('ENOTFOUND') ||
+        errorMessage.includes('fetch failed');
+
+      if (isNetworkError && attempt < MAX_RETRIES) {
+        const delay = RETRY_EXPONENTIAL_BASE ** attempt * RETRY_BASE_DELAY_MS;
+        debugLog('GitHub API', `Network error during token validation, retrying in ${delay}ms... (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
+      return {
+        valid: false,
+        error: errorMessage,
+        retryable: isNetworkError
+      };
     }
-
-    const errorBody = await response.text().catch(() => 'Unknown error');
-    return {
-      valid: false,
-      error: `Token validation failed: ${response.status} - ${errorBody.substring(0, 100)}`
-    };
-  } catch (error) {
-    return {
-      valid: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
-    };
   }
+
+  // Should not reach here, but handle the case
+  return {
+    valid: false,
+    error: lastError?.message || 'Unknown error after retries',
+    retryable: true
+  };
 }
