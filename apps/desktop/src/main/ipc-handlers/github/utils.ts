@@ -483,15 +483,18 @@ export async function validateGitHubToken(
         retryable: response.status >= 500
       };
     } catch (error) {
-      lastError = error as Error;
-      const errorMessage = (error as Error).message;
+      const err = error as Error & { cause?: { code?: string } };
+      lastError = err;
+      const errorMessage = err.message;
+      const causeCode = err.cause?.code;
 
-      // Network errors are retryable (ECONNREFUSED, ETIMEDOUT, etc.)
+      // Retry transport failures, but do not retry explicit aborts
       const isNetworkError =
-        errorMessage.includes('ECONNREFUSED') ||
-        errorMessage.includes('ETIMEDOUT') ||
-        errorMessage.includes('ENOTFOUND') ||
-        errorMessage.includes('fetch failed');
+        err.name !== 'AbortError' &&
+        (
+          /fetch failed|network\s*error/i.test(errorMessage) ||
+          ['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT', 'EAI_AGAIN'].includes(causeCode ?? '')
+        );
 
       if (isNetworkError && attempt < MAX_RETRIES) {
         const delay = RETRY_EXPONENTIAL_BASE ** attempt * RETRY_BASE_DELAY_MS;

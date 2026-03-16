@@ -7,7 +7,7 @@
  */
 
 import { vi } from 'vitest';
-import type { PRData } from '../../preload/api/modules/github-api';
+import type { PRData } from '@preload/api/modules/github-api';
 
 /**
  * Mock successful GitHub PR fetch response
@@ -178,7 +178,7 @@ export function setupMockGitHubFetch(mock: MockFetchResponse): ReturnType<typeof
 export interface GraphQLError {
   message: string;
   path?: (string | number)[];
-  locations?: [{ line: number; column: number }];
+  locations?: Array<{ line: number; column: number }>;
   extensions?: Record<string, unknown>;
 }
 

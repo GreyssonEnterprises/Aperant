@@ -358,6 +358,17 @@ export function registerProfileHandlers(): () => void {
 
   // Return cleanup function to remove IPC handlers and EventEmitter listeners
   return (): void => {
+    // Abort and clear in-flight requests to avoid dangling work during teardown
+    for (const controller of activeTestConnections.values()) {
+      controller.abort();
+    }
+    activeTestConnections.clear();
+
+    for (const controller of activeDiscoverModelsRequests.values()) {
+      controller.abort();
+    }
+    activeDiscoverModelsRequests.clear();
+
     // Remove ipcMain.handle() registrations
     const handlerEmitter = ipcMain as { removeHandler?: (channel: string) => void };
     [

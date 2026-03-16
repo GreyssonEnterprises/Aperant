@@ -82,17 +82,19 @@ beforeEach(() => {
 // Clean up test directory after each test
 afterEach(async () => {
   vi.clearAllMocks();
-  vi.resetModules();
 
   // Reset MockIpcMain to clear all handlers and prevent EventEmitter leaks
   // Import dynamically to avoid circular import issues
   try {
-    const electron = await import('../__mocks__/electron');
-    if (typeof (electron.ipcMain as any).reset === 'function') {
-      (electron.ipcMain as any).reset();
+    const electron = await import('electron');
+    const reset = (electron.ipcMain as { reset?: () => void }).reset;
+    if (typeof reset === 'function') {
+      reset();
     }
   } catch {
     // Ignore if mock isn't available
+  } finally {
+    vi.resetModules();
   }
 });
 

@@ -249,8 +249,20 @@ describe('PR Review Integration Tests', () => {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
 
-    // Remove all IPC listeners
-    ipcMain.removeAllListeners('github:pr:review');
+    // Remove ipcMain.handle() handlers (must use removeHandler for handle() registrations)
+    const handlerEmitter = ipcMain as { removeHandler?: (channel: string) => void };
+    const channelsToRemove = [
+      'github:pr:review',
+      'github:pr:reviewProgress',
+      'github:pr:reviewError',
+      'github:pr:reviewComplete',
+      'github:pr:logsUpdated',
+      'github:pr:get',
+      'github:authChanged',
+    ];
+    channelsToRemove.forEach((channel) => handlerEmitter.removeHandler?.(channel));
+
+    // Remove ipcMain.on() listeners (if any)
     ipcMain.removeAllListeners('github:pr:reviewProgress');
     ipcMain.removeAllListeners('github:pr:reviewError');
     ipcMain.removeAllListeners('github:pr:reviewComplete');

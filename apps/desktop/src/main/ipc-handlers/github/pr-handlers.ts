@@ -2130,14 +2130,17 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
               if (!tokenValidation.valid) {
                 debugLog("GitHub token validation failed", {
                   error: tokenValidation.error,
+                  retryable: tokenValidation.retryable,
                 });
 
                 // Clean up registry since we registered before CI wait
                 runningReviews.delete(reviewKey);
                 ciWaitAbortControllers.delete(reviewKey);
 
-                // Notify state manager of the error
-                const errorMessage = `GitHub authentication failed: ${tokenValidation.error || 'Invalid token'}`;
+                // Use retryable field to distinguish transient failures from auth errors
+                const errorMessage = tokenValidation.retryable
+                  ? `GitHub is temporarily unavailable: ${tokenValidation.error || 'Please try again.'}`
+                  : `GitHub authentication failed: ${tokenValidation.error || 'Invalid token'}`;
                 stateManager.handleError(projectId, prNumber, errorMessage);
 
                 sendError({ prNumber, error: errorMessage });
