@@ -61,11 +61,12 @@ vi.mock('../cli-tool-manager', () => ({
 // ---- import after mocks ----
 import { needsMigration, migrateProject } from '../project-initializer';
 import * as fs from 'fs';
+import * as path from 'path';
 
 const PROJECT = '/test/project';
-const OLD_PATH = `${PROJECT}/.auto-claude`;
-const NEW_PATH = `${PROJECT}/.aperant`;
-const GITIGNORE = `${PROJECT}/.gitignore`;
+const OLD_PATH = path.join(PROJECT, '.auto-claude');
+const NEW_PATH = path.join(PROJECT, '.aperant');
+const GITIGNORE = path.join(PROJECT, '.gitignore');
 
 beforeEach(() => {
   vi.clearAllMocks();
