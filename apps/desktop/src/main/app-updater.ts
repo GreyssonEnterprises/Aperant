@@ -171,7 +171,7 @@ function getUpdatePreferences(): { skippedVersion: string | null; remindAfter: n
  * Check if notifications for a version should be suppressed.
  * Returns true if the user has skipped this exact version, or snoozed and the snooze hasn't expired.
  */
-function shouldSuppressUpdate(version: string): boolean {
+export function shouldSuppressUpdate(version: string): boolean {
   const prefs = getUpdatePreferences();
   if (prefs.skippedVersion === version) return true;
   if (prefs.remindAfter && Date.now() < prefs.remindAfter) return true;

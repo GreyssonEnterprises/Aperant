@@ -166,14 +166,22 @@ export function AppUpdateNotification() {
   };
 
   const handleSkipVersion = async () => {
-    if (updateInfo) {
-      await window.electronAPI.skipAppUpdate(updateInfo.version);
+    try {
+      if (updateInfo) {
+        await window.electronAPI.skipAppUpdate(updateInfo.version);
+      }
+    } catch {
+      // Skip is best-effort; close the dialog regardless
     }
     setIsOpen(false);
   };
 
   const handleRemindLater = async () => {
-    await window.electronAPI.snoozeAppUpdate();
+    try {
+      await window.electronAPI.snoozeAppUpdate();
+    } catch {
+      // Snooze is best-effort; close the dialog regardless
+    }
     setIsOpen(false);
   };
 

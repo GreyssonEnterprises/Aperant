@@ -17,7 +17,7 @@ import {
   getDownloadedUpdateInfo,
   skipUpdateVersion,
   snoozeUpdate,
-  isUpdateSuppressed
+  shouldSuppressUpdate
 } from '../app-updater';
 
 /**
@@ -162,6 +162,10 @@ export function registerAppUpdateHandlers(): void {
     IPC_CHANNELS.APP_UPDATE_SKIP_VERSION,
     async (_event, version: string): Promise<IPCResult> => {
       try {
+        // Validate version format (semver-like, max 50 chars)
+        if (!version || typeof version !== 'string' || version.length > 50 || !/^[\d\w.-]+$/.test(version)) {
+          return { success: false, error: 'Invalid version format' };
+        }
         skipUpdateVersion(version);
         return { success: true };
       } catch (error) {
@@ -195,7 +199,7 @@ export function registerAppUpdateHandlers(): void {
     IPC_CHANNELS.APP_UPDATE_IS_SUPPRESSED,
     async (_event, version: string): Promise<IPCResult<boolean>> => {
       try {
-        return { success: true, data: isUpdateSuppressed(version) };
+        return { success: true, data: shouldSuppressUpdate(version) };
       } catch (error) {
         console.error('[app-update-handlers] Check suppression failed:', error);
         return { success: false, error: error instanceof Error ? error.message : 'Failed to check suppression' };
