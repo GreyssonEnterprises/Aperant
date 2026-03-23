@@ -14,6 +14,7 @@
 import { app } from 'electron';
 import { join } from 'path';
 import { mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
 import { homedir } from 'os';
 import type {
   ClaudeProfile,
@@ -109,6 +110,9 @@ export class ClaudeProfileManager {
     // This reads subscriptionType and rateLimitTier from Keychain credentials
     this.populateSubscriptionMetadata();
 
+    // Detect stale profiles (have .claude.json but no keychain credentials)
+    this.cleanupStaleProfiles();
+
     this.initialized = true;
     console.log('[ClaudeProfileManager] Initialization complete');
   }
@@ -203,6 +207,37 @@ export class ClaudeProfileManager {
     if (needsSave) {
       this.save();
       console.warn('[ClaudeProfileManager] Subscription metadata population complete');
+    }
+  }
+
+  /**
+   * Detect profiles with config files but no valid platform credentials.
+   * These profiles have .claude.json from past OAuth but their keychain tokens
+   * were removed or expired. They need re-authentication to work again.
+   * Logs a single summary warning instead of per-call spam.
+   */
+  private cleanupStaleProfiles(): void {
+    const staleProfiles: string[] = [];
+
+    for (const profile of this.data.profiles) {
+      if (!profile.configDir) {
+        continue;
+      }
+
+      const expandedConfigDir = expandHomePath(profile.configDir);
+      const claudeJsonPath = join(expandedConfigDir, '.claude.json');
+
+      // Profile has .claude.json but isProfileAuthenticated returns false
+      // = stale profile with expired/missing keychain credentials
+      if (existsSync(claudeJsonPath) && !this.isProfileAuthenticated(profile)) {
+        staleProfiles.push(profile.name || profile.id);
+      }
+    }
+
+    if (staleProfiles.length > 0) {
+      console.warn(
+        `[ClaudeProfileManager] Found ${staleProfiles.length} stale profile(s) needing re-authentication: ${staleProfiles.join(', ')}`
+      );
     }
   }
 

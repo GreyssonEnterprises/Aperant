@@ -411,6 +411,10 @@ export class UsageMonitor extends EventEmitter {
       // Check all OAuth profiles for missing credentials
       for (const profile of settings.profiles) {
         if (profile.configDir) {
+          // Skip keychain lookup for profiles already known to need re-auth
+          if (this.needsReauthProfiles.has(profile.id)) {
+            continue;
+          }
           const expandedConfigDir = profile.configDir.startsWith('~')
             ? profile.configDir.replace(/^~/, homedir())
             : profile.configDir;
@@ -512,6 +516,24 @@ export class UsageMonitor extends EventEmitter {
         const summary = this.buildProfileUsageSummary(profile, this.currentUsage);
         profileResults[i] = summary;
         this.allProfilesUsageCache.set(profile.id, { usage: summary, fetchedAt: now });
+        continue;
+      }
+
+      // Skip profiles already known to need re-authentication
+      // This avoids unnecessary keychain lookups and API calls for stale profiles
+      if (this.needsReauthProfiles.has(profile.id)) {
+        profileResults[i] = {
+          profileId: profile.id,
+          profileName: profile.name,
+          profileEmail: profile.email,
+          sessionPercent: 0,
+          weeklyPercent: 0,
+          isAuthenticated: false,
+          isRateLimited: false,
+          availabilityScore: 0,
+          isActive: false,
+          needsReauthentication: true
+        };
         continue;
       }
 

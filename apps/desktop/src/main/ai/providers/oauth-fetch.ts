@@ -27,6 +27,18 @@ function debugLog(message: string, data?: unknown): void {
 }
 
 // =============================================================================
+// In-Memory Token Cache
+// =============================================================================
+
+/** In-memory token cache to avoid re-reading from disk on every request */
+interface CachedToken {
+  accessToken: string;
+  expiresAt: number; // unix ms from the stored token
+  filePath: string;
+}
+let tokenCache: CachedToken | null = null;
+
+// =============================================================================
 // OAuth Provider Registry
 // =============================================================================
 
@@ -158,6 +170,9 @@ async function refreshOAuthToken(
     expires_at: expiresAt,
   });
 
+  // Update in-memory cache with refreshed token
+  tokenCache = { accessToken: data.access_token, expiresAt: expiresAt, filePath: tokenFilePath };
+
   return data.access_token;
 }
 
@@ -189,6 +204,16 @@ export async function ensureValidOAuthToken(
 ): Promise<string | null> {
   debugLog('Ensuring valid OAuth token', { path: tokenFilePath, provider });
 
+  // Check in-memory cache first — avoids disk I/O on every request
+  if (tokenCache && tokenCache.filePath === tokenFilePath) {
+    const cacheExpiresIn = tokenCache.expiresAt - Date.now();
+    if (cacheExpiresIn > REFRESH_THRESHOLD_MS) {
+      return tokenCache.accessToken;
+    }
+    // Cache expired or near expiry — fall through to disk read + refresh
+    tokenCache = null;
+  }
+
   const stored = readTokenFile(tokenFilePath);
   if (!stored) {
     debugLog('No stored tokens — returning null');
@@ -200,6 +225,8 @@ export async function ensureValidOAuthToken(
 
   if (expiresIn > REFRESH_THRESHOLD_MS) {
     debugLog('Token still valid');
+    // Cache the valid token to avoid disk reads on subsequent calls
+    tokenCache = { accessToken: stored.access_token, expiresAt: stored.expires_at, filePath: tokenFilePath };
     return stored.access_token;
   }
 
