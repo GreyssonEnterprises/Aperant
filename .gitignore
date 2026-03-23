@@ -58,6 +58,7 @@ lerna-debug.log*
 # ===========================
 .aperant/
 .auto-claude/
+.aperant/
 .planning/
 .planning-archive/
 .auto-build-security.json
