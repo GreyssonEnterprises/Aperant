@@ -708,6 +708,9 @@ export interface ElectronAPI {
   downloadStableUpdate: () => Promise<IPCResult>;
   installAppUpdate: () => void;
   getDownloadedAppUpdate: () => Promise<IPCResult<AppUpdateInfo | null>>;
+  skipAppUpdate: (version: string) => Promise<IPCResult>;
+  snoozeAppUpdate: () => Promise<IPCResult>;
+  isAppUpdateSuppressed: (version: string) => Promise<IPCResult<boolean>>;
 
   // Electron app update event listeners
   onAppUpdateAvailable: (

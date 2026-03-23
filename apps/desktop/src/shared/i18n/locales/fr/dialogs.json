@@ -169,7 +169,8 @@
     "claudeCodeChangelog": "Voir le journal des modifications Claude Code",
     "claudeCodeChangelogAriaLabel": "Voir le journal des modifications Claude Code (s'ouvre dans une nouvelle fenêtre)",
     "readOnlyVolumeTitle": "Impossible d'installer depuis une image disque",
-    "readOnlyVolumeDescription": "Veuillez déplacer Aperant dans votre dossier Applications avant de mettre à jour."
+    "readOnlyVolumeDescription": "Veuillez déplacer Aperant dans votre dossier Applications avant de mettre à jour.",
+    "skipThisVersion": "Ignorer cette version"
   },
   "addCompetitor": {
     "title": "Ajouter un concurrent",

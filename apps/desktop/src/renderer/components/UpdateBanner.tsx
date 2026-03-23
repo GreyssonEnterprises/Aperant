@@ -36,6 +36,14 @@ export function UpdateBanner({ className }: UpdateBannerProps) {
       const result = await window.electronAPI.checkAppUpdate();
       if (result.success && result.data) {
         const newVersion = result.data.version;
+
+        // Check if this version is suppressed (skipped or snoozed)
+        const suppressed = await window.electronAPI.isAppUpdateSuppressed(newVersion);
+        if (suppressed.success && suppressed.data) {
+          setUpdateInfo(null);
+          return;
+        }
+
         // New update available - show banner (unless same version already dismissed)
         if (currentVersionRef.current !== newVersion) {
           setIsDismissed(false);
@@ -173,8 +181,11 @@ export function UpdateBanner({ className }: UpdateBannerProps) {
     }
   };
 
-  // Handle dismiss
-  const handleDismiss = () => {
+  // Handle dismiss - snoozes for 24 hours so the banner doesn't reappear on next poll
+  const handleDismiss = async () => {
+    if (updateInfo) {
+      await window.electronAPI.snoozeAppUpdate();
+    }
     setIsDismissed(true);
   };
 

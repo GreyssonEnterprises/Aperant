@@ -14,7 +14,10 @@ import {
   downloadStableVersion,
   quitAndInstall,
   getCurrentVersion,
-  getDownloadedUpdateInfo
+  getDownloadedUpdateInfo,
+  skipUpdateVersion,
+  snoozeUpdate,
+  isUpdateSuppressed
 } from '../app-updater';
 
 /**
@@ -147,6 +150,55 @@ export function registerAppUpdateHandlers(): void {
           success: false,
           error: error instanceof Error ? error.message : 'Failed to get downloaded update info'
         };
+      }
+    }
+  );
+
+  /**
+   * APP_UPDATE_SKIP_VERSION: Permanently skip a specific version
+   * That version will never show notifications again until a newer version arrives
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.APP_UPDATE_SKIP_VERSION,
+    async (_event, version: string): Promise<IPCResult> => {
+      try {
+        skipUpdateVersion(version);
+        return { success: true };
+      } catch (error) {
+        console.error('[app-update-handlers] Skip version failed:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Failed to skip version' };
+      }
+    }
+  );
+
+  /**
+   * APP_UPDATE_SNOOZE: Snooze update notifications for 24 hours
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.APP_UPDATE_SNOOZE,
+    async (): Promise<IPCResult> => {
+      try {
+        snoozeUpdate();
+        return { success: true };
+      } catch (error) {
+        console.error('[app-update-handlers] Snooze update failed:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Failed to snooze update' };
+      }
+    }
+  );
+
+  /**
+   * APP_UPDATE_IS_SUPPRESSED: Check if update notifications are suppressed for a version
+   * Used by the renderer to avoid showing stale banners after a skip/snooze
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.APP_UPDATE_IS_SUPPRESSED,
+    async (_event, version: string): Promise<IPCResult<boolean>> => {
+      try {
+        return { success: true, data: isUpdateSuppressed(version) };
+      } catch (error) {
+        console.error('[app-update-handlers] Check suppression failed:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Failed to check suppression' };
       }
     }
   );
