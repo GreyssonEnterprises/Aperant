@@ -39,6 +39,59 @@ function isOAuthToken(token: string | undefined): boolean {
 }
 
 // =============================================================================
+// Anthropic OAuth System Prompt Injection
+// =============================================================================
+
+/**
+ * The Claude Code identity string that Anthropic's API requires as the first
+ * system block for OAuth tokens to access Opus/Sonnet models.
+ * Must be a SEPARATE system block (not combined with other text).
+ */
+const CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official CLI for Claude.";
+
+/**
+ * Creates a fetch interceptor that injects the Claude Code identity as a
+ * separate first system block in Anthropic API requests.
+ *
+ * Anthropic's API validates that OAuth tokens include this identity as an
+ * exact-match first system block to access Opus/Sonnet models.
+ * The identity must be a separate `{type: "text", text: "..."}` entry —
+ * combining it with other text in a single block is rejected.
+ */
+function createOAuthSystemPromptFetch(): typeof globalThis.fetch {
+  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    if (init?.method?.toUpperCase() === 'POST' && init.body) {
+      try {
+        const body = JSON.parse(typeof init.body === 'string' ? init.body : new TextDecoder().decode(init.body as ArrayBuffer));
+
+        if (body.system && Array.isArray(body.system)) {
+          // Check if identity block already present
+          const hasIdentity = body.system.length > 0
+            && body.system[0]?.type === 'text'
+            && body.system[0]?.text === CLAUDE_CODE_IDENTITY;
+
+          if (!hasIdentity) {
+            body.system = [
+              { type: 'text', text: CLAUDE_CODE_IDENTITY },
+              ...body.system,
+            ];
+            init = { ...init, body: JSON.stringify(body) };
+          }
+        } else if (body.system === undefined && body.messages) {
+          // No system prompt at all — add identity block
+          body.system = [{ type: 'text', text: CLAUDE_CODE_IDENTITY }];
+          init = { ...init, body: JSON.stringify(body) };
+        }
+      } catch {
+        // JSON parse failed — pass through unchanged
+      }
+    }
+
+    return globalThis.fetch(input, init);
+  };
+}
+
+// =============================================================================
 // Provider Instance Creators
 // =============================================================================
 
@@ -53,6 +106,7 @@ function createProviderInstance(config: ProviderConfig) {
     case SupportedProvider.Anthropic: {
       // OAuth tokens use authToken (Authorization: Bearer) + required beta header
       // API keys use apiKey (x-api-key header)
+      // Custom fetch injects Claude Code identity system block for model access
       if (isOAuthToken(apiKey)) {
         return createAnthropic({
           authToken: apiKey,
@@ -61,6 +115,7 @@ function createProviderInstance(config: ProviderConfig) {
             ...headers,
             'anthropic-beta': 'claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14',
           },
+          fetch: createOAuthSystemPromptFetch(),
         });
       }
       return createAnthropic({
