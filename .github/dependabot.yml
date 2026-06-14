@@ -1,3 +1,6 @@
+# Dependency updates are PAUSED while Aperant 3.0 is rebuilt in a separate repo.
+# open-pull-requests-limit: 0 disables version-update PRs. Restore the limits
+# (e.g. 5) to re-enable dependabot once contributions reopen for 3.0.
 version: 2
 updates:
   # npm dependencies
@@ -5,7 +8,7 @@ updates:
     directory: /apps/desktop
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     labels:
       - dependencies
       - javascript
@@ -17,7 +20,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     labels:
       - dependencies
       - ci
