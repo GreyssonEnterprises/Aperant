@@ -82,6 +82,18 @@ function hasNonEmptyStrings(value: Record<string, unknown>, keys: readonly strin
   return keys.every((key) => typeof value[key] === 'string' && value[key].trim().length > 0);
 }
 
+function isSafeLoginUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || value.trim().length === 0) return false;
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:') return true;
+    return url.protocol === 'http:' &&
+      ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 export function parseInitializeResponse(value: unknown): CodexInitializeResponse | null {
   if (!isRecord(value) || !hasNonEmptyStrings(value, [
     'codexHome', 'platformFamily', 'platformOs', 'userAgent',
@@ -112,12 +124,13 @@ export function parseLoginStartResponse(value: unknown): CodexLoginStartResponse
       !hasNonEmptyStrings(value, ['loginId'])) {
     return null;
   }
-  if (value.type === 'chatgpt' && hasNonEmptyStrings(value, ['authUrl'])) {
+  if (value.type === 'chatgpt' && isSafeLoginUrl(value.authUrl)) {
     return value as unknown as CodexLoginStartResponse;
   }
   if (
     value.type === 'chatgptDeviceCode' &&
-    hasNonEmptyStrings(value, ['userCode', 'verificationUrl'])
+    hasNonEmptyStrings(value, ['userCode']) &&
+    isSafeLoginUrl(value.verificationUrl)
   ) return value as unknown as CodexLoginStartResponse;
   return null;
 }

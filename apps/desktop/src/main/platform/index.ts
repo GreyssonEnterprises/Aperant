@@ -16,7 +16,7 @@ import * as path from 'path';
 import { existsSync } from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { OS, ShellType, PathConfig, ShellConfig, BinaryDirectories } from './types';
-import { getTaskkillExePath } from '../utils/windows-paths';
+import { getTaskkillExePath, getTrustedTaskkillExePath } from '../utils/windows-paths';
 
 // Re-export from paths.ts for backward compatibility
 export { getWindowsShellPaths, getOllamaExecutablePaths, getOllamaInstallCommand, getWhichCommand } from './paths';
@@ -415,6 +415,188 @@ export interface KillProcessOptions {
   debugPrefix?: string;
   /** Whether debug logging is enabled */
   debug?: boolean;
+}
+
+export interface TerminateProcessTreeOptions {
+  platform?: NodeJS.Platform;
+  gracefulTimeoutMs?: number;
+  forceTimeoutMs?: number;
+  processGroup?: boolean;
+  taskkillPath?: string;
+  signalProcessGroup?: (pid: number, signal: NodeJS.Signals) => void;
+  isProcessGroupAlive?: (pid: number) => boolean;
+}
+
+export class ProcessTreeTerminationError extends Error {
+  constructor(message = 'Process tree termination could not be verified') {
+    super(message);
+    this.name = 'ProcessTreeTerminationError';
+  }
+}
+
+function hasTerminalState(childProcess: ChildProcess): boolean {
+  return childProcess.exitCode !== undefined && childProcess.exitCode !== null ||
+    childProcess.signalCode !== undefined && childProcess.signalCode !== null;
+}
+
+function waitForExit(childProcess: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (hasTerminalState(childProcess)) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (exited: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      childProcess.removeListener('exit', onExit);
+      resolve(exited);
+    };
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(hasTerminalState(childProcess)), timeoutMs);
+    childProcess.once('exit', onExit);
+  });
+}
+
+function waitForCommand(childProcess: ChildProcess, timeoutMs: number): Promise<number | null> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      childProcess.removeListener('exit', onExit);
+      childProcess.removeListener('error', onError);
+    };
+    const onExit = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(code);
+    };
+    const onError = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new ProcessTreeTerminationError());
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try {
+        childProcess.kill();
+      } catch {
+        // The verification failure below remains authoritative.
+      }
+      reject(new ProcessTreeTerminationError());
+    }, timeoutMs);
+    childProcess.once('exit', onExit);
+    childProcess.once('error', onError);
+  });
+}
+
+function defaultSignalProcessGroup(pid: number, signal: NodeJS.Signals): void {
+  process.kill(-pid, signal);
+}
+
+function defaultIsProcessGroupAlive(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+    throw error;
+  }
+}
+
+async function waitForUnixTreeExit(
+  leaderHasExited: () => boolean,
+  pid: number,
+  processGroup: boolean,
+  isProcessGroupAlive: (pid: number) => boolean,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const leaderExited = leaderHasExited();
+    const groupExited = !processGroup || !isProcessGroupAlive(pid);
+    if (leaderExited && groupExited) return true;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(10, timeoutMs)));
+  } while (Date.now() <= deadline);
+  return false;
+}
+
+/**
+ * Awaitable, platform-aware process-tree termination.
+ *
+ * Windows waits for `taskkill /f /t` and the tracked wrapper to exit. Unix sends
+ * TERM then KILL to the detached process group and verifies both leader and
+ * group termination before resolving.
+ */
+export async function terminateProcessTree(
+  childProcess: ChildProcess,
+  options: TerminateProcessTreeOptions = {},
+): Promise<void> {
+  const platform = options.platform ?? process.platform;
+  const gracefulTimeoutMs = options.gracefulTimeoutMs ?? GRACEFUL_KILL_TIMEOUT_MS;
+  const forceTimeoutMs = options.forceTimeoutMs ?? GRACEFUL_KILL_TIMEOUT_MS;
+  const pid = childProcess.pid;
+  if (!pid) throw new ProcessTreeTerminationError('Process tree PID is unavailable');
+
+  if (platform === 'win32') {
+    const taskkill = spawn(
+      options.taskkillPath ?? getTrustedTaskkillExePath(),
+      ['/pid', pid.toString(), '/f', '/t'],
+      { stdio: 'ignore', windowsHide: true },
+    );
+    const taskkillExitCode = await waitForCommand(taskkill, forceTimeoutMs);
+    if (taskkillExitCode !== 0 || !await waitForExit(childProcess, forceTimeoutMs)) {
+      throw new ProcessTreeTerminationError();
+    }
+    return;
+  }
+
+  const processGroup = options.processGroup ?? false;
+  const signalProcessGroup = options.signalProcessGroup ?? defaultSignalProcessGroup;
+  const isProcessGroupAlive = options.isProcessGroupAlive ?? defaultIsProcessGroupAlive;
+  const signalTree = (signal: NodeJS.Signals) => {
+    if (processGroup) signalProcessGroup(pid, signal);
+    else childProcess.kill(signal);
+  };
+
+  let observedExit = hasTerminalState(childProcess);
+  const onExit = () => {
+    observedExit = true;
+  };
+  childProcess.once('exit', onExit);
+
+  try {
+    try {
+      signalTree('SIGTERM');
+    } catch {
+      // Continue to verified force termination.
+    }
+    if (await waitForUnixTreeExit(
+      () => observedExit || hasTerminalState(childProcess),
+      pid,
+      processGroup,
+      isProcessGroupAlive,
+      gracefulTimeoutMs,
+    )) return;
+
+    try {
+      signalTree('SIGKILL');
+    } catch {
+      // Verification below determines success or failure.
+    }
+    if (await waitForUnixTreeExit(
+      () => observedExit || hasTerminalState(childProcess),
+      pid,
+      processGroup,
+      isProcessGroupAlive,
+      forceTimeoutMs,
+    )) return;
+    throw new ProcessTreeTerminationError();
+  } finally {
+    childProcess.removeListener('exit', onExit);
+  }
 }
 
 /**

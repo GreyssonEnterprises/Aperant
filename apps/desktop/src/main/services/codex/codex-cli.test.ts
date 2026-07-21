@@ -152,6 +152,15 @@ describe('Codex CLI detection', () => {
       ComSpec: 'C:\\Temp\\hostile.cmd',
       SystemRoot: 'C:\\Windows',
     })).toBe('C:\\Windows\\System32\\cmd.exe');
+    expect(trustedWindowsCommandProcessor({
+      SystemRoot: 'D:\\attacker\\Windows',
+    })).toBe('C:\\Windows\\System32\\cmd.exe');
+    expect(trustedWindowsCommandProcessor({
+      SystemRoot: '\\\\server\\Windows',
+    })).toBe('C:\\Windows\\System32\\cmd.exe');
+    expect(trustedWindowsCommandProcessor({
+      windir: 'D:\\Windows',
+    })).toBe('D:\\Windows\\System32\\cmd.exe');
   });
 
   it('rejects a hostile command processor passed to synchronous versioning', () => {

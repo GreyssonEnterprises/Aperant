@@ -139,6 +139,22 @@ export function getSystemRoot(): string {
 }
 
 /**
+ * Return a local Windows installation root suitable for trusted system tools.
+ * Nested paths, UNC shares, and shell metacharacters fail closed to C:\Windows.
+ */
+export function getTrustedSystemRoot(environment: NodeJS.ProcessEnv = process.env): string {
+  const configuredRoot = environment.windir ?? environment.WINDIR ??
+    environment.SystemRoot ?? environment.SYSTEMROOT;
+  return configuredRoot && /^[a-z]:\\windows\\?$/i.test(configuredRoot)
+    ? path.win32.normalize(configuredRoot)
+    : 'C:\\Windows';
+}
+
+export function getTrustedTaskkillExePath(environment: NodeJS.ProcessEnv = process.env): string {
+  return path.win32.join(getTrustedSystemRoot(environment), 'System32', 'taskkill.exe');
+}
+
+/**
  * Get the full path to where.exe.
  * Using the full path ensures where.exe works even when System32 isn't in PATH,
  * which can happen in restricted environments or when Electron doesn't inherit

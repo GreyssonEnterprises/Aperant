@@ -48,4 +48,28 @@ describe('Codex app-server protocol validation', () => {
       requiresOpenaiAuth: false,
     })).toMatchObject({ account: { credentialSource: 'environment' } });
   });
+
+  it('accepts safe login URLs and rejects unsafe protocols or remote HTTP', () => {
+    expect(parseLoginStartResponse({
+      type: 'chatgpt',
+      loginId: 'login-1',
+      authUrl: 'javascript:alert(1)',
+    })).toBeNull();
+    expect(parseLoginStartResponse({
+      type: 'chatgpt',
+      loginId: 'login-1',
+      authUrl: 'http://auth.openai.com/example',
+    })).toBeNull();
+    expect(parseLoginStartResponse({
+      type: 'chatgptDeviceCode',
+      loginId: 'login-1',
+      userCode: 'ABCD-EFGH',
+      verificationUrl: 'http://localhost:1455/callback',
+    })).not.toBeNull();
+    expect(parseLoginStartResponse({
+      type: 'chatgpt',
+      loginId: 'login-1',
+      authUrl: 'https://auth.openai.com/example',
+    })).not.toBeNull();
+  });
 });

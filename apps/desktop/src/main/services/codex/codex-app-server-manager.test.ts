@@ -2,9 +2,9 @@ import { EventEmitter } from 'node:events';
 import { PassThrough, Writable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import type { ModelDescriptor } from '@shared/types/model-catalog';
+import { terminateProcessTree } from '../../platform';
 import {
   createCodexAppServerManager,
-  terminateCodexProcess,
   type CodexAppServerSpawnOptions,
 } from './codex-app-server-manager';
 import type { CodexJsonlProcess } from './codex-app-server-client';
@@ -148,6 +148,7 @@ describe('per-account Codex app-server manager', () => {
     expect(spawns[0].env.CODEX_HOME).not.toBe(spawns[1].env.CODEX_HOME);
     expect(spawns[0].env.CODEX_HOME).toMatch(/^\/tmp\/aperant\/codex-accounts\/[a-f0-9]{24}$/);
     expect(spawns[0].env.CODEX_HOME).not.toContain('account-a');
+    expect(spawns[0].detached).toBe(true);
     expect(spawns[0].env.OPENAI_API_KEY).toBeUndefined();
     expect(spawns[0].env).toEqual({
       CODEX_HOME: spawns[0].env.CODEX_HOME,
@@ -155,6 +156,48 @@ describe('per-account Codex app-server manager', () => {
       TEMP: '/tmp',
     });
     expect(processes[0].methods.filter((method) => method === 'initialize')).toHaveLength(1);
+  });
+
+  it('awaits asynchronous environment augmentation before spawning', async () => {
+    let releaseEnvironment: ((environment: NodeJS.ProcessEnv) => void) | undefined;
+    const environment = new Promise<NodeJS.ProcessEnv>((resolve) => {
+      releaseEnvironment = resolve;
+    });
+    const getBaseEnvironment = vi.fn(() => environment);
+    const spawn = vi.fn((_path, _args, options: CodexAppServerSpawnOptions) => (
+      new ScriptedProcess(options.env.CODEX_HOME)
+    ));
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: async () => ({
+        found: true,
+        path: '/usr/bin/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      getBaseEnvironment,
+      spawn,
+      terminate: vi.fn(),
+    });
+
+    const account = manager.readAccount('account-a');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(getBaseEnvironment).toHaveBeenCalledTimes(1);
+    expect(spawn).not.toHaveBeenCalled();
+
+    releaseEnvironment?.({ PATH: '/async/bin', SENTRY_DSN: 'secret' });
+    await account;
+    expect(spawn).toHaveBeenCalledWith(
+      '/usr/bin/codex',
+      ['app-server', '--stdio'],
+      expect.objectContaining({
+        env: expect.objectContaining({ PATH: '/async/bin' }),
+      }),
+    );
+    expect(spawn.mock.calls[0][2].env.SENTRY_DSN).toBeUndefined();
+    await manager.shutdown();
   });
 
   it('spawns npm codex.cmd through a secure cmd.exe wrapper', async () => {
@@ -183,7 +226,11 @@ describe('per-account Codex app-server manager', () => {
     expect(spawn).toHaveBeenCalledWith(
       'C:\\Windows\\System32\\cmd.exe',
       ['/d', '/s', '/c', expect.stringContaining('codex.cmd" app-server --stdio')],
-      expect.objectContaining({ shell: false, windowsVerbatimArguments: true }),
+      expect.objectContaining({
+        detached: false,
+        shell: false,
+        windowsVerbatimArguments: true,
+      }),
     );
   });
 
@@ -321,6 +368,7 @@ describe('per-account Codex app-server manager', () => {
       }),
       ensureDirectory: vi.fn(async () => undefined),
       canonicalizeDirectory: async (directory) => directory,
+      baseEnv: { PATH: '/usr/bin' },
       spawn: () => process,
       terminate,
     });
@@ -673,7 +721,12 @@ describe('per-account Codex app-server manager', () => {
     }
     const process = new ResistantProcess();
 
-    await terminateCodexProcess(process, { gracefulTimeoutMs: 1, forceTimeoutMs: 20 });
+    await terminateProcessTree(process as unknown as import('node:child_process').ChildProcess, {
+      platform: 'darwin',
+      processGroup: false,
+      gracefulTimeoutMs: 1,
+      forceTimeoutMs: 20,
+    });
 
     expect(process.signals).toEqual(['SIGTERM', 'SIGKILL']);
 
@@ -682,10 +735,10 @@ describe('per-account Codex app-server manager', () => {
       unkillable.signals.push(signal);
       return true;
     });
-    await expect(terminateCodexProcess(
-      unkillable,
-      { gracefulTimeoutMs: 1, forceTimeoutMs: 1 },
-    )).rejects.toMatchObject({ code: 'termination-failed' });
+    await expect(terminateProcessTree(
+      unkillable as unknown as import('node:child_process').ChildProcess,
+      { platform: 'darwin', processGroup: false, gracefulTimeoutMs: 1, forceTimeoutMs: 1 },
+    )).rejects.toThrow('Process tree termination could not be verified');
   });
 
   it('reports shutdown failure when process termination cannot be verified', async () => {

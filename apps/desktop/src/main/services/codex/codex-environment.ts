@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { getTrustedSystemRoot } from '../../utils/windows-paths';
 
 const ALLOWED_ENVIRONMENT_KEYS = new Set([
   'APPDATA',
@@ -48,11 +49,5 @@ export function createCodexEnvironment(
 export function trustedWindowsCommandProcessor(
   environment: NodeJS.ProcessEnv = process.env,
 ): string {
-  const configuredRoot = environment.SystemRoot ?? environment.SYSTEMROOT;
-  const systemRoot = configuredRoot && path.win32.isAbsolute(configuredRoot) &&
-      path.win32.basename(configuredRoot).toLowerCase() === 'windows' &&
-      !/[%!^&|<>"\r\n]/.test(configuredRoot)
-    ? path.win32.normalize(configuredRoot)
-    : 'C:\\Windows';
-  return path.win32.join(systemRoot, 'System32', 'cmd.exe');
+  return path.win32.join(getTrustedSystemRoot(environment), 'System32', 'cmd.exe');
 }
