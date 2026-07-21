@@ -69,6 +69,7 @@ import { initializeClaudeProfileManager, getClaudeProfileManager } from './claud
 import { isProfileAuthenticated } from './claude-profile/profile-utils';
 import { isMacOS, isWindows } from './platform';
 import { ptyDaemonClient } from './terminal/pty-daemon-client';
+import { shutdownCodexAppServerRuntime } from './services/codex/codex-app-server-runtime';
 import type { AppSettings, AuthFailureInfo } from '../shared/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -698,6 +699,8 @@ app.on('before-quit', (event) => {
       if (terminalManager) {
         await terminalManager.killAll();
       }
+
+      await shutdownCodexAppServerRuntime();
 
       // Shut down PTY daemon client AFTER terminal cleanup completes,
       // ensuring all kill commands reach PTY processes before the daemon disconnects

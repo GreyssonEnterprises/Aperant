@@ -25,6 +25,7 @@ export interface ModelCatalogServiceDependencies {
   fetch: typeof globalThis.fetch;
   now: () => number;
   readAccounts: () => ProviderAccount[] | Promise<ProviderAccount[]>;
+  discoverCodexModels?: (account: ProviderAccount) => Promise<ModelDescriptor[]>;
   sleep?: (delayMs: number) => Promise<void>;
 }
 
@@ -210,14 +211,26 @@ export function createModelCatalogService(
       let models: ModelDescriptor[];
       let refreshError: string | undefined;
       try {
-        models = account.provider === 'anthropic'
-          ? await discoverAnthropic(account)
-          : bundledForAccount(account.provider, account);
+        if (
+          account.provider === 'openai' &&
+          account.authType === 'oauth' &&
+          account.billingModel === 'subscription' &&
+          dependencies.discoverCodexModels
+        ) {
+          models = mergeModelDescriptors(
+            unavailableBundled('openai'),
+            await dependencies.discoverCodexModels(account),
+          );
+        } else {
+          models = account.provider === 'anthropic'
+            ? await discoverAnthropic(account)
+            : bundledForAccount(account.provider, account);
+        }
       } catch (error) {
         refreshError = error instanceof Error ? error.message : String(error);
         models = bundledForAccount(account.provider, account).map((model) => ({
           ...model,
-          availability: 'unverified',
+          availability: isCodexSubscriptionModel(model) ? 'unavailable' : 'unverified',
         }));
       }
 
@@ -265,7 +278,14 @@ export function createModelCatalogService(
     const accounts = await matchingAccounts(query);
     const accountModels = await Promise.all(accounts.map(async (account) => {
       const cached = snapshots.get(snapshotKey(account.provider, account.id));
-      if (!force && cached && isFresh(cached)) return cloneModels(cached.models);
+      const requiresCodexRuntimeValidation =
+        account.provider === 'openai' &&
+        account.authType === 'oauth' &&
+        account.billingModel === 'subscription' &&
+        dependencies.discoverCodexModels !== undefined;
+      if (!force && cached && isFresh(cached) && !requiresCodexRuntimeValidation) {
+        return cloneModels(cached.models);
+      }
       return refreshAccount(account);
     }));
 

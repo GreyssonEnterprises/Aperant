@@ -274,7 +274,7 @@ describe('model catalog service', () => {
     expect(fetch.mock.calls.length).toBeGreaterThan(callsAfterFailure);
   });
 
-  it('marks OpenAI OAuth subscription models unavailable until Codex support lands', async () => {
+  it('marks OpenAI OAuth subscription models unavailable without a validated Codex runtime', async () => {
     const service = createModelCatalogService({
       cachePath: await cachePath(),
       fetch: vi.fn(),
@@ -292,6 +292,44 @@ describe('model catalog service', () => {
 
     expect(models.length).toBeGreaterThan(0);
     expect(models.every((model) => model.availability === 'unavailable')).toBe(true);
+  });
+
+  it('publishes Codex models only after OAuth runtime discovery succeeds', async () => {
+    const discoverCodexModels = vi.fn(async () => [{
+      id: 'gpt-5.6-codex',
+      label: 'GPT-5.6 Codex',
+      provider: 'openai' as const,
+      authModes: ['oauth' as const],
+      backend: 'codex-app-server' as const,
+      thinking: { mode: 'manual' as const, effortLevels: ['medium'] },
+      source: 'provider' as const,
+      availability: 'available' as const,
+    }]);
+    const service = createModelCatalogService({
+      cachePath: await cachePath(),
+      fetch: vi.fn(),
+      now: () => 5_500,
+      readAccounts: () => [account({
+        id: 'codex-account',
+        provider: 'openai',
+        authType: 'oauth',
+        billingModel: 'subscription',
+        apiKey: undefined,
+      })],
+      discoverCodexModels,
+    });
+
+    const models = await service.refresh({ provider: 'openai', accountId: 'codex-account' });
+
+    expect(discoverCodexModels).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'codex-account',
+      authType: 'oauth',
+    }));
+    expect(models).toContainEqual(expect.objectContaining({
+      id: 'gpt-5.6-codex',
+      availability: 'available',
+      backend: 'codex-app-server',
+    }));
   });
 
   it('reports a provider model available when any matching account can use it', async () => {
@@ -316,7 +354,7 @@ describe('model catalog service', () => {
     expect(models.find((model) => model.id === 'gpt-5.2')?.availability).toBe('available');
   });
 
-  it('keeps bundled Codex models unavailable for API-key accounts until Task 3', async () => {
+  it('keeps bundled Codex models unavailable for API-key accounts', async () => {
     const service = createModelCatalogService({
       cachePath: await cachePath(),
       fetch: vi.fn(),

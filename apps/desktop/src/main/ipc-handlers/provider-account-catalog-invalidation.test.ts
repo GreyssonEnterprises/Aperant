@@ -23,7 +23,11 @@ vi.mock('fs', () => ({
   mkdirSync: vi.fn(),
   statSync: vi.fn(),
 }));
-vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }));
+vi.mock('node:child_process', () => ({
+  execFile: vi.fn(),
+  execFileSync: vi.fn(),
+  spawn: vi.fn(),
+}));
 vi.mock('../settings-utils', () => ({
   getSettingsPath: vi.fn(() => '/tmp/settings.json'),
   readSettingsFile: vi.fn(() => settingsState.current),

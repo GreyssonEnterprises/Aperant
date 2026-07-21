@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { ProviderAccount } from '@shared/types/provider-account';
 import { readSettingsFile } from '../settings-utils';
 import { createModelCatalogService, type ModelCatalogService } from './model-catalog-service';
+import { getCodexAppServerManager } from './codex/codex-app-server-runtime';
 
 let service: ModelCatalogService | undefined;
 
@@ -16,6 +17,7 @@ export function getModelCatalogService(): ModelCatalogService {
         const settings = readSettingsFile();
         return (settings?.providerAccounts as ProviderAccount[] | undefined) ?? [];
       },
+      discoverCodexModels: (account) => getCodexAppServerManager().listModels(account.id),
     });
   }
   return service;

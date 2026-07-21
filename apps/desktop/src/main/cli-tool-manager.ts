@@ -55,7 +55,7 @@ import {
 /**
  * Supported CLI tools managed by this system
  */
-export type CLITool = 'python' | 'git' | 'gh' | 'glab' | 'claude';
+export type CLITool = 'python' | 'git' | 'gh' | 'glab' | 'claude' | 'codex';
 
 /**
  * User configuration for CLI tool paths
@@ -67,6 +67,136 @@ export interface ToolConfig {
   githubCLIPath?: string;
   gitlabCLIPath?: string;
   claudePath?: string;
+  codexPath?: string;
+}
+
+export interface CodexCliDetectionResult {
+  found: boolean;
+  path?: string;
+  version?: string;
+  runtimeValidationRequired?: boolean;
+  message?: string;
+}
+
+export interface CodexCliDetectionDependencies {
+  findExecutable: (name: string) => string | null;
+  readVersion: (executable: string) => string;
+}
+
+export interface CodexCliVersionReadDependencies {
+  comSpec: string;
+  env: Record<string, string>;
+  execFile: (
+    executable: string,
+    args: string[],
+    options: ExecFileSyncOptionsWithVerbatim,
+  ) => string | Buffer;
+  isSecurePath: (executable: string) => boolean;
+  shouldUseShell: (executable: string) => boolean;
+}
+
+export function readCodexCliVersion(
+  executable: string,
+  dependencies: CodexCliVersionReadDependencies = {
+    comSpec: process.env.ComSpec ??
+      path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe'),
+    env: getAugmentedEnv(),
+    execFile: (command, args, options) => execFileSync(command, args, options),
+    isSecurePath,
+    shouldUseShell,
+  },
+): string {
+  const trimmed = executable.trim();
+  const unquoted = trimmed.startsWith('"') && trimmed.endsWith('"')
+    ? trimmed.slice(1, -1)
+    : trimmed;
+  if (dependencies.shouldUseShell(trimmed)) {
+    if (!dependencies.isSecurePath(unquoted)) {
+      throw new Error(`Codex CLI path failed security validation: ${unquoted}`);
+    }
+    return normalizeExecOutput(dependencies.execFile(
+      dependencies.comSpec,
+      ['/d', '/s', '/c', `""${unquoted}" --version"`],
+      {
+        encoding: 'utf-8',
+        timeout: 5_000,
+        windowsHide: true,
+        windowsVerbatimArguments: true,
+        env: dependencies.env,
+      },
+    ));
+  }
+  return normalizeExecOutput(dependencies.execFile(unquoted, ['--version'], {
+    encoding: 'utf-8',
+    timeout: 5_000,
+    windowsHide: true,
+    shell: false,
+    env: dependencies.env,
+  }));
+}
+
+export function parseCodexCliVersion(output: string): string | null {
+  const match = output.trim().match(/^codex-cli\s+(\d+\.\d+\.\d+)$/);
+  return match?.[1] ?? null;
+}
+
+export function evaluateCodexCliVersion(version: string): {
+  supported: boolean;
+  runtimeValidationRequired?: boolean;
+  message?: string;
+} {
+  const parts = version.split('.').map(Number);
+  if (parts.length !== 3 || parts.some((part) => !Number.isSafeInteger(part) || part < 0)) {
+    return { supported: false, message: `Invalid Codex CLI version: ${version}` };
+  }
+  const [major, minor] = parts;
+  if (major === 0 && minor < 144) {
+    return {
+      supported: false,
+      message: `Codex CLI ${version} is too old. Install 0.144.0 or newer.`,
+    };
+  }
+  return {
+    supported: true,
+    runtimeValidationRequired: major > 0 || minor > 144,
+  };
+}
+
+export function detectCodexCli(
+  dependencies: CodexCliDetectionDependencies = {
+    findExecutable,
+    readVersion: readCodexCliVersion,
+  },
+): CodexCliDetectionResult {
+  const executable = dependencies.findExecutable('codex');
+  if (!executable) {
+    return {
+      found: false,
+      message: 'Codex CLI not found. Install Codex CLI 0.144.0 or newer.',
+    };
+  }
+  try {
+    const version = parseCodexCliVersion(dependencies.readVersion(executable));
+    if (!version) {
+      return { found: false, path: executable, message: 'Unable to parse Codex CLI version.' };
+    }
+    const policy = evaluateCodexCliVersion(version);
+    if (!policy.supported) {
+      return { found: false, path: executable, version, message: policy.message };
+    }
+    return {
+      found: true,
+      path: executable,
+      version,
+      runtimeValidationRequired: policy.runtimeValidationRequired ?? false,
+    };
+  } catch (error) {
+    return {
+      found: false,
+      path: executable,
+      message: `Failed to validate Codex CLI: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 }
 
 /**
@@ -376,6 +506,19 @@ class CLIToolManager {
         return this.detectGitLabCLI();
       case 'claude':
         return this.detectClaude();
+      case 'codex': {
+        const result = detectCodexCli({
+          findExecutable: (name) => this.userConfig.codexPath ?? findExecutable(name),
+          readVersion: readCodexCliVersion,
+        });
+        return {
+          found: result.found,
+          ...(result.path ? { path: result.path } : {}),
+          ...(result.version ? { version: result.version } : {}),
+          source: this.userConfig.codexPath ? 'user-config' : 'system-path',
+          message: result.message ?? `Using installed Codex CLI: ${result.path}`,
+        };
+      }
       default:
         return {
           found: false,
@@ -1237,6 +1380,8 @@ class CLIToolManager {
         return this.detectGitHubCLIAsync();
       case 'glab':
         return this.detectGitLabCLIAsync();
+      case 'codex':
+        return this.detectToolPath('codex');
       default:
         return {
           found: false,

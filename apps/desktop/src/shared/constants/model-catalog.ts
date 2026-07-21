@@ -106,6 +106,7 @@ export const BUNDLED_MODEL_CATALOG: ModelDescriptor[] = [
     label: 'GPT-5.3 Codex',
     provider: 'openai',
     authModes: OAUTH_AND_API_KEY,
+    backend: 'codex-app-server',
     contextWindow: 1_047_576,
     thinking: 'manual',
   }),
@@ -121,6 +122,7 @@ export const BUNDLED_MODEL_CATALOG: ModelDescriptor[] = [
     label: 'GPT-5.2 Codex',
     provider: 'openai',
     authModes: OAUTH_AND_API_KEY,
+    backend: 'codex-app-server',
     contextWindow: 1_047_576,
     thinking: 'manual',
   }),
@@ -129,6 +131,7 @@ export const BUNDLED_MODEL_CATALOG: ModelDescriptor[] = [
     label: 'GPT-5.1 Codex Mini',
     provider: 'openai',
     authModes: OAUTH_AND_API_KEY,
+    backend: 'codex-app-server',
     contextWindow: 400_000,
     thinking: 'manual',
   }),
@@ -345,19 +348,12 @@ export function mergeModelDescriptors(
   for (const custom of customModels) {
     const key = descriptorKey(custom.provider, custom.id);
     const existingIndex = indexes.get(key);
-    const providerDescriptor =
-      (existingIndex === undefined ? undefined : merged[existingIndex]) ??
-      merged.find(
-        (descriptor) =>
-          descriptor.provider === custom.provider && descriptor.source === 'provider',
-      ) ??
-      merged.find((descriptor) => descriptor.provider === custom.provider);
     const descriptor: ModelDescriptor = {
       id: custom.id,
       label: custom.label ?? custom.id,
       provider: custom.provider,
       authModes: [],
-      backend: providerDescriptor?.backend ?? 'vercel',
+      backend: 'vercel',
       thinking: { mode: 'unknown', effortLevels: [] },
       source: 'custom',
       availability: 'unverified',
