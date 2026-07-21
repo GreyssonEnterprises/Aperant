@@ -35,6 +35,13 @@ export interface ModelCatalogService {
   status(): Promise<ModelCatalogStatus>;
 }
 
+interface InFlightRefresh {
+  accountId: string;
+  generation: number;
+  promise: Promise<ModelDescriptor[]>;
+  provider: BuiltinProvider;
+}
+
 function snapshotKey(provider: BuiltinProvider, accountId?: string): string {
   return `${provider}\u0000${accountId ?? ''}`;
 }
@@ -113,7 +120,8 @@ export function createModelCatalogService(
 ): ModelCatalogService {
   const sleep = dependencies.sleep ?? ((delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)));
   const snapshots = new Map<string, ModelCatalogSnapshot>();
-  const inFlight = new Map<string, Promise<ModelDescriptor[]>>();
+  const inFlight = new Map<string, InFlightRefresh>();
+  const generations = new Map<string, number>();
   const errors = new Map<string, string>();
   let loadPromise: Promise<void> | undefined;
   let saveChain = Promise.resolve();
@@ -195,28 +203,35 @@ export function createModelCatalogService(
   async function refreshAccount(account: ProviderAccount): Promise<ModelDescriptor[]> {
     const key = snapshotKey(account.provider, account.id);
     const existing = inFlight.get(key);
-    if (existing) return existing;
+    const generation = generations.get(key) ?? 0;
+    if (existing?.generation === generation) return existing.promise;
 
     const operation = (async () => {
       let models: ModelDescriptor[];
+      let refreshError: string | undefined;
       try {
         models = account.provider === 'anthropic'
           ? await discoverAnthropic(account)
           : bundledForAccount(account.provider, account);
-        errors.delete(key);
       } catch (error) {
-        errors.set(key, error instanceof Error ? error.message : String(error));
+        refreshError = error instanceof Error ? error.message : String(error);
         models = bundledForAccount(account.provider, account).map((model) => ({
           ...model,
           availability: 'unverified',
         }));
       }
 
+      if ((generations.get(key) ?? 0) !== generation) {
+        return cloneModels(models);
+      }
+
+      if (refreshError) errors.set(key, refreshError);
+      else errors.delete(key);
       const previous = snapshots.get(key);
       const snapshot: ModelCatalogSnapshot = {
         provider: account.provider,
         accountId: account.id,
-        fetchedAt: errors.has(key)
+        fetchedAt: refreshError
           ? previous?.fetchedAt ?? new Date(dependencies.now() - MODEL_CATALOG_TTL_MS).toISOString()
           : new Date(dependencies.now()).toISOString(),
         models,
@@ -225,9 +240,16 @@ export function createModelCatalogService(
       await saveCache();
       return cloneModels(models);
     })().finally(() => {
-      inFlight.delete(key);
+      if (inFlight.get(key)?.promise === operation) {
+        inFlight.delete(key);
+      }
     });
-    inFlight.set(key, operation);
+    inFlight.set(key, {
+      accountId: account.id,
+      generation,
+      promise: operation,
+      provider: account.provider,
+    });
     return operation;
   }
 
@@ -275,12 +297,25 @@ export function createModelCatalogService(
     refresh: (query = {}) => collect(query, true),
     async invalidate(query = {}) {
       await loadCache();
+      const invalidatedKeys = new Set<string>();
       for (const [key, snapshot] of snapshots) {
         if ((!query.provider || snapshot.provider === query.provider) &&
             (!query.accountId || snapshot.accountId === query.accountId)) {
           snapshots.delete(key);
           errors.delete(key);
+          invalidatedKeys.add(key);
         }
+      }
+      for (const [key, refresh] of inFlight) {
+        if ((!query.provider || refresh.provider === query.provider) &&
+            (!query.accountId || refresh.accountId === query.accountId)) {
+          inFlight.delete(key);
+          errors.delete(key);
+          invalidatedKeys.add(key);
+        }
+      }
+      for (const key of invalidatedKeys) {
+        generations.set(key, (generations.get(key) ?? 0) + 1);
       }
       await saveCache();
     },

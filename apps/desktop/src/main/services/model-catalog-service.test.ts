@@ -177,6 +177,38 @@ describe('model catalog service', () => {
     expect((await service.status()).snapshots).toEqual([]);
   });
 
+  it('prevents an invalidated in-flight refresh from restoring stale data', async () => {
+    const path = await cachePath();
+    let resolveOldFetch!: (response: Response) => void;
+    const fetch = vi.fn()
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveOldFetch = resolve; }))
+      .mockResolvedValueOnce(anthropicResponse('claude-new'));
+    const service = createModelCatalogService({
+      cachePath: path,
+      fetch,
+      now: () => 3_500,
+      readAccounts: () => [account()],
+    });
+
+    const oldRefresh = service.refresh({
+      provider: 'anthropic',
+      accountId: 'anthropic-account',
+    });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await service.invalidate({ provider: 'anthropic', accountId: 'anthropic-account' });
+    resolveOldFetch(anthropicResponse('claude-old'));
+    await oldRefresh;
+
+    expect((await service.status()).snapshots).toEqual([]);
+    const newModels = await service.refresh({
+      provider: 'anthropic',
+      accountId: 'anthropic-account',
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(newModels.some((model) => model.id === 'claude-new')).toBe(true);
+    expect(newModels.some((model) => model.id === 'claude-old')).toBe(false);
+  });
+
   it('uses bounded exponential backoff then returns bundled fallback', async () => {
     const path = await cachePath();
     const delays: number[] = [];

@@ -129,12 +129,15 @@ export function AgentProfileSelector({
 
   // Build model options filtered to the active provider (falls back to Anthropic models)
   const phaseModelOptions = useMemo(() => {
-    // Ollama: use dynamically fetched installed models
-    if (activeProvider === 'ollama' && ollamaModels.length > 0) {
-      return ollamaModels.map((option) => ({ ...option, availability: 'available' as const }));
-    }
     const provider = activeProvider ?? 'anthropic';
-    let providerModels = catalogModels.filter((option) => option.provider === provider);
+    let providerModels =
+      activeProvider === 'ollama' && ollamaModels.length > 0
+        ? ollamaModels.map((option) => ({
+            ...option,
+            availability: 'available' as const,
+            provider: 'ollama' as const,
+          }))
+        : catalogModels.filter((option) => option.provider === provider);
     for (const saved of Object.values(currentPhaseModels)) {
       providerModels = ensureSavedModelOption(providerModels, saved, provider);
     }
