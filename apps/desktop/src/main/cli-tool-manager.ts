@@ -33,6 +33,7 @@ import {
   createCodexEnvironment,
   trustedWindowsCommandProcessor,
 } from './services/codex/codex-environment';
+import { resolveCodexNativeExecutable } from './services/codex/codex-native-executable';
 import { findHomebrewPython as findHomebrewPythonUtil } from './utils/homebrew-python';
 
 const execFileAsync = promisify(execFile);
@@ -77,6 +78,7 @@ export interface ToolConfig {
 export interface CodexCliDetectionResult {
   found: boolean;
   path?: string;
+  runtimePath?: string;
   version?: string;
   runtimeValidationRequired?: boolean;
   message?: string;
@@ -90,7 +92,10 @@ export interface CodexCliDetectionDependencies {
 export interface CodexCliAsyncDetectionDependencies {
   findExecutableAsync: (name: string) => Promise<string | null>;
   readVersionAsync: (executable: string) => Promise<string>;
+  resolveNativeExecutableAsync?: (executable: string) => Promise<string>;
 }
+
+export { resolveCodexNativeExecutable } from './services/codex/codex-native-executable';
 
 export interface CodexCliVersionReadDependencies {
   comSpec: string;
@@ -310,9 +315,13 @@ export async function detectCodexCliAsync(
     if (!policy.supported) {
       return { found: false, path: executable, version, message: policy.message };
     }
+    const runtimePath = await (
+      dependencies.resolveNativeExecutableAsync ?? resolveCodexNativeExecutable
+    )(executable);
     return {
       found: true,
       path: executable,
+      runtimePath,
       version,
       runtimeValidationRequired: policy.runtimeValidationRequired ?? false,
     };

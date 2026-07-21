@@ -16,6 +16,7 @@ export type ModelCatalogErrorCode =
   | 'cli-unsupported'
   | 'discovery-failed'
   | 'isolation-failed'
+  | 'platform-unsupported'
   | 'process-exited'
   | 'protocol-error'
   | 'request-timeout'

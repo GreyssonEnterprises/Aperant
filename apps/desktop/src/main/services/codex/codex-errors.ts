@@ -6,6 +6,7 @@ const PUBLIC_MESSAGES: Record<ModelCatalogErrorCode, string> = {
   'cli-unsupported': 'The installed Codex CLI version is unsupported',
   'discovery-failed': 'Model discovery failed',
   'isolation-failed': 'Codex account isolation could not be verified',
+  'platform-unsupported': 'Codex app-server is unsupported on this platform',
   'process-exited': 'Codex app-server stopped unexpectedly',
   'protocol-error': 'Codex app-server returned an invalid response',
   'request-timeout': 'Codex app-server request timed out',

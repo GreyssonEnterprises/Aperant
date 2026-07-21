@@ -2,9 +2,9 @@ import { EventEmitter } from 'node:events';
 import { PassThrough, Writable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import type { ModelDescriptor } from '@shared/types/model-catalog';
-import { terminateProcessTree } from '../../platform';
 import {
   createCodexAppServerManager,
+  type CodexAppServerManagerDependencies,
   type CodexAppServerSpawnOptions,
 } from './codex-app-server-manager';
 import type { CodexJsonlProcess } from './codex-app-server-client';
@@ -148,7 +148,7 @@ describe('per-account Codex app-server manager', () => {
     expect(spawns[0].env.CODEX_HOME).not.toBe(spawns[1].env.CODEX_HOME);
     expect(spawns[0].env.CODEX_HOME).toMatch(/^\/tmp\/aperant\/codex-accounts\/[a-f0-9]{24}$/);
     expect(spawns[0].env.CODEX_HOME).not.toContain('account-a');
-    expect(spawns[0].detached).toBe(true);
+    expect(spawns[0].detached).toBe(false);
     expect(spawns[0].env.OPENAI_API_KEY).toBeUndefined();
     expect(spawns[0].env).toEqual({
       CODEX_HOME: spawns[0].env.CODEX_HOME,
@@ -200,38 +200,26 @@ describe('per-account Codex app-server manager', () => {
     await manager.shutdown();
   });
 
-  it('spawns npm codex.cmd through a secure cmd.exe wrapper', async () => {
+  it('rejects Windows before CLI detection or process spawn', async () => {
+    const detectCli = vi.fn();
     const spawn = vi.fn((_path, _args, options: CodexAppServerSpawnOptions) => (
       new ScriptedProcess(options.env.CODEX_HOME)
     ));
     const manager = createCodexAppServerManager({
       codexHomeRoot: 'C:\\Aperant\\codex-accounts',
-      detectCli: async () => ({
-        found: true,
-        path: 'C:\\Users\\grimm\\AppData\\Roaming\\npm\\codex.cmd',
-        version: '0.144.6',
-        runtimeValidationRequired: false,
-      }),
+      detectCli,
       ensureDirectory: vi.fn(async () => undefined),
       canonicalizeDirectory: async (directory) => directory,
       platform: 'win32',
-      comSpec: 'C:\\Windows\\System32\\cmd.exe',
-      isSecurePath: () => true,
       spawn,
       terminate: vi.fn(),
     });
 
-    await manager.readAccount('account-a');
-
-    expect(spawn).toHaveBeenCalledWith(
-      'C:\\Windows\\System32\\cmd.exe',
-      ['/d', '/s', '/c', expect.stringContaining('codex.cmd" app-server --stdio')],
-      expect.objectContaining({
-        detached: false,
-        shell: false,
-        windowsVerbatimArguments: true,
-      }),
-    );
+    await expect(manager.readAccount('account-a')).rejects.toMatchObject({
+      code: 'platform-unsupported',
+    });
+    expect(detectCli).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
   });
 
   it('rejects a hostile Windows command processor override', async () => {
@@ -247,14 +235,12 @@ describe('per-account Codex app-server manager', () => {
       ensureDirectory: vi.fn(async () => undefined),
       canonicalizeDirectory: async (directory) => directory,
       platform: 'win32',
-      comSpec: 'C:\\Temp\\hostile.cmd',
-      isSecurePath: () => true,
       spawn,
       terminate: vi.fn(),
     });
 
     await expect(manager.readAccount('account-a')).rejects.toMatchObject({
-      code: 'spawn-failed',
+      code: 'platform-unsupported',
     });
     expect(spawn).not.toHaveBeenCalled();
   });
@@ -631,7 +617,7 @@ describe('per-account Codex app-server manager', () => {
     });
   });
 
-  it('runtime-validates a newer CLI and restarts after process death', async () => {
+  it('quarantines an account after unexpected process death', async () => {
     let spawnCount = 0;
     const processes: ScriptedProcess[] = [];
     const terminate = vi.fn();
@@ -656,12 +642,12 @@ describe('per-account Codex app-server manager', () => {
 
     await manager.readAccount('account-a');
     processes[0].emit('exit', 1, null);
-    await manager.readAccount('account-a');
+    await expect(manager.readAccount('account-a')).rejects.toMatchObject({
+      code: 'termination-failed',
+    });
 
-    expect(spawnCount).toBe(2);
+    expect(spawnCount).toBe(1);
     expect(terminate).not.toHaveBeenCalledWith(processes[0]);
-    await manager.shutdown();
-    expect(terminate).toHaveBeenCalledWith(processes[1]);
   });
 
   it('blocks replacement until the prior account process finishes termination', async () => {
@@ -704,41 +690,112 @@ describe('per-account Codex app-server manager', () => {
     await manager.shutdown();
   });
 
-  it('escalates from SIGTERM to SIGKILL and requires a verified exit', async () => {
-    class ResistantProcess extends EventEmitter implements CodexJsonlProcess {
-      readonly stdout = new PassThrough();
-      readonly stderr = new PassThrough();
-      readonly stdin = new Writable({ write: (_chunk, _encoding, done) => done() });
-      readonly signals: Array<NodeJS.Signals | undefined> = [];
-      pid = 9292;
-      killed = false;
-      kill(signal?: NodeJS.Signals): boolean {
-        this.killed = true;
-        this.signals.push(signal);
-        if (signal === 'SIGKILL') queueMicrotask(() => this.emit('exit', null, 'SIGKILL'));
-        return true;
-      }
-    }
-    const process = new ResistantProcess();
+  it('uses cooperative EOF shutdown without sending a numeric process signal', async () => {
+    let process: ScriptedProcess | undefined;
+    const dependencies: CodexAppServerManagerDependencies & { shutdownTimeoutMs: number } = {
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: async () => ({
+        found: true,
+        path: '/native/codex',
+        runtimePath: '/native/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      baseEnv: { PATH: '/usr/bin' },
+      spawn: (_path, _args, options) => {
+        process = new ScriptedProcess(options.env.CODEX_HOME);
+        process.kill = vi.fn(() => {
+          process?.emit('exit', null, 'SIGTERM');
+          return true;
+        });
+        process.stdin.once('finish', () => {
+          Object.defineProperty(process, 'exitCode', { value: 0, configurable: true });
+          queueMicrotask(() => process?.emit('exit', 0, null));
+        });
+        return process;
+      },
+      shutdownTimeoutMs: 20,
+    };
+    const manager = createCodexAppServerManager(dependencies);
+    await manager.readAccount('account-a');
 
-    await terminateProcessTree(process as unknown as import('node:child_process').ChildProcess, {
-      platform: 'darwin',
-      processGroup: false,
-      gracefulTimeoutMs: 1,
-      forceTimeoutMs: 20,
+    await manager.shutdown();
+
+    expect(process?.stdin.writableEnded).toBe(true);
+    expect(process?.kill).not.toHaveBeenCalled();
+  });
+
+  it('retains the account barrier when cooperative shutdown times out', async () => {
+    let process: ScriptedProcess | undefined;
+    let spawnCount = 0;
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: async () => ({
+        found: true,
+        path: '/native/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      baseEnv: { PATH: '/usr/bin' },
+      spawn: (_path, _args, options) => {
+        spawnCount += 1;
+        process = new ScriptedProcess(options.env.CODEX_HOME);
+        return process;
+      },
+      shutdownTimeoutMs: 5,
     });
+    await manager.readAccount('account-a');
 
-    expect(process.signals).toEqual(['SIGTERM', 'SIGKILL']);
+    process?.stdout.write('malformed-json\n');
 
-    const unkillable = new ResistantProcess();
-    unkillable.kill = vi.fn((signal?: NodeJS.Signals) => {
-      unkillable.signals.push(signal);
-      return true;
+    await expect(manager.readAccount('account-a')).rejects.toMatchObject({
+      code: 'termination-failed',
     });
-    await expect(terminateProcessTree(
-      unkillable as unknown as import('node:child_process').ChildProcess,
-      { platform: 'darwin', processGroup: false, gracefulTimeoutMs: 1, forceTimeoutMs: 1 },
-    )).rejects.toThrow('Process tree termination could not be verified');
+    await expect(manager.readAccount('account-a')).rejects.toMatchObject({
+      code: 'termination-failed',
+    });
+    expect(spawnCount).toBe(1);
+    expect(process?.stdin.writableEnded).toBe(true);
+    expect(process?.killed).toBe(false);
+  });
+
+  it('retains the account barrier after a nonzero cooperative exit', async () => {
+    let process: ScriptedProcess | undefined;
+    let spawnCount = 0;
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: async () => ({
+        found: true,
+        path: '/native/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      baseEnv: { PATH: '/usr/bin' },
+      spawn: (_path, _args, options) => {
+        spawnCount += 1;
+        process = new ScriptedProcess(options.env.CODEX_HOME);
+        process.stdin.once('finish', () => {
+          queueMicrotask(() => process?.emit('exit', 7, null));
+        });
+        return process;
+      },
+      shutdownTimeoutMs: 20,
+    });
+    await manager.readAccount('account-a');
+
+    process?.stdout.write('malformed-json\n');
+
+    await expect(manager.readAccount('account-a')).rejects.toMatchObject({
+      code: 'termination-failed',
+    });
+    expect(spawnCount).toBe(1);
+    expect(process?.killed).toBe(false);
   });
 
   it('reports shutdown failure when process termination cannot be verified', async () => {

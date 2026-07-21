@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as cliTools from '../../cli-tool-manager';
 import {
   detectCodexCli,
   detectCodexCliAsync,
@@ -10,6 +11,42 @@ import {
 import { trustedWindowsCommandProcessor } from './codex-environment';
 
 describe('Codex CLI detection', () => {
+  it('resolves the canonical packaged native binary instead of spawning the npm launcher', async () => {
+    const resolveNative = (cliTools as unknown as {
+      resolveCodexNativeExecutable: (
+        launcher: string,
+        dependencies: {
+          platform: NodeJS.Platform;
+          arch: string;
+          canonicalize: (value: string) => Promise<string>;
+          resolvePackageJson: (name: string, launcher: string) => string;
+          assertExecutable: (value: string) => Promise<void>;
+        },
+      ) => Promise<string>;
+    }).resolveCodexNativeExecutable;
+    expect(resolveNative).toBeTypeOf('function');
+    const assertExecutable = vi.fn(async () => undefined);
+
+    await expect(resolveNative('/opt/homebrew/bin/codex', {
+      platform: 'darwin',
+      arch: 'arm64',
+      canonicalize: async (value) => value === '/opt/homebrew/bin/codex'
+        ? '/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js'
+        : value,
+      resolvePackageJson: (name, launcher) => {
+        expect(name).toBe('@openai/codex-darwin-arm64/package.json');
+        expect(launcher).toBe('/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js');
+        return '/opt/homebrew/lib/node_modules/@openai/codex/node_modules/' +
+          '@openai/codex-darwin-arm64/package.json';
+      },
+      assertExecutable,
+    })).resolves.toBe(
+      '/opt/homebrew/lib/node_modules/@openai/codex/node_modules/' +
+      '@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex',
+    );
+    expect(assertExecutable).toHaveBeenCalledOnce();
+  });
+
   it('finds the installed executable through the augmented PATH resolver', () => {
     const findExecutable = vi.fn(() => '/opt/homebrew/bin/codex');
     const readVersion = vi.fn(() => 'codex-cli 0.144.6\n');
@@ -99,14 +136,21 @@ describe('Codex CLI detection', () => {
   it('discovers and versions Codex asynchronously for Electron main', async () => {
     const findExecutableAsync = vi.fn(async () => '/opt/homebrew/bin/codex');
     const readVersionAsync = vi.fn(async () => 'codex-cli 0.144.6\n');
+    const resolveNativeExecutableAsync = vi.fn(async () => '/opt/homebrew/lib/codex-native');
 
-    await expect(detectCodexCliAsync({ findExecutableAsync, readVersionAsync })).resolves.toEqual({
+    await expect(detectCodexCliAsync({
+      findExecutableAsync,
+      readVersionAsync,
+      resolveNativeExecutableAsync,
+    })).resolves.toEqual({
       found: true,
       path: '/opt/homebrew/bin/codex',
+      runtimePath: '/opt/homebrew/lib/codex-native',
       version: '0.144.6',
       runtimeValidationRequired: false,
     });
     expect(findExecutableAsync).toHaveBeenCalledWith('codex');
+    expect(resolveNativeExecutableAsync).toHaveBeenCalledWith('/opt/homebrew/bin/codex');
   });
 
   it('versions Codex with a sanitized temporary home and removes it afterward', async () => {

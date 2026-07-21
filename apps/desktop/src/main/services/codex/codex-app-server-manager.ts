@@ -1,14 +1,12 @@
-import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
+import { spawn as nodeSpawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmod, mkdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import type { ModelDescriptor } from '@shared/types/model-catalog';
 import { detectCodexCliAsync, type CodexCliDetectionResult } from '../../cli-tool-manager';
 import { getAugmentedEnvAsync } from '../../env-utils';
-import { isProcessInTerminalState, terminateProcessTree } from '../../platform';
-import { isSecurePath as isSecureWindowsPath } from '../../utils/windows-paths';
 import { CodexAppServerClient, type CodexJsonlProcess } from './codex-app-server-client';
-import { createCodexEnvironment, trustedWindowsCommandProcessor } from './codex-environment';
+import { createCodexEnvironment } from './codex-environment';
 import { CodexRuntimeError } from './codex-errors';
 import {
   parseAccountReadResponse,
@@ -21,6 +19,7 @@ import {
 
 const MAX_MODEL_PAGES = 20;
 const MAX_CATALOG_MODELS = 1_000;
+const SHUTDOWN_TIMEOUT_MS = 5_000;
 
 export interface CodexAppServerSpawnOptions {
   env: Record<string, string>;
@@ -28,7 +27,6 @@ export interface CodexAppServerSpawnOptions {
   stdio: ['pipe', 'pipe', 'pipe'];
   windowsHide: true;
   detached: boolean;
-  windowsVerbatimArguments?: boolean;
 }
 
 export interface CodexAppServerManagerDependencies {
@@ -45,8 +43,7 @@ export interface CodexAppServerManagerDependencies {
   baseEnv?: NodeJS.ProcessEnv;
   getBaseEnvironment?: () => Promise<NodeJS.ProcessEnv>;
   platform?: NodeJS.Platform;
-  comSpec?: string;
-  isSecurePath?: (executable: string) => boolean;
+  shutdownTimeoutMs?: number;
   clientVersion?: string;
   onCatalogModels?: (accountId: string, models: ModelDescriptor[]) => void | Promise<void>;
   onDiagnostic?: (message: string) => void;
@@ -94,6 +91,46 @@ function isContained(pathApi: typeof path.posix, root: string, candidate: string
     !pathApi.isAbsolute(relative);
 }
 
+async function shutdownCodexProcess(
+  child: CodexJsonlProcess,
+  timeoutMs: number,
+): Promise<void> {
+  if (child.exitCode !== undefined && child.exitCode !== null ||
+    child.signalCode !== undefined && child.signalCode !== null) {
+    throw new CodexRuntimeError('termination-failed');
+  }
+  const outcome = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+    (resolve, reject) => {
+      let settled = false;
+      const cleanup = () => {
+        clearTimeout(timer);
+        child.removeListener('exit', onExit);
+        child.removeListener('error', onError);
+      };
+      const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve({ code, signal });
+      };
+      const onError = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new CodexRuntimeError('termination-failed'));
+      };
+      const timer = setTimeout(onError, timeoutMs);
+      timer.unref?.();
+      child.once('exit', onExit);
+      child.once('error', onError);
+      child.stdin.end();
+    },
+  );
+  if (outcome.code !== 0 || outcome.signal !== null) {
+    throw new CodexRuntimeError('termination-failed');
+  }
+}
+
 export function createCodexAppServerManager(
   dependencies: CodexAppServerManagerDependencies,
 ): CodexAppServerManager {
@@ -108,14 +145,15 @@ export function createCodexAppServerManager(
   const spawn = dependencies.spawn ?? ((executable, args, options) => (
     nodeSpawn(executable, args, options) as unknown as CodexJsonlProcess
   ));
-  const terminate = dependencies.terminate ?? ((process) => terminateProcessTree(
-    process as unknown as ChildProcess,
-    { platform, processGroup: platform !== 'win32' },
+  const terminate = dependencies.terminate ?? ((process) => shutdownCodexProcess(
+    process,
+    dependencies.shutdownTimeoutMs ?? SHUTDOWN_TIMEOUT_MS,
   ));
   const sessions = new Map<string, PendingSession>();
   const accountTerminations = new Map<string, Promise<void>>();
   const canonicalOwners = new Map<string, string>();
   const terminations = new WeakMap<object, Promise<void>>();
+  const expectedTerminations = new WeakSet<object>();
   let shuttingDown = false;
   let shutdownPromise: Promise<void> | undefined;
   let canonicalRootPromise: Promise<string> | undefined;
@@ -133,6 +171,7 @@ export function createCodexAppServerManager(
   function terminateOnce(process: CodexJsonlProcess): Promise<void> {
     const existing = terminations.get(process);
     if (existing) return existing;
+    expectedTerminations.add(process);
     const operation = Promise.resolve()
       .then(() => terminate(process))
       .then(() => undefined)
@@ -141,6 +180,13 @@ export function createCodexAppServerManager(
       });
     terminations.set(process, operation);
     return operation;
+  }
+
+  function quarantineAccount(accountId: string): void {
+    const barrier = Promise.reject<void>(new CodexRuntimeError('termination-failed'));
+    void barrier.catch(() => undefined);
+    accountTerminations.set(accountId, barrier);
+    dependencies.onDiagnostic?.('Codex app-server ownership could not be verified');
   }
 
   function trackAccountTermination(accountId: string, process: CodexJsonlProcess): Promise<void> {
@@ -171,34 +217,10 @@ export function createCodexAppServerManager(
     return canonicalRootPromise;
   }
 
-  function spawnInvocation(executable: string): {
-    executable: string;
-    args: string[];
-    windowsVerbatimArguments?: boolean;
-  } {
-    if (platform !== 'win32' || !/\.(cmd|bat)$/i.test(executable)) {
-      return { executable, args: ['app-server', '--stdio'] };
-    }
-    const securePath = dependencies.isSecurePath ?? isSecureWindowsPath;
-    if (!securePath(executable) || /[%!^&|<>\r\n]/.test(executable)) {
-      throw new CodexRuntimeError('spawn-failed');
-    }
-    const trustedComSpec = trustedWindowsCommandProcessor();
-    const comSpec = dependencies.comSpec ?? trustedComSpec;
-    if (path.win32.normalize(comSpec).toLowerCase() !==
-      path.win32.normalize(trustedComSpec).toLowerCase()) {
-      throw new CodexRuntimeError('spawn-failed');
-    }
-    return {
-      executable: comSpec,
-      args: ['/d', '/s', '/c', `""${executable}" app-server --stdio"`],
-      windowsVerbatimArguments: true,
-    };
-  }
-
   async function createSession(accountId: string, entry: PendingSession): Promise<AccountSession> {
     try {
       assertOpen();
+      if (platform === 'win32') throw new CodexRuntimeError('platform-unsupported');
       await accountTerminations.get(accountId);
       assertOpen();
       const baseEnvironment = dependencies.baseEnv ??
@@ -206,7 +228,10 @@ export function createCodexAppServerManager(
       assertOpen();
       const detection = await detectCli();
       assertOpen();
-      if (!detection.found || !detection.path) {
+      const runtimeExecutable = detection.runtimePath ?? (
+        dependencies.detectCli ? detection.path : undefined
+      );
+      if (!detection.found || !runtimeExecutable) {
         throw new CodexRuntimeError(detection.version ? 'cli-unsupported' : 'cli-unavailable');
       }
 
@@ -231,8 +256,7 @@ export function createCodexAppServerManager(
       if (owner && owner !== accountId) throw new CodexRuntimeError('isolation-failed');
       canonicalOwners.set(codexHome, accountId);
 
-      const invocation = spawnInvocation(detection.path);
-      const child = spawn(invocation.executable, invocation.args, {
+      const child = spawn(runtimeExecutable, ['app-server', '--stdio'], {
         env: createCodexEnvironment(
           baseEnvironment,
           codexHome,
@@ -241,10 +265,7 @@ export function createCodexAppServerManager(
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
-        detached: platform !== 'win32',
-        ...(invocation.windowsVerbatimArguments
-          ? { windowsVerbatimArguments: invocation.windowsVerbatimArguments }
-          : {}),
+        detached: false,
       });
       entry.process = child;
       if (shuttingDown) {
@@ -260,6 +281,7 @@ export function createCodexAppServerManager(
           if (processEnded) entry.processEnded = true;
           if (sessions.get(accountId)?.token === entry.token) sessions.delete(accountId);
           if (!processEnded) trackAccountTermination(accountId, child);
+          else if (!expectedTerminations.has(child)) quarantineAccount(accountId);
         },
         onNotification: (method, params) => {
           void Promise.resolve(dependencies.onNotification?.(accountId, method, params)).catch(() => {
@@ -275,9 +297,7 @@ export function createCodexAppServerManager(
       }
       return { client, process: child };
     } catch (error) {
-      if (entry.process && !entry.processEnded && !isProcessInTerminalState(
-        entry.process as unknown as ChildProcess,
-      )) await terminateOnce(entry.process);
+      if (entry.process && !entry.processEnded) await terminateOnce(entry.process);
       throw publicError(error);
     }
   }

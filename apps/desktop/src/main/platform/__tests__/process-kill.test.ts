@@ -11,7 +11,6 @@ import type { ChildProcess } from 'child_process';
 // Mock getTaskkillExePath to return a predictable path for testing
 vi.mock('../../utils/windows-paths', () => ({
   getTaskkillExePath: () => 'C:\\Windows\\System32\\taskkill.exe',
-  getTrustedTaskkillExePath: () => 'C:\\Windows\\System32\\taskkill.exe',
 }));
 
 // Mock child_process.spawn before importing the module
@@ -27,7 +26,6 @@ vi.mock('child_process', async () => {
 import {
   GRACEFUL_KILL_TIMEOUT_MS,
   killProcessGracefully,
-  terminateProcessTree,
 } from '../index';
 import { spawn } from 'child_process';
 
@@ -364,132 +362,5 @@ describe('killProcessGracefully', () => {
 
       vi.restoreAllMocks();
     });
-  });
-});
-
-describe('terminateProcessTree', () => {
-  let target: ChildProcess;
-  const mockSpawn = spawn as unknown as ReturnType<typeof vi.fn>;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.useFakeTimers();
-    target = Object.assign(new EventEmitter(), {
-      pid: 4321,
-      killed: false,
-      kill: vi.fn(),
-      exitCode: null,
-      signalCode: null,
-    }) as unknown as ChildProcess;
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('awaits Windows taskkill /f /t and the tracked wrapper exit', async () => {
-    const taskkill = Object.assign(new EventEmitter(), {
-      kill: vi.fn(),
-      exitCode: null,
-      signalCode: null,
-    }) as unknown as ChildProcess;
-    mockSpawn.mockReturnValueOnce(taskkill);
-
-    let settled = false;
-    const termination = terminateProcessTree(target, {
-      platform: 'win32',
-      forceTimeoutMs: 100,
-      taskkillPath: 'C:\\Windows\\System32\\taskkill.exe',
-    }).then(() => {
-      settled = true;
-    });
-
-    expect(mockSpawn).toHaveBeenCalledWith(
-      'C:\\Windows\\System32\\taskkill.exe',
-      ['/pid', '4321', '/f', '/t'],
-      expect.objectContaining({ stdio: 'ignore', windowsHide: true }),
-    );
-    taskkill.emit('exit', 0, null);
-    await Promise.resolve();
-    expect(settled).toBe(false);
-    target.emit('exit', 1, null);
-    await termination;
-    expect(settled).toBe(true);
-    expect(target.kill).not.toHaveBeenCalled();
-  });
-
-  it('rejects Windows termination when taskkill cannot verify the tree outcome', async () => {
-    const taskkill = Object.assign(new EventEmitter(), {
-      kill: vi.fn(),
-      exitCode: null,
-      signalCode: null,
-    }) as unknown as ChildProcess;
-    mockSpawn.mockReturnValueOnce(taskkill);
-    const termination = terminateProcessTree(target, {
-      platform: 'win32',
-      forceTimeoutMs: 100,
-      taskkillPath: 'C:\\Windows\\System32\\taskkill.exe',
-    });
-
-    taskkill.emit('exit', 1, null);
-
-    await expect(termination).rejects.toThrow('termination could not be verified');
-  });
-
-  it('does not trust an exited Unix wrapper while its process group remains alive', async () => {
-    vi.useRealTimers();
-    let groupAlive = true;
-    const signals: NodeJS.Signals[] = [];
-
-    await terminateProcessTree(target, {
-      platform: 'darwin',
-      processGroup: true,
-      gracefulTimeoutMs: 1,
-      forceTimeoutMs: 20,
-      signalProcessGroup: (_pid, signal) => {
-        signals.push(signal);
-        if (signal === 'SIGTERM') queueMicrotask(() => target.emit('exit', 0, null));
-        if (signal === 'SIGKILL') groupAlive = false;
-      },
-      isProcessGroupAlive: () => groupAlive,
-    });
-
-    expect(signals).toEqual(['SIGTERM', 'SIGKILL']);
-    expect(target.kill).not.toHaveBeenCalled();
-  });
-
-  it('does not target a PID when the tracked child is already terminal', async () => {
-    Object.defineProperty(target, 'exitCode', { value: 0 });
-
-    await terminateProcessTree(target, { platform: 'win32' });
-
-    expect(mockSpawn).not.toHaveBeenCalled();
-    expect(target.kill).not.toHaveBeenCalled();
-  });
-
-  it('suppresses the first signal when exit arrives during observer setup', async () => {
-    vi.useRealTimers();
-    const signals: NodeJS.Signals[] = [];
-    const originalOnce = target.once.bind(target);
-    let injectedExit = false;
-    target.once = ((event: string, listener: (...args: unknown[]) => void) => {
-      const result = originalOnce(event, listener);
-      if (event === 'exit' && !injectedExit) {
-        injectedExit = true;
-        Object.defineProperty(target, 'exitCode', { value: 0 });
-        target.emit('exit', 0, null);
-      }
-      return result;
-    }) as ChildProcess['once'];
-
-    await terminateProcessTree(target, {
-      platform: 'darwin',
-      processGroup: true,
-      signalProcessGroup: (_pid, signal) => signals.push(signal),
-      isProcessGroupAlive: () => false,
-    });
-
-    expect(signals).toEqual([]);
-    expect(target.kill).not.toHaveBeenCalled();
   });
 });

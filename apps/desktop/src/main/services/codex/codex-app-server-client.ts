@@ -19,8 +19,16 @@ export interface CodexJsonlProcess {
   kill(signal?: NodeJS.Signals): boolean;
   on(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): this;
   on(event: 'error', listener: (error: Error) => void): this;
-  once(event: 'exit' | 'error', listener: (...args: unknown[]) => void): this;
-  removeListener(event: 'exit', listener: (...args: unknown[]) => void): this;
+  once(
+    event: 'exit',
+    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ): this;
+  once(event: 'error', listener: (error: Error) => void): this;
+  removeListener(
+    event: 'exit',
+    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ): this;
+  removeListener(event: 'error', listener: (error: Error) => void): this;
 }
 
 interface PendingRequest {
