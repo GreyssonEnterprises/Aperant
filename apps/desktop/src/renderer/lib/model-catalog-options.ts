@@ -5,6 +5,7 @@ import {
 } from '@shared/constants/models';
 import type { ModelAvailability, ModelDescriptor } from '@shared/types/model-catalog';
 import type { BuiltinProvider } from '@shared/types/provider-account';
+import { isCodexSubscriptionModel } from '@shared/utils/model-catalog';
 
 export interface CatalogModelOption extends ModelOption {
   availability: ModelAvailability;
@@ -12,11 +13,12 @@ export interface CatalogModelOption extends ModelOption {
 }
 
 function descriptorToOption(descriptor: ModelDescriptor): CatalogModelOption {
+  const deferredCodex = descriptor.source === 'bundled' && isCodexSubscriptionModel(descriptor);
   return {
     value: descriptor.id,
     label: descriptor.label,
     provider: descriptor.provider,
-    availability: descriptor.availability,
+    availability: deferredCodex ? 'unavailable' : descriptor.availability,
     capabilities: {
       thinking: descriptor.thinking.mode !== 'none' && descriptor.thinking.mode !== 'unknown',
       tools: true,
@@ -48,7 +50,7 @@ export function toCatalogModelOptions(
     add({
       ...legacy,
       label: descriptor.label || legacy.label,
-      availability: descriptor.availability,
+      availability: descriptorToOption(descriptor).availability,
       capabilities: legacy.capabilities ?? descriptorToOption(descriptor).capabilities,
     });
   }
@@ -91,4 +93,23 @@ export function groupCatalogModelOptions(
     grouped.set(option.provider, models);
   }
   return grouped;
+}
+
+export function resolveSavedModelProvider(
+  options: readonly CatalogModelOption[],
+  value: string,
+  explicitProvider?: BuiltinProvider,
+): BuiltinProvider {
+  return explicitProvider ?? options.find((option) => option.value === value)?.provider ?? 'anthropic';
+}
+
+export function appendOllamaModelOptions(
+  savedOptions: readonly CatalogModelOption[],
+  installedOptions: readonly CatalogModelOption[],
+): CatalogModelOption[] {
+  const installedIds = new Set(installedOptions.map((option) => option.value));
+  return [
+    ...installedOptions,
+    ...savedOptions.filter((option) => !installedIds.has(option.value)),
+  ];
 }

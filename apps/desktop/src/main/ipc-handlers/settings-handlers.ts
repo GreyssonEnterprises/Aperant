@@ -25,6 +25,8 @@ import type { APIProfile } from '../../shared/types/profile';
 import type { ClaudeProfile } from '../../shared/types/agent';
 import { loadProfilesFile } from '../utils/profile-manager';
 import { loadProfileStore } from '../claude-profile/profile-storage';
+import type { ModelCatalogService } from '../services/model-catalog-service';
+import { getModelCatalogService } from '../services/model-catalog-runtime';
 
 const settingsPath = getSettingsPath();
 
@@ -274,7 +276,8 @@ const detectAutoBuildSourcePath = (): string | null => {
  */
 export function registerSettingsHandlers(
   agentManager: AgentManager,
-  getMainWindow: () => BrowserWindow | null
+  getMainWindow: () => BrowserWindow | null,
+  modelCatalog: ModelCatalogService = getModelCatalogService(),
 ): void {
   // ============================================
   // Settings Operations
@@ -912,6 +915,17 @@ export function registerSettingsHandlers(
     writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
   }
 
+  async function invalidateAccountCatalog(
+    provider: ProviderAccount['provider'],
+    accountId?: string,
+  ): Promise<void> {
+    try {
+      await modelCatalog.invalidate({ provider, ...(accountId ? { accountId } : {}) });
+    } catch (error) {
+      console.warn('[MODEL_CATALOG] Failed to invalidate provider account cache:', error);
+    }
+  }
+
   // GET all provider accounts
   ipcMain.handle(
     IPC_CHANNELS.PROVIDER_ACCOUNTS_GET,
@@ -964,6 +978,7 @@ export function registerSettingsHandlers(
 
         const settingsPath = getSettingsPath();
         writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+        await invalidateAccountCatalog(newAccount.provider);
         console.warn('[PROVIDER_ACCOUNTS_SAVE] Created account:', newAccount.id, newAccount.name, newAccount.provider, '| Queue position: #1 of', queue.length);
         return { success: true, data: newAccount };
       } catch (error) {
@@ -983,14 +998,19 @@ export function registerSettingsHandlers(
         if (index === -1) {
           return { success: false, error: `Account not found: ${id}` };
         }
+        const previous = accounts[index];
         const updated: ProviderAccount = {
-          ...accounts[index],
+          ...previous,
           ...updates,
           id, // prevent id override
           updatedAt: Date.now(),
         };
         accounts[index] = updated;
         writeProviderAccounts(accounts);
+        await invalidateAccountCatalog(previous.provider, id);
+        if (updated.provider !== previous.provider) {
+          await invalidateAccountCatalog(updated.provider);
+        }
         console.warn('[PROVIDER_ACCOUNTS_UPDATE] Updated account:', id);
         return { success: true, data: updated };
       } catch (error) {
@@ -1007,10 +1027,11 @@ export function registerSettingsHandlers(
       try {
         const settings = readSettingsFile() ?? {};
         const accounts: ProviderAccount[] = (settings.providerAccounts as ProviderAccount[] | undefined) ?? [];
-        const filtered = accounts.filter(a => a.id !== id);
-        if (filtered.length === accounts.length) {
+        const removed = accounts.find(a => a.id === id);
+        if (!removed) {
           return { success: false, error: `Account not found: ${id}` };
         }
+        const filtered = accounts.filter(a => a.id !== id);
         settings.providerAccounts = filtered;
 
         // Remove from globalPriorityOrder
@@ -1025,6 +1046,7 @@ export function registerSettingsHandlers(
 
         const settingsPath = getSettingsPath();
         writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+        await invalidateAccountCatalog(removed.provider, id);
         console.warn('[PROVIDER_ACCOUNTS_DELETE] Deleted account:', id);
         return { success: true };
       } catch (error) {

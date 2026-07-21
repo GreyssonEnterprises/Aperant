@@ -4,13 +4,15 @@ import { ChevronDown, Search, Check, Brain, Eye, Wrench, ExternalLink, Loader2 }
 import { resolveModelEquivalent } from '@shared/constants/models';
 import { PROVIDER_REGISTRY } from '@shared/constants/providers';
 import type { BuiltinProvider } from '@shared/types/provider-account';
-import { useSettingsStore } from '@/stores/settings-store';
-import { useModelCatalog } from '@/hooks/useModelCatalog';
+import { useSettingsStore } from '../../stores/settings-store';
+import { useModelCatalog } from '../../hooks/useModelCatalog';
 import {
+  appendOllamaModelOptions,
   ensureSavedModelOption,
   groupCatalogModelOptions,
+  resolveSavedModelProvider,
   type CatalogModelOption,
-} from '@/lib/model-catalog-options';
+} from '../../lib/model-catalog-options';
 import { cn } from '../../lib/utils';
 import { Input } from '../ui/input';
 
@@ -19,6 +21,7 @@ interface MultiProviderModelSelectProps {
   onChange: (value: string) => void;
   className?: string;
   filterProvider?: BuiltinProvider;  // When set, only show models for this provider
+  valueProvider?: BuiltinProvider;  // Provider persisted alongside an uncatalogued value
 }
 
 function formatContextWindow(size: number): string {
@@ -26,7 +29,13 @@ function formatContextWindow(size: number): string {
   return `${(size / 1000).toFixed(0)}K`;
 }
 
-export function MultiProviderModelSelect({ value, onChange, className, filterProvider }: MultiProviderModelSelectProps) {
+export function MultiProviderModelSelect({
+  value,
+  onChange,
+  className,
+  filterProvider,
+  valueProvider,
+}: MultiProviderModelSelectProps) {
   const { t } = useTranslation(['settings']);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -92,21 +101,22 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
 
   // Group models supplied by the main-process catalog.
   const groupedModels = useMemo(() => {
-    const selectedProvider = filterProvider ??
-      catalogModels.find((model) => model.value === value)?.provider ??
-      'anthropic';
+    const selectedProvider = resolveSavedModelProvider(
+      catalogModels,
+      value,
+      valueProvider ?? filterProvider,
+    );
     const visible = catalogModels.filter((model) => !filterProvider || model.provider === filterProvider);
     const withSavedValue = ensureSavedModelOption(visible, value, selectedProvider);
     const groups = groupCatalogModelOptions(withSavedValue);
 
     // Inject dynamically fetched Ollama LLM models
     if (ollamaModels.length > 0 && (!filterProvider || filterProvider === 'ollama')) {
-      // Replace any static catalog entries with dynamic ones
-      groups.set('ollama', ollamaModels);
+      groups.set('ollama', appendOllamaModelOptions(groups.get('ollama') ?? [], ollamaModels));
     }
 
     return groups;
-  }, [catalogModels, filterProvider, ollamaModels, value]);
+  }, [catalogModels, filterProvider, ollamaModels, value, valueProvider]);
 
   // Filter models by search
   const filteredGroups = useMemo(() => {

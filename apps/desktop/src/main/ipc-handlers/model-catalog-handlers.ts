@@ -1,13 +1,8 @@
-import { app, ipcMain } from 'electron';
-import path from 'node:path';
+import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/constants/ipc';
 import type { IPCResult, ModelCatalogQuery, ModelCatalogStatus, ModelDescriptor } from '@shared/types';
-import type { BuiltinProvider, ProviderAccount } from '@shared/types/provider-account';
-import { readSettingsFile } from '../settings-utils';
-import {
-  createModelCatalogService,
-  type ModelCatalogService,
-} from '../services/model-catalog-service';
+import type { BuiltinProvider } from '@shared/types/provider-account';
+import { getModelCatalogService } from '../services/model-catalog-runtime';
 
 const PROVIDERS = new Set<BuiltinProvider>([
   'anthropic', 'openai', 'google', 'amazon-bedrock', 'azure', 'mistral',
@@ -31,19 +26,7 @@ function parseQuery(value: unknown): ModelCatalogQuery {
   };
 }
 
-function defaultService(): ModelCatalogService {
-  return createModelCatalogService({
-    cachePath: path.join(app.getPath('userData'), 'model-catalog.json'),
-    fetch: globalThis.fetch,
-    now: Date.now,
-    readAccounts: () => {
-      const settings = readSettingsFile();
-      return (settings?.providerAccounts as ProviderAccount[] | undefined) ?? [];
-    },
-  });
-}
-
-export function registerModelCatalogHandlers(service = defaultService()): void {
+export function registerModelCatalogHandlers(service = getModelCatalogService()): void {
   ipcMain.handle(
     IPC_CHANNELS.MODEL_CATALOG_LIST,
     async (_event, input?: unknown): Promise<IPCResult<{ models: ModelDescriptor[] }>> => {

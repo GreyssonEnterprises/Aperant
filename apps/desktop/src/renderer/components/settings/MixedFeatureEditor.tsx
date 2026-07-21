@@ -123,6 +123,7 @@ export function MixedFeatureEditor() {
                 </span>
                 <MultiProviderModelSelect
                   value={entry.modelId}
+                  valueProvider={entry.provider}
                   onChange={(modelId) => handleModelChange(feature, modelId)}
                 />
               </div>

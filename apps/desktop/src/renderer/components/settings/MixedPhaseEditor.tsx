@@ -108,6 +108,7 @@ export function MixedPhaseEditor() {
                 </span>
                 <MultiProviderModelSelect
                   value={entry.modelId}
+                  valueProvider={entry.provider}
                   onChange={(modelId) => handleModelChange(phase, modelId)}
                 />
               </div>

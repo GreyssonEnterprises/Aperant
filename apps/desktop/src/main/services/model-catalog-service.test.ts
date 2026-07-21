@@ -108,6 +108,54 @@ describe('model catalog service', () => {
     expect(second.some((model) => model.id === 'claude-second')).toBe(true);
   });
 
+  it('reloads a persisted fresh snapshot in a second service instance', async () => {
+    const path = await cachePath();
+    const accounts = [account()];
+    const first = createModelCatalogService({
+      cachePath: path,
+      fetch: vi.fn(async () => anthropicResponse('claude-persisted')),
+      now: () => 2_500,
+      readAccounts: () => accounts,
+    });
+    await first.refresh({ provider: 'anthropic', accountId: accounts[0].id });
+    const secondFetch = vi.fn(async () => anthropicResponse('claude-network'));
+    const second = createModelCatalogService({
+      cachePath: path,
+      fetch: secondFetch,
+      now: () => 2_500 + MODEL_CATALOG_TTL_MS - 1,
+      readAccounts: () => accounts,
+    });
+
+    const models = await second.list({ provider: 'anthropic', accountId: accounts[0].id });
+
+    expect(models.some((model) => model.id === 'claude-persisted')).toBe(true);
+    expect(secondFetch).not.toHaveBeenCalled();
+  });
+
+  it('merges availability per model across heterogeneous accounts', async () => {
+    const accounts = [
+      account({ id: 'opus-account', apiKey: 'opus-key' }),
+      account({ id: 'sonnet-account', apiKey: 'sonnet-key' }),
+    ];
+    const fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const headers = init?.headers as Record<string, string>;
+      return anthropicResponse(
+        headers['x-api-key'] === 'opus-key' ? 'claude-opus-4-6' : 'claude-sonnet-4-6',
+      );
+    });
+    const service = createModelCatalogService({
+      cachePath: await cachePath(),
+      fetch,
+      now: () => 2_750,
+      readAccounts: () => accounts,
+    });
+
+    const models = await service.list({ provider: 'anthropic' });
+
+    expect(models.find((model) => model.id === 'claude-opus-4-6')?.availability).toBe('available');
+    expect(models.find((model) => model.id === 'claude-sonnet-4-6')?.availability).toBe('available');
+  });
+
   it('coalesces concurrent refreshes and supports invalidation', async () => {
     const path = await cachePath();
     let resolveFetch!: (response: Response) => void;
@@ -169,6 +217,31 @@ describe('model catalog service', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it('does not make discovery failure fallback fresh for another 24 hours', async () => {
+    const path = await cachePath();
+    let now = 10_000;
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(anthropicResponse('claude-cached'))
+      .mockResolvedValue(new Response('unavailable', { status: 503 }));
+    const service = createModelCatalogService({
+      cachePath: path,
+      fetch,
+      now: () => now,
+      readAccounts: () => [account()],
+      sleep: vi.fn(async () => undefined),
+    });
+    await service.refresh({ provider: 'anthropic', accountId: 'anthropic-account' });
+    now += MODEL_CATALOG_TTL_MS + 1;
+
+    await service.list({ provider: 'anthropic', accountId: 'anthropic-account' });
+    const callsAfterFailure = fetch.mock.calls.length;
+    const status = await service.status();
+    await service.list({ provider: 'anthropic', accountId: 'anthropic-account' });
+
+    expect(status.snapshots[0].stale).toBe(true);
+    expect(fetch.mock.calls.length).toBeGreaterThan(callsAfterFailure);
+  });
+
   it('marks OpenAI OAuth subscription models unavailable until Codex support lands', async () => {
     const service = createModelCatalogService({
       cachePath: await cachePath(),
@@ -208,6 +281,24 @@ describe('model catalog service', () => {
 
     const models = await service.list({ provider: 'openai' });
 
-    expect(models.every((model) => model.availability === 'available')).toBe(true);
+    expect(models.find((model) => model.id === 'gpt-5.2')?.availability).toBe('available');
+  });
+
+  it('keeps bundled Codex models unavailable for API-key accounts until Task 3', async () => {
+    const service = createModelCatalogService({
+      cachePath: await cachePath(),
+      fetch: vi.fn(),
+      now: () => 6_500,
+      readAccounts: () => [account({
+        id: 'openai-api-key',
+        provider: 'openai',
+        apiKey: 'openai-key',
+      })],
+    });
+
+    const models = await service.list({ provider: 'openai' });
+
+    expect(models.find((model) => model.id === 'gpt-5.3-codex')?.availability).toBe('unavailable');
+    expect(models.find((model) => model.id === 'gpt-5.2')?.availability).toBe('available');
   });
 });

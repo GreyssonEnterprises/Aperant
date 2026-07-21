@@ -7,6 +7,7 @@ import type {
   ModelDescriptor,
 } from '@shared/types/model-catalog';
 import type { BuiltinProvider, ProviderAccount } from '@shared/types/provider-account';
+import { isCodexSubscriptionModel } from '@shared/utils/model-catalog';
 import { writeJsonAtomic } from '../utils/atomic-file';
 
 export const MODEL_CATALOG_TTL_MS = 24 * 60 * 60 * 1_000;
@@ -54,6 +55,7 @@ function bundledForAccount(provider: BuiltinProvider, account?: ProviderAccount)
       authModes: [...model.authModes],
       thinking: { ...model.thinking, effortLevels: [...model.thinking.effortLevels] },
       availability:
+        isCodexSubscriptionModel(model) ||
         !account || (provider === 'openai' && account.authType === 'oauth')
           ? 'unavailable'
           : model.authModes.includes(account.authType)
@@ -76,6 +78,36 @@ function isRetryable(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 
+const AVAILABILITY_RANK = { unavailable: 0, unverified: 1, available: 2 } as const;
+
+function mergeAccountModels(modelLists: readonly ModelDescriptor[][]): ModelDescriptor[] {
+  const merged = new Map<string, ModelDescriptor>();
+  for (const models of modelLists) {
+    for (const candidate of models) {
+      const key = snapshotKey(candidate.provider, candidate.id);
+      const existing = merged.get(key);
+      if (!existing) {
+        merged.set(key, cloneModels([candidate])[0]);
+        continue;
+      }
+      const candidateRank = AVAILABILITY_RANK[candidate.availability];
+      const existingRank = AVAILABILITY_RANK[existing.availability];
+      const candidatePreferred = candidateRank > existingRank ||
+        (candidateRank === existingRank && candidate.source === 'provider');
+      const preferred = candidatePreferred ? candidate : existing;
+      const other = candidatePreferred ? existing : candidate;
+      const combined = mergeModelDescriptors([other], [preferred])[0];
+      merged.set(key, {
+        ...combined,
+        availability: candidateRank > existingRank
+          ? candidate.availability
+          : existing.availability,
+      });
+    }
+  }
+  return [...merged.values()];
+}
+
 export function createModelCatalogService(
   dependencies: ModelCatalogServiceDependencies,
 ): ModelCatalogService {
@@ -83,21 +115,24 @@ export function createModelCatalogService(
   const snapshots = new Map<string, ModelCatalogSnapshot>();
   const inFlight = new Map<string, Promise<ModelDescriptor[]>>();
   const errors = new Map<string, string>();
-  let loaded = false;
+  let loadPromise: Promise<void> | undefined;
   let saveChain = Promise.resolve();
 
   async function loadCache(): Promise<void> {
-    if (loaded) return;
-    loaded = true;
-    try {
-      const parsed: unknown = JSON.parse(await readFile(dependencies.cachePath, 'utf8'));
-      if (!isCache(parsed)) return;
-      for (const snapshot of parsed.snapshots) {
-        snapshots.set(snapshotKey(snapshot.provider, snapshot.accountId), snapshot);
-      }
-    } catch {
-      // A missing or invalid cache is equivalent to an empty cache.
+    if (!loadPromise) {
+      loadPromise = (async () => {
+        try {
+          const parsed: unknown = JSON.parse(await readFile(dependencies.cachePath, 'utf8'));
+          if (!isCache(parsed)) return;
+          for (const snapshot of parsed.snapshots) {
+            snapshots.set(snapshotKey(snapshot.provider, snapshot.accountId), snapshot);
+          }
+        } catch {
+          // A missing or invalid cache is equivalent to an empty cache.
+        }
+      })();
     }
+    await loadPromise;
   }
 
   async function saveCache(): Promise<void> {
@@ -177,10 +212,13 @@ export function createModelCatalogService(
         }));
       }
 
+      const previous = snapshots.get(key);
       const snapshot: ModelCatalogSnapshot = {
         provider: account.provider,
         accountId: account.id,
-        fetchedAt: new Date(dependencies.now()).toISOString(),
+        fetchedAt: errors.has(key)
+          ? previous?.fetchedAt ?? new Date(dependencies.now() - MODEL_CATALOG_TTL_MS).toISOString()
+          : new Date(dependencies.now()).toISOString(),
         models,
       };
       snapshots.set(key, snapshot);
@@ -219,13 +257,7 @@ export function createModelCatalogService(
         merged = mergeModelDescriptors(merged, unavailableBundled(provider));
         continue;
       }
-      const availabilityRank = { unavailable: 0, unverified: 1, available: 2 } as const;
-      perProvider.sort((left, right) => {
-        const leftRank = Math.max(...left.map((model) => availabilityRank[model.availability]));
-        const rightRank = Math.max(...right.map((model) => availabilityRank[model.availability]));
-        return leftRank - rightRank;
-      });
-      for (const models of perProvider) merged = mergeModelDescriptors(merged, models);
+      merged = mergeModelDescriptors(merged, mergeAccountModels(perProvider));
     }
 
     for (const account of accounts) {
