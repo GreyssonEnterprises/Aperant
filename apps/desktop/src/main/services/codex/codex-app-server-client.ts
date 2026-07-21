@@ -93,7 +93,7 @@ export class CodexAppServerClient {
           title: 'Aperant',
           version: this.options.clientVersion ?? process.env.npm_package_version ?? 'unknown',
         },
-        capabilities: { experimentalApi: false, requestAttestation: false },
+        capabilities: { experimentalApi: true, requestAttestation: false },
       };
       this.initializePromise = this.sendRequest(
         'initialize',

@@ -364,8 +364,9 @@ export function registerTaskExecutionHandlers(
   /**
    * Stop a task
    */
-  ipcMain.on(IPC_CHANNELS.TASK_STOP, (_, taskId: string) => {
-    agentManager.killTask(taskId);
+  ipcMain.on(IPC_CHANNELS.TASK_STOP, async (_, taskId: string) => {
+    const stopped = await agentManager.killTask(taskId);
+    if (!stopped) return;
     fileWatcher.unwatch(taskId).catch((err) => {
       console.error('[TASK_STOP] Failed to unwatch:', err);
     });
@@ -732,7 +733,7 @@ export function registerTaskExecutionHandlers(
         // This handles the case where user drags a running task back to Planning/backlog
         if (status !== 'in_progress' && agentManager.isRunning(taskId)) {
           console.warn('[TASK_UPDATE_STATUS] Stopping task due to status change away from in_progress:', taskId);
-          agentManager.killTask(taskId);
+          await agentManager.killTask(taskId);
         }
 
         // Auto-start task when status changes to 'in_progress' and no process is running

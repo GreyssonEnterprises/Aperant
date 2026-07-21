@@ -59,6 +59,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../../main/ai/auth/resolver', () => ({
   resolveAuth: vi.fn().mockResolvedValue({ apiKey: 'mock-api-key', baseURL: undefined }),
+  resolveAuthFromQueue: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../../main/ai/config/phase-config', () => ({
@@ -234,6 +235,58 @@ describe('WorkerBridge Spawn Integration', () => {
       expect(config.session.agentType).toBe('build_orchestrator');
     }, 15000);
 
+    it('should not spawn a Codex task when worktree creation fails', async () => {
+      const { AgentManager } = await import('../../main/agent');
+      const { readSettingsFile } = await import('../../main/settings-utils');
+      const { resolveAuthFromQueue } = await import('../../main/ai/auth/resolver');
+      const { createOrGetWorktree } = await import('../../main/ai/worktree');
+      vi.mocked(readSettingsFile).mockReturnValue({
+        providerAccounts: [{ id: 'codex-1', provider: 'openai' }],
+        globalPriorityOrder: ['codex-1'],
+      } as never);
+      vi.mocked(resolveAuthFromQueue).mockResolvedValueOnce({
+        accountId: 'codex-1', resolvedProvider: 'openai',
+        resolvedModelId: 'gpt-5.3-codex', executionBackend: 'codex-app-server',
+      } as never);
+      vi.mocked(createOrGetWorktree).mockRejectedValueOnce(new Error('worktree failed'));
+      const manager = new AgentManager();
+      const error = vi.fn();
+      manager.on('error', error);
+
+      await manager.startTaskExecution('task-codex', '/project', 'spec-001');
+
+      expect(createdBridges).toHaveLength(0);
+      expect(error).toHaveBeenCalledWith(
+        'task-codex',
+        'Codex subscription tasks require an isolated worktree. Task was not started.',
+      );
+    }, 15000);
+
+    it('should not spawn Codex QA without the task worktree', async () => {
+      const { AgentManager } = await import('../../main/agent');
+      const { readSettingsFile } = await import('../../main/settings-utils');
+      const { resolveAuthFromQueue } = await import('../../main/ai/auth/resolver');
+      vi.mocked(readSettingsFile).mockReturnValue({
+        providerAccounts: [{ id: 'codex-1', provider: 'openai' }],
+        globalPriorityOrder: ['codex-1'],
+      } as never);
+      vi.mocked(resolveAuthFromQueue).mockResolvedValueOnce({
+        accountId: 'codex-1', resolvedProvider: 'openai',
+        resolvedModelId: 'gpt-5.3-codex', executionBackend: 'codex-app-server',
+      } as never);
+      const manager = new AgentManager();
+      const error = vi.fn();
+      manager.on('error', error);
+
+      await manager.startQAProcess('task-codex-qa', '/project', 'spec-001');
+
+      expect(createdBridges).toHaveLength(0);
+      expect(error).toHaveBeenCalledWith(
+        'task-codex-qa',
+        'Codex subscription QA requires the task worktree. QA was not started.',
+      );
+    }, 15000);
+
     it('should create a WorkerBridge for QA process', async () => {
       const { AgentManager } = await import('../../main/agent');
 
@@ -330,7 +383,7 @@ describe('WorkerBridge Spawn Integration', () => {
 
       expect(manager.isRunning('task-1')).toBe(true);
 
-      const result = manager.killTask('task-1');
+      const result = await manager.killTask('task-1');
 
       expect(result).toBe(true);
       expect(manager.isRunning('task-1')).toBe(false);
@@ -340,7 +393,7 @@ describe('WorkerBridge Spawn Integration', () => {
       const { AgentManager } = await import('../../main/agent');
 
       const manager = new AgentManager();
-      const result = manager.killTask('nonexistent');
+      const result = await manager.killTask('nonexistent');
 
       expect(result).toBe(false);
     }, 15000);
@@ -382,7 +435,7 @@ describe('WorkerBridge Spawn Integration', () => {
       expect(manager.isRunning('task-1')).toBe(true);
 
       // Kill the first run
-      manager.killTask('task-1');
+      await manager.killTask('task-1');
       expect(manager.isRunning('task-1')).toBe(false);
 
       // Start again

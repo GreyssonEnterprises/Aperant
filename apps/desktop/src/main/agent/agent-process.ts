@@ -534,7 +534,9 @@ export class AgentProcessManager {
     projectId?: string
   ): Promise<void> {
     const isSpecRunner = processType === 'spec-creation';
-    this.killProcess(taskId);
+    if (this.state.hasProcess(taskId) && !await this.killProcess(taskId)) {
+      throw new Error('Task replacement stopped because the previous Codex session did not stop safely');
+    }
 
     const spawnId = this.state.generateSpawnId();
 
@@ -840,7 +842,9 @@ export class AgentProcessManager {
     processType: ProcessType = 'task-execution',
     projectId?: string
   ): Promise<void> {
-    this.killProcess(taskId);
+    if (this.state.hasProcess(taskId) && !await this.killProcess(taskId)) {
+      throw new Error('Task replacement stopped because the previous Codex session did not stop safely');
+    }
 
     const spawnId = this.state.generateSpawnId();
 
@@ -945,7 +949,7 @@ export class AgentProcessManager {
   /**
    * Kill a specific task's process
    */
-  killProcess(taskId: string): boolean {
+  async killProcess(taskId: string): Promise<boolean> {
     const agentProcess = this.state.getProcess(taskId);
     if (!agentProcess) return false;
 
@@ -962,8 +966,12 @@ export class AgentProcessManager {
 
     // Handle worker thread termination
     if (agentProcess.workerBridge) {
-      void agentProcess.workerBridge.terminate();
+      const finalization = await agentProcess.workerBridge.terminate();
       this.state.deleteProcess(taskId);
+      if (finalization?.error?.retryable) {
+        this.emitter.emit('error', taskId, finalization.error.message, undefined);
+        return false;
+      }
       return true;
     }
 
@@ -1006,15 +1014,13 @@ export class AgentProcessManager {
 
         // If process/worker hasn't been spawned yet, just kill and resolve
         if (!agentProcess.process && !agentProcess.worker && !agentProcess.workerBridge) {
-          this.killProcess(taskId);
-          resolve();
+          void this.killProcess(taskId).finally(resolve);
           return;
         }
 
         // Worker threads terminate immediately
         if ((agentProcess.worker || agentProcess.workerBridge) && !agentProcess.process) {
-          this.killProcess(taskId);
-          resolve();
+          void this.killProcess(taskId).finally(resolve);
           return;
         }
 
@@ -1033,7 +1039,7 @@ export class AgentProcessManager {
         }
 
         // Kill the process
-        this.killProcess(taskId);
+        void this.killProcess(taskId);
       });
     });
 

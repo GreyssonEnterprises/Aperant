@@ -18,18 +18,41 @@ function record(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function matches(params: Record<string, unknown>, context: CodexNotificationContext): boolean {
-  if (typeof params.threadId === 'string' && params.threadId !== context.threadId) return false;
-  if (typeof params.turnId === 'string' && params.turnId !== context.turnId) return false;
-  return true;
+const MAX_TEXT_DELTA_BYTES = 32 * 1024;
+const MAX_COMPLETED_MESSAGE_BYTES = 256 * 1024;
+const MAX_TOOL_ID_LENGTH = 128;
+
+function boundedText(value: string, maxBytes: number): string {
+  if (Buffer.byteLength(value, 'utf8') <= maxBytes) return value;
+  let result = Buffer.from(value, 'utf8').subarray(0, maxBytes).toString('utf8');
+  while (Buffer.byteLength(result, 'utf8') > maxBytes) result = result.slice(0, -1);
+  return result;
 }
 
-function itemFiles(item: Record<string, unknown>): string[] {
-  if (!Array.isArray(item.changes)) return [];
-  return item.changes.flatMap((change) => {
-    const value = record(change);
-    return value && typeof value.path === 'string' ? [value.path] : [];
-  });
+function matchesTurn(params: Record<string, unknown>, context: CodexNotificationContext): boolean {
+  return params.threadId === context.threadId && params.turnId === context.turnId;
+}
+
+function matchesThread(params: Record<string, unknown>, context: CodexNotificationContext): boolean {
+  return params.threadId === context.threadId &&
+    (params.turnId === undefined || params.turnId === context.turnId);
+}
+
+function safeToolId(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.length === 0 || value.length > MAX_TOOL_ID_LENGTH) {
+    return undefined;
+  }
+  return /^[A-Za-z0-9._:-]+$/.test(value) ? value : undefined;
+}
+
+function fileCount(item: Record<string, unknown>): number {
+  return Array.isArray(item.changes) ? Math.min(item.changes.length, 10_000) : 0;
+}
+
+function durationMs(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.min(value, 86_400_000)
+    : 0;
 }
 
 function publicTurnError(code: unknown): { code: string; message: string } {
@@ -42,39 +65,40 @@ function publicTurnError(code: unknown): { code: string; message: string } {
   if (code === 'serverOverloaded') {
     return { code, message: 'Codex service is temporarily overloaded' };
   }
-  return { code: typeof code === 'string' ? code : 'codex-error', message: 'Codex turn failed' };
+  return { code: 'codex-error', message: 'Codex turn failed' };
 }
 
 function translateItem(method: string, params: Record<string, unknown>): CodexTranslatedEvent[] {
   const item = record(params.item);
-  if (!item || typeof item.id !== 'string' || typeof item.type !== 'string') return [];
+  if (!item || typeof item.type !== 'string') return [];
+  const toolCallId = safeToolId(item.id);
+  if (!toolCallId) return [];
   const started = method === 'item/started';
   if (item.type === 'commandExecution') {
-    if (typeof item.command !== 'string' || typeof item.cwd !== 'string') return [];
     if (started) {
       return [{
         type: 'stream-event',
         data: {
           type: 'tool-call',
           toolName: 'bash',
-          toolCallId: item.id,
-          args: { command: item.command, cwd: item.cwd },
+          toolCallId,
+          args: { status: 'started' },
         },
       }];
     }
-    const exitCode = typeof item.exitCode === 'number' ? item.exitCode : null;
+    const exitCode = typeof item.exitCode === 'number' && Number.isSafeInteger(item.exitCode)
+      ? item.exitCode
+      : null;
+    const status = item.status === 'failed' ? 'failed' : 'completed';
     return [{
       type: 'stream-event',
       data: {
         type: 'tool-result',
         toolName: 'bash',
-        toolCallId: item.id,
-        result: {
-          exitCode,
-          output: typeof item.aggregatedOutput === 'string' ? item.aggregatedOutput : '',
-        },
-        durationMs: typeof item.durationMs === 'number' ? item.durationMs : 0,
-        isError: item.status === 'failed' || exitCode !== null && exitCode !== 0,
+        toolCallId,
+        result: { exitCode, status },
+        durationMs: durationMs(item.durationMs),
+        isError: status === 'failed' || exitCode !== null && exitCode !== 0,
       },
     }];
   }
@@ -85,8 +109,8 @@ function translateItem(method: string, params: Record<string, unknown>): CodexTr
         data: {
           type: 'tool-call',
           toolName: 'apply_patch',
-          toolCallId: item.id,
-          args: { files: itemFiles(item) },
+          toolCallId,
+          args: { fileCount: fileCount(item) },
         },
       }];
     }
@@ -95,15 +119,21 @@ function translateItem(method: string, params: Record<string, unknown>): CodexTr
       data: {
         type: 'tool-result',
         toolName: 'apply_patch',
-        toolCallId: item.id,
-        result: { files: itemFiles(item), status: item.status },
+        toolCallId,
+        result: {
+          fileCount: fileCount(item),
+          status: item.status === 'failed' ? 'failed' : 'completed',
+        },
         durationMs: 0,
         isError: item.status === 'failed',
       },
     }];
   }
   if (!started && item.type === 'agentMessage' && typeof item.text === 'string') {
-    return [{ type: 'message-completed', text: item.text }];
+    return [{
+      type: 'message-completed',
+      text: boundedText(item.text, MAX_COMPLETED_MESSAGE_BYTES),
+    }];
   }
   return [];
 }
@@ -122,14 +152,49 @@ export function translateCodexNotification(
       limits.rateLimitReachedType === undefined) return [];
     return [{ type: 'rate-limit', message: 'Codex account rate limit reached', retryable: true }];
   }
-  if (!matches(params, context)) return [];
+  if (method === 'turn/completed') {
+    if (params.threadId !== context.threadId) return [];
+    const turn = record(params.turn);
+    if (!turn || turn.id !== context.turnId ||
+      !['completed', 'interrupted', 'failed'].includes(turn.status as string)) return [];
+    const error = record(turn.error);
+    const events: CodexTranslatedEvent[] = [];
+    if (Array.isArray(turn.items)) {
+      const message = [...turn.items].reverse().map(record).find(
+        (item) => item?.type === 'agentMessage' && typeof item.text === 'string',
+      );
+      if (message && typeof message.text === 'string') {
+        events.push({
+          type: 'message-completed',
+          text: boundedText(message.text, MAX_COMPLETED_MESSAGE_BYTES),
+        });
+      }
+    }
+    events.push({
+      type: 'terminal',
+      status: turn.status as 'completed' | 'interrupted' | 'failed',
+      ...(error ? { error: 'Codex turn failed' } : {}),
+    });
+    return events;
+  }
+  if (method === 'warning' || method === 'config/warning') {
+    if (!matchesThread(params, context)) return [];
+    return [{
+      type: 'warning',
+      message: method === 'config/warning'
+        ? 'Codex reported a configuration warning'
+        : 'Codex reported a warning',
+    }];
+  }
+  if (!matchesTurn(params, context)) return [];
 
   if (method === 'item/agentMessage/delta' && typeof params.delta === 'string') {
-    return [{ type: 'stream-event', data: { type: 'text-delta', text: params.delta } }];
+    return [{
+      type: 'stream-event',
+      data: { type: 'text-delta', text: boundedText(params.delta, MAX_TEXT_DELTA_BYTES) },
+    }];
   }
-  if (method === 'item/commandExecution/outputDelta' && typeof params.delta === 'string') {
-    return [{ type: 'stream-event', data: { type: 'text-delta', text: params.delta } }];
-  }
+  if (method === 'item/commandExecution/outputDelta') return [];
   if (method === 'item/started' || method === 'item/completed') {
     return translateItem(method, params);
   }
@@ -168,33 +233,6 @@ export function translateCodexNotification(
         },
       },
     }];
-  }
-  if (method === 'warning' && typeof params.message === 'string') {
-    return [{ type: 'warning', message: params.message }];
-  }
-  if (method === 'config/warning' && typeof params.summary === 'string') {
-    return [{ type: 'warning', message: params.summary }];
-  }
-  if (method === 'turn/completed') {
-    const turn = record(params.turn);
-    if (!turn || turn.id !== context.turnId ||
-      !['completed', 'interrupted', 'failed'].includes(turn.status as string)) return [];
-    const error = record(turn.error);
-    const events: CodexTranslatedEvent[] = [];
-    if (Array.isArray(turn.items)) {
-      const message = [...turn.items].reverse().map(record).find(
-        (item) => item?.type === 'agentMessage' && typeof item.text === 'string',
-      );
-      if (message && typeof message.text === 'string') {
-        events.push({ type: 'message-completed', text: message.text });
-      }
-    }
-    events.push({
-      type: 'terminal',
-      status: turn.status as 'completed' | 'interrupted' | 'failed',
-      ...(error ? { error: 'Codex turn failed' } : {}),
-    });
-    return events;
   }
   return [];
 }

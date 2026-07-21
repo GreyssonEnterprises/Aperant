@@ -29,6 +29,7 @@ import { findTaskWorktree } from '../worktree-paths';
 import { readSettingsFile } from '../settings-utils';
 import type { ProviderAccount } from '../../shared/types/provider-account';
 import { tryLoadPrompt } from '../ai/prompts/prompt-loader';
+import { requiresIsolatedWorktree } from './codex-workspace-policy';
 
 /**
  * Main AgentManager - orchestrates agent process lifecycle
@@ -499,9 +500,19 @@ export class AgentManager extends EventEmitter {
         console.warn(`[AgentManager] Task ${taskId} will run in worktree: ${worktreePath}`);
       } catch (err) {
         console.error(`[AgentManager] Failed to create worktree for ${taskId}:`, err);
-        // Fall back to running in project root (non-fatal)
-        console.warn(`[AgentManager] Falling back to project root for ${taskId}`);
+        if (!requiresIsolatedWorktree(resolved.executionBackend)) {
+          console.warn(`[AgentManager] Falling back to project root for ${taskId}`);
+        }
       }
+    }
+
+    if (requiresIsolatedWorktree(resolved.executionBackend) && !worktreePath) {
+      this.emit(
+        'error',
+        taskId,
+        'Codex subscription tasks require an isolated worktree. Task was not started.',
+      );
+      return;
     }
 
     const effectiveCwd = worktreePath ?? projectPath;
@@ -605,6 +616,14 @@ export class AgentManager extends EventEmitter {
 
     // Find existing worktree for QA (created during task execution)
     const worktreePath = findTaskWorktree(projectPath, specId);
+    if (requiresIsolatedWorktree(resolved.executionBackend) && !worktreePath) {
+      this.emit(
+        'error',
+        taskId,
+        'Codex subscription QA requires the task worktree. QA was not started.',
+      );
+      return;
+    }
     const effectiveCwd = worktreePath ?? projectPath;
     const effectiveProjectDir = worktreePath ?? projectPath;
     const effectiveSpecDir = worktreePath
@@ -695,7 +714,7 @@ export class AgentManager extends EventEmitter {
   /**
    * Kill a specific task's process
    */
-  killTask(taskId: string): boolean {
+  killTask(taskId: string): Promise<boolean> {
     return this.processManager.killProcess(taskId);
   }
 
@@ -828,55 +847,60 @@ export class AgentManager extends EventEmitter {
 
     // Kill current process
     console.log('[AgentManager] Killing current process for task:', taskId);
-    this.killTask(taskId);
+    void this.killTask(taskId).then((stopped) => {
+      if (!stopped) {
+        this.emit('error', taskId, 'Task restart stopped because the previous Codex session did not end safely');
+        return;
+      }
 
-    // Wait for cleanup, then reset stuck subtasks and restart
-    console.log('[AgentManager] Scheduling task restart in 500ms');
-    setTimeout(async () => {
-      // Reset stuck subtasks before restart to avoid picking up stale in-progress states
-      if (context.specId || context.specDir) {
-        const planPath = context.specDir
-          ? path.join(context.specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN)
-          : path.join(context.projectPath, AUTO_BUILD_PATHS.SPECS_DIR, context.specId, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+      // Wait for cleanup, then reset stuck subtasks and restart
+      console.log('[AgentManager] Scheduling task restart in 500ms');
+      setTimeout(async () => {
+        // Reset stuck subtasks before restart to avoid picking up stale in-progress states
+        if (context.specId || context.specDir) {
+          const planPath = context.specDir
+            ? path.join(context.specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN)
+            : path.join(context.projectPath, AUTO_BUILD_PATHS.SPECS_DIR, context.specId, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
 
-        console.log('[AgentManager] Resetting stuck subtasks before restart:', planPath);
-        try {
-          const { success, resetCount } = await resetStuckSubtasks(planPath);
-          if (success && resetCount > 0) {
-            console.log(`[AgentManager] Successfully reset ${resetCount} stuck subtask(s)`);
+          console.log('[AgentManager] Resetting stuck subtasks before restart:', planPath);
+          try {
+            const { success, resetCount } = await resetStuckSubtasks(planPath);
+            if (success && resetCount > 0) {
+              console.log(`[AgentManager] Successfully reset ${resetCount} stuck subtask(s)`);
+            }
+          } catch (err) {
+            console.warn('[AgentManager] Failed to reset stuck subtasks:', err);
           }
-        } catch (err) {
-          console.warn('[AgentManager] Failed to reset stuck subtasks:', err);
         }
-      }
 
-      console.log('[AgentManager] Restarting task now:', taskId);
-      if (context.isSpecCreation) {
-        console.log('[AgentManager] Restarting as spec creation');
-        if (!context.taskDescription) {
-          console.error('[AgentManager] Cannot restart spec creation: taskDescription is missing');
-          return;
+        console.log('[AgentManager] Restarting task now:', taskId);
+        if (context.isSpecCreation) {
+          console.log('[AgentManager] Restarting as spec creation');
+          if (!context.taskDescription) {
+            console.error('[AgentManager] Cannot restart spec creation: taskDescription is missing');
+            return;
+          }
+          this.startSpecCreation(
+            taskId,
+            context.projectPath,
+            context.taskDescription,
+            context.specDir,
+            context.metadata,
+            context.baseBranch,
+            context.projectId
+          );
+        } else {
+          console.log('[AgentManager] Restarting as task execution');
+          this.startTaskExecution(
+            taskId,
+            context.projectPath,
+            context.specId,
+            context.options,
+            context.projectId
+          );
         }
-        this.startSpecCreation(
-          taskId,
-          context.projectPath,
-          context.taskDescription,
-          context.specDir,
-          context.metadata,
-          context.baseBranch,
-          context.projectId
-        );
-      } else {
-        console.log('[AgentManager] Restarting as task execution');
-        this.startTaskExecution(
-          taskId,
-          context.projectPath,
-          context.specId,
-          context.options,
-          context.projectId
-        );
-      }
-    }, 500);
+      }, 500);
+    });
 
     return true;
   }

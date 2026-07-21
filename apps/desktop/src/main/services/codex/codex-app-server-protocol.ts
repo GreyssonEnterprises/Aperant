@@ -67,6 +67,7 @@ export type CodexTurnStatus = 'completed' | 'interrupted' | 'failed' | 'inProgre
 
 export interface CodexThreadStartParams {
   cwd: string;
+  runtimeWorkspaceRoots: string[];
   model: string;
   developerInstructions: string;
   approvalPolicy: 'never';
@@ -77,6 +78,7 @@ export interface CodexThreadStartParams {
 export interface CodexThreadResumeParams {
   threadId: string;
   cwd: string;
+  runtimeWorkspaceRoots: string[];
   model: string;
   developerInstructions: string;
   approvalPolicy: 'never';
@@ -93,6 +95,7 @@ export interface CodexTurnStartParams {
   input: Array<{ type: 'text'; text: string; text_elements: [] }>;
   cwd: string;
   model: string;
+  runtimeWorkspaceRoots: string[];
   effort?: string;
   outputSchema?: unknown;
   approvalPolicy: 'never';

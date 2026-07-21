@@ -29,6 +29,11 @@ import { ProgressTracker } from '../session/progress-tracker';
 import { createMainCodexExecutionBackend } from '../../services/codex/codex-execution-runtime';
 import type { CodexExecutionOutput } from '../../services/codex/codex-execution-backend';
 import { CodexRuntimeError } from '../../services/codex/codex-errors';
+import {
+  isCodexRequestId,
+  parseCodexWorkerRequest,
+  type ValidatedCodexWorkerRequest,
+} from '../../services/codex/codex-worker-request';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -75,6 +80,14 @@ export class WorkerBridge extends EventEmitter {
   private taskId: string = '';
   private projectId: string | undefined;
   private processType: ProcessType = 'task-execution';
+  private codexAuthorization: Readonly<{
+    taskId: string;
+    accountId: string;
+    modelId: string;
+    worktreePath: string;
+    specDir: string;
+  }> | null = null;
+  private lifecycleClosing = false;
 
   /**
    * Spawn a worker thread with the given configuration.
@@ -91,6 +104,17 @@ export class WorkerBridge extends EventEmitter {
     this.projectId = config.projectId;
     this.processType = config.processType;
     this.progressTracker = new ProgressTracker();
+    this.lifecycleClosing = false;
+    this.codexAuthorization = config.session.executionBackend === 'codex-app-server' &&
+      config.session.accountId
+      ? Object.freeze({
+          taskId: config.taskId,
+          accountId: config.session.accountId,
+          modelId: config.session.modelId,
+          worktreePath: config.session.toolContext.cwd,
+          specDir: config.session.specDir,
+        })
+      : null;
 
     const workerSession = config.session.executionBackend === 'codex-app-server'
       ? (() => {
@@ -122,17 +146,13 @@ export class WorkerBridge extends EventEmitter {
     });
 
     this.worker.on('error', (error: Error) => {
-      this.emitTyped('error', this.taskId, error.message, this.projectId);
-      this.cleanup();
+      void this.handleWorkerFailure(error);
     });
 
     this.worker.on('exit', (code: number) => {
       // Code 0 = clean exit; non-zero = crash/error
       // Only emit exit if we haven't already emitted from a 'result' message
-      if (this.worker) {
-        this.emitTyped('exit', this.taskId, code === 0 ? 0 : code, this.processType, this.projectId);
-        this.cleanup();
-      }
+      if (this.worker && !this.lifecycleClosing) void this.handleWorkerExit(code);
     });
   }
 
@@ -140,15 +160,17 @@ export class WorkerBridge extends EventEmitter {
    * Terminate the worker thread.
    * Sends an abort message first for graceful shutdown, then terminates.
    */
-  async terminate(): Promise<void> {
+  async terminate(): Promise<SessionResult | undefined> {
+    this.lifecycleClosing = true;
+    let finalization: SessionResult | undefined;
     if (this.codexBackend) {
       try {
-        await this.codexBackend.cancel();
+        finalization = await this.codexBackend.cancel();
       } catch {
         // The backend returns a retryable result to the worker on unsafe stop.
       }
     }
-    if (!this.worker) return;
+    if (!this.worker) return finalization;
 
     // Try graceful abort first
     try {
@@ -166,6 +188,7 @@ export class WorkerBridge extends EventEmitter {
     } catch {
       // Already terminated
     }
+    return finalization;
   }
 
   /** Whether the worker is currently active */
@@ -184,6 +207,27 @@ export class WorkerBridge extends EventEmitter {
 
   private handleCodexExecute(message: WorkerCodexExecuteMessage): void {
     if (!this.worker) return;
+    if (!isCodexRequestId(message.requestId)) return;
+    let request: ValidatedCodexWorkerRequest;
+    try {
+      request = parseCodexWorkerRequest(message.data);
+    } catch {
+      this.worker.postMessage({
+        type: 'codex-error',
+        requestId: message.requestId,
+        message: 'Invalid Codex worker request',
+      });
+      return;
+    }
+    const authorization = this.codexAuthorization;
+    if (!authorization) {
+      this.worker.postMessage({
+        type: 'codex-error',
+        requestId: message.requestId,
+        message: 'Codex execution is not authorized for this task',
+      });
+      return;
+    }
     if (this.codexBackend?.isActive) {
       this.worker.postMessage({
         type: 'codex-error',
@@ -195,9 +239,9 @@ export class WorkerBridge extends EventEmitter {
     const backend = createMainCodexExecutionBackend();
     this.codexBackend = backend;
     void backend.run({
-      taskId: message.taskId,
-      ...message.data,
-    }, (event) => this.handleCodexEvent(message, event)).then(
+      ...authorization,
+      ...request,
+    }, (event) => this.handleCodexEvent(event)).then(
       (result) => this.worker?.postMessage({
         type: 'codex-result',
         requestId: message.requestId,
@@ -218,18 +262,44 @@ export class WorkerBridge extends EventEmitter {
     });
   }
 
-  private handleCodexEvent(message: WorkerCodexExecuteMessage, event: CodexExecutionOutput): void {
+  private async cancelCodexBackend(): Promise<void> {
+    const backend = this.codexBackend;
+    if (!backend) return;
+    try {
+      await backend.cancel();
+    } catch {
+      // Backend cancellation returns retryable finalization for unsafe retirement.
+    }
+  }
+
+  private async handleWorkerFailure(error: Error): Promise<void> {
+    if (this.lifecycleClosing) return;
+    this.lifecycleClosing = true;
+    await this.cancelCodexBackend();
+    this.emitTyped('error', this.taskId, error.message, this.projectId);
+    this.cleanup();
+  }
+
+  private async handleWorkerExit(code: number): Promise<void> {
+    if (this.lifecycleClosing) return;
+    this.lifecycleClosing = true;
+    await this.cancelCodexBackend();
+    this.emitTyped('exit', this.taskId, code === 0 ? 0 : code, this.processType, this.projectId);
+    this.cleanup();
+  }
+
+  private handleCodexEvent(event: CodexExecutionOutput): void {
     if (event.type === 'stream-event') {
       this.handleWorkerMessage({
         type: 'stream-event',
-        taskId: message.taskId,
-        projectId: message.projectId,
+        taskId: this.taskId,
+        projectId: this.projectId,
         data: event.data,
       });
     } else if (event.type === 'warning') {
-      this.emitTyped('log', message.taskId, `Warning: ${event.message}\n`, message.projectId);
+      this.emitTyped('log', this.taskId, `Warning: ${event.message}\n`, this.projectId);
     } else if (event.type === 'rate-limit') {
-      this.emitTyped('error', message.taskId, event.message, message.projectId);
+      this.emitTyped('error', this.taskId, event.message, this.projectId);
     }
   }
 
@@ -326,5 +396,6 @@ export class WorkerBridge extends EventEmitter {
   private cleanup(): void {
     this.worker = null;
     this.codexBackend = null;
+    this.codexAuthorization = null;
   }
 }

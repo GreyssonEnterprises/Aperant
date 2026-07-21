@@ -16,7 +16,7 @@ describe('Codex execution event translation', () => {
     ]);
   });
 
-  it('translates command and file lifecycle notifications', () => {
+  it('emits only redacted, bounded command and file lifecycle metadata', () => {
     expect(translateCodexNotification('item/started', {
       ...context,
       startedAtMs: 10,
@@ -29,7 +29,23 @@ describe('Codex execution event translation', () => {
         type: 'stream-event',
         data: {
           type: 'tool-call', toolName: 'bash', toolCallId: 'cmd-1',
-          args: { command: 'npm test', cwd: '/worktree' },
+          args: { status: 'started' },
+        },
+      },
+    ]);
+
+    expect(translateCodexNotification('item/completed', {
+      ...context,
+      item: {
+        type: 'fileChange', id: 'patch-1', status: 'completed',
+        changes: [{ path: '/worktree/src/a.ts', kind: { type: 'update' } }],
+      },
+    }, context)).toEqual([
+      {
+        type: 'stream-event',
+        data: {
+          type: 'tool-result', toolName: 'apply_patch', toolCallId: 'patch-1',
+          result: { fileCount: 1, status: 'completed' }, durationMs: 0, isError: false,
         },
       },
     ]);
@@ -46,7 +62,7 @@ describe('Codex execution event translation', () => {
         type: 'stream-event',
         data: {
           type: 'tool-result', toolName: 'bash', toolCallId: 'cmd-1',
-          result: { exitCode: 0, output: 'ok' }, durationMs: 25, isError: false,
+          result: { exitCode: 0, status: 'completed' }, durationMs: 25, isError: false,
         },
       },
     ]);
@@ -63,10 +79,42 @@ describe('Codex execution event translation', () => {
         type: 'stream-event',
         data: {
           type: 'tool-call', toolName: 'apply_patch', toolCallId: 'patch-1',
-          args: { files: ['/worktree/src/a.ts'] },
+          args: { fileCount: 1 },
         },
       },
     ]);
+
+    const serialized = JSON.stringify([
+      ...translateCodexNotification('item/started', {
+        ...context,
+        item: {
+          type: 'commandExecution', id: 'cmd-1', command: 'printf super-secret',
+          cwd: '/private/secret', status: 'inProgress',
+        },
+      }, context),
+      ...translateCodexNotification('item/completed', {
+        ...context,
+        item: {
+          type: 'commandExecution', id: 'cmd-1', command: 'printf super-secret',
+          cwd: '/private/secret', status: 'completed', exitCode: 0,
+          aggregatedOutput: 'super-secret command output',
+        },
+      }, context),
+    ]);
+    expect(serialized).not.toContain('super-secret');
+    expect(serialized).not.toContain('/private');
+  });
+
+  it('drops command output and hidden reasoning deltas', () => {
+    expect(translateCodexNotification('item/commandExecution/outputDelta', {
+      ...context, itemId: 'cmd-1', delta: 'secret command output',
+    }, context)).toEqual([]);
+    expect(translateCodexNotification('item/reasoning/summaryTextDelta', {
+      ...context, itemId: 'reasoning-1', delta: 'private chain of thought',
+    }, context)).toEqual([]);
+    expect(translateCodexNotification('item/reasoning/textDelta', {
+      ...context, itemId: 'reasoning-1', delta: 'private chain of thought',
+    }, context)).toEqual([]);
   });
 
   it('translates errors, usage, rate limits, warnings, and terminal status', () => {
@@ -119,8 +167,8 @@ describe('Codex execution event translation', () => {
     ]);
 
     expect(translateCodexNotification('warning', {
-      threadId: 'thread-1', message: 'Model was rerouted',
-    }, context)).toEqual([{ type: 'warning', message: 'Model was rerouted' }]);
+      threadId: 'thread-1', message: 'Secret at /private/path was rerouted',
+    }, context)).toEqual([{ type: 'warning', message: 'Codex reported a warning' }]);
 
     expect(translateCodexNotification('turn/completed', {
       threadId: 'thread-1',
@@ -134,6 +182,40 @@ describe('Codex execution event translation', () => {
     }, context)).toEqual([]);
     expect(translateCodexNotification('turn/completed', {
       threadId: 'thread-1', turn: { id: 'other', status: 'completed', items: [] },
+    }, context)).toEqual([]);
+  });
+
+  it('requires complete thread and turn identity for turn-scoped events', () => {
+    expect(translateCodexNotification('item/agentMessage/delta', {
+      threadId: 'thread-1', itemId: 'message-1', delta: 'missing turn identity',
+    }, context)).toEqual([]);
+    expect(translateCodexNotification('item/agentMessage/delta', {
+      turnId: 'turn-1', itemId: 'message-1', delta: 'missing thread identity',
+    }, context)).toEqual([]);
+    expect(translateCodexNotification('thread/tokenUsage/updated', {
+      threadId: 'thread-1', tokenUsage: {
+        total: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      },
+    }, context)).toEqual([]);
+    expect(translateCodexNotification('turn/completed', {
+      turn: { id: 'turn-1', status: 'completed', items: [] },
+    }, context)).toEqual([]);
+  });
+
+  it('bounds assistant text and rejects unsafe lifecycle identifiers', () => {
+    const longDelta = 'x'.repeat(40_000);
+    const events = translateCodexNotification('item/agentMessage/delta', {
+      ...context, itemId: 'message-1', delta: longDelta,
+    }, context);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: 'stream-event', data: { type: 'text-delta' } });
+    if (events[0]?.type === 'stream-event' && events[0].data.type === 'text-delta') {
+      expect(Buffer.byteLength(events[0].data.text, 'utf8')).toBeLessThanOrEqual(32 * 1024);
+    }
+
+    expect(translateCodexNotification('item/started', {
+      ...context,
+      item: { type: 'commandExecution', id: 'unsafe id /private/path', status: 'inProgress' },
     }, context)).toEqual([]);
   });
 

@@ -108,6 +108,39 @@ class ScriptedProcess extends EventEmitter implements CodexJsonlProcess {
 }
 
 describe('per-account Codex app-server manager', () => {
+  it('publishes account lifecycle before retirement and unexpected process death', async () => {
+    let process: ScriptedProcess | undefined;
+    const lifecycle = vi.fn();
+    const terminate = vi.fn(async () => {
+      expect(lifecycle).toHaveBeenCalledWith({ type: 'retiring', retryable: true });
+    });
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: () => ({
+        found: true, path: '/usr/local/bin/codex', version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      spawn: (_path, _args, options) => {
+        process = new ScriptedProcess(options.env.CODEX_HOME);
+        return process;
+      },
+      terminate,
+    });
+    manager.subscribeLifecycle('account-a', lifecycle);
+    await manager.readAccount('account-a');
+
+    process?.emit('exit', 1, null);
+    expect(lifecycle).toHaveBeenCalledWith({ type: 'process-death', retryable: true });
+
+    lifecycle.mockClear();
+    await manager.readAccount('account-b');
+    manager.subscribeLifecycle('account-b', lifecycle);
+    await manager.retireAccount('account-b');
+    expect(lifecycle).toHaveBeenCalledWith({ type: 'retiring', retryable: true });
+  });
+
   it('keeps typed execution RPC and notifications inside the account manager', async () => {
     let process: ScriptedProcess | undefined;
     const terminate = vi.fn();
@@ -133,6 +166,7 @@ describe('per-account Codex app-server manager', () => {
       cwd: '/worktree', model: 'gpt-5.3-codex', developerInstructions: 'Do the task',
       approvalPolicy: 'never' as const, sandbox: 'workspace-write' as const,
       networkAccess: false as const,
+      runtimeWorkspaceRoots: ['/worktree'],
     };
 
     await expect(manager.startThread('account-a', options)).resolves.toEqual({
@@ -147,6 +181,7 @@ describe('per-account Codex app-server manager', () => {
         type: 'workspaceWrite', networkAccess: false, writableRoots: ['/worktree'],
         excludeTmpdirEnvVar: true, excludeSlashTmp: true,
       },
+      runtimeWorkspaceRoots: ['/worktree'],
     })).resolves.toEqual({ turnId: 'turn-1' });
     await manager.interruptTurn('account-a', 'thread-new', 'turn-1');
     process?.notify('warning', { threadId: 'thread-new', message: 'notice' });
@@ -157,12 +192,14 @@ describe('per-account Codex app-server manager', () => {
     expect(process?.requests.find((request) => request.method === 'thread/start')?.params)
       .toEqual(expect.objectContaining({
         cwd: '/worktree', approvalPolicy: 'never', sandbox: 'workspace-write',
+        runtimeWorkspaceRoots: ['/worktree'],
         config: { sandbox_workspace_write: { network_access: false } },
       }));
     expect(process?.requests.find((request) => request.method === 'turn/start')?.params)
       .toEqual(expect.objectContaining({
         input: [{ type: 'text', text: 'Implement it', text_elements: [] }],
         effort: 'high',
+        runtimeWorkspaceRoots: ['/worktree'],
         sandboxPolicy: {
           type: 'workspaceWrite', networkAccess: false, writableRoots: ['/worktree'],
           excludeTmpdirEnvVar: true, excludeSlashTmp: true,
@@ -489,6 +526,12 @@ describe('per-account Codex app-server manager', () => {
       authUrl: 'https://auth.openai.com/example',
     });
     const models = await manager.listModels('account-a');
+    await expect(manager.verifyExecutionModel('account-a', 'gpt-5.6-codex', 'low'))
+      .resolves.toBeUndefined();
+    await expect(manager.verifyExecutionModel('account-a', 'missing-codex', 'low'))
+      .rejects.toMatchObject({ code: 'discovery-failed' });
+    await expect(manager.verifyExecutionModel('account-a', 'gpt-5.6-codex', 'high'))
+      .rejects.toMatchObject({ code: 'discovery-failed' });
 
     expect(models).toEqual([
       expect.objectContaining({

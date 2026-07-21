@@ -49,6 +49,7 @@ import { createMcpClientsForAgent, mergeMcpTools, closeAllMcpClients } from '../
 import type { McpClientResult } from '../mcp/types';
 import { runProjectIndexer } from '../project/project-indexer';
 import { toJSONSchema } from 'zod';
+import { runCodexWithPhaseLogging } from './codex-phase-logging';
 
 // =============================================================================
 // Validation
@@ -154,17 +155,11 @@ function runCodexSessionInMain(
   });
   postMessage({
     type: 'codex-execute',
-    taskId: config.taskId,
-    projectId: config.projectId,
     requestId,
     data: {
-      accountId: session.accountId,
-      modelId: session.modelId,
       ...(reasoningEffort ? { reasoningEffort } : {}),
       systemPrompt,
       input,
-      worktreePath: session.toolContext.cwd,
-      specDir: session.specDir,
       phase,
       ...(outputSchema ? { outputSchema: toJSONSchema(outputSchema) } : {}),
     },
@@ -327,21 +322,20 @@ async function runSingleSession(
     const input = initialUserMessage ?? baseSession.initialMessages
       .map((message) => `${message.role}: ${message.content}`)
       .join('\n\n');
-    if (logWriter && !skipPhaseLogging) logWriter.startPhase(phase);
-    if (logWriter && subtaskId) logWriter.setSubtask(subtaskId);
-    const sessionResult = await runCodexSessionInMain(
-      baseSession,
+    return runCodexWithPhaseLogging(
+      () => runCodexSessionInMain(
+        baseSession,
+        phase,
+        systemPrompt,
+        input,
+        phaseThinking,
+        outputSchema,
+      ),
+      logWriter,
       phase,
-      systemPrompt,
-      input,
-      phaseThinking,
-      outputSchema,
+      subtaskId,
+      skipPhaseLogging,
     );
-    if (logWriter && !skipPhaseLogging) {
-      logWriter.endPhase(phase, sessionResult.outcome === 'completed');
-    }
-    if (logWriter) logWriter.setSubtask(undefined);
-    return sessionResult;
   }
 
   const model = createProvider({
@@ -532,12 +526,18 @@ async function runDefaultSession(
     const input = session.initialMessages
       .map((message) => `${message.role}: ${message.content}`)
       .join('\n\n');
-    const result = await runCodexSessionInMain(
-      session,
+    const result = await runCodexWithPhaseLogging(
+      () => runCodexSessionInMain(
+        session,
+        phase,
+        session.systemPrompt,
+        input,
+        session.thinkingLevel,
+      ),
+      logWriter,
       phase,
-      session.systemPrompt,
-      input,
-      session.thinkingLevel,
+      session.subtaskId,
+      false,
     );
     postMessage({
       type: 'result',

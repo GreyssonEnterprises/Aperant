@@ -810,3 +810,61 @@ describe('AgentProcessManager - API Profile Env Injection (Story 2.3)', () => {
     });
   });
 });
+
+describe('AgentProcessManager - Codex cancellation finalization', () => {
+  it('keeps task state until cancellation settles and propagates retryable failure', async () => {
+    const state = new AgentState();
+    const events = new AgentEvents();
+    const emitter = new EventEmitter();
+    const error = vi.fn();
+    emitter.on('error', error);
+    const manager = new AgentProcessManager(state, events, emitter);
+    let settle!: (value: import('../ai/session/types').SessionResult) => void;
+    const terminate = vi.fn(() => new Promise<import('../ai/session/types').SessionResult>(
+      (resolve) => { settle = resolve; },
+    ));
+    state.addProcess('task-codex', {
+      taskId: 'task-codex', process: null, worker: null,
+      workerBridge: { terminate }, startedAt: new Date(), spawnId: 1,
+    });
+
+    const killing = manager.killProcess('task-codex');
+    expect(state.hasProcess('task-codex')).toBe(true);
+    settle({
+      outcome: 'error', stepsExecuted: 0, messages: [], durationMs: 1, toolCallCount: 0,
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      error: { code: 'termination-failed', message: 'Could not stop safely', retryable: true },
+    });
+
+    await expect(killing).resolves.toBe(false);
+    expect(state.hasProcess('task-codex')).toBe(false);
+    expect(error).toHaveBeenCalledWith(
+      'task-codex', 'Could not stop safely', undefined,
+    );
+  });
+
+  it('rejects replacement spawn when the previous Codex session did not stop safely', async () => {
+    spawnCalls.length = 0;
+    const state = new AgentState();
+    const events = new AgentEvents();
+    const emitter = new EventEmitter();
+    emitter.on('error', vi.fn());
+    const manager = new AgentProcessManager(state, events, emitter);
+    state.addProcess('task-codex', {
+      taskId: 'task-codex', process: null, worker: null,
+      workerBridge: {
+        terminate: vi.fn().mockResolvedValue({
+          outcome: 'error', stepsExecuted: 0, messages: [], durationMs: 1, toolCallCount: 0,
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          error: { code: 'termination-failed', message: 'Could not stop safely', retryable: true },
+        }),
+      },
+      startedAt: new Date(), spawnId: 1,
+    });
+
+    await expect(manager.spawnProcess(
+      'task-codex', '/fake/cwd', ['run.py'], {}, 'task-execution',
+    )).rejects.toThrow('previous Codex session did not stop safely');
+    expect(spawnCalls).toHaveLength(0);
+  });
+});

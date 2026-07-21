@@ -109,23 +109,17 @@ export type WorkerMessage =
   | WorkerCodexExecuteMessage;
 
 export interface CodexWorkerExecutionRequest {
-  accountId: string;
-  modelId: string;
   reasoningEffort?: string;
   systemPrompt: string;
   input: string;
-  worktreePath: string;
-  specDir: string;
   phase: string;
   outputSchema?: unknown;
 }
 
 export interface WorkerCodexExecuteMessage {
   type: 'codex-execute';
-  taskId: string;
   requestId: string;
   data: CodexWorkerExecutionRequest;
-  projectId?: string;
 }
 
 export interface WorkerLogMessage {

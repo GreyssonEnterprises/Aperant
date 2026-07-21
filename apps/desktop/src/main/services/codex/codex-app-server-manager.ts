@@ -20,6 +20,7 @@ import {
   type CodexModel,
 } from './codex-app-server-protocol';
 import type {
+  CodexAccountLifecycleEvent,
   CodexExecutionManager,
   CodexExecutionThreadOptions,
   CodexExecutionTurnOptions,
@@ -215,6 +216,10 @@ export function createCodexAppServerManager(
     string,
     Set<(method: string, params: unknown) => void>
   >();
+  const lifecycleListeners = new Map<
+    string,
+    Set<(event: CodexAccountLifecycleEvent) => void>
+  >();
   let shuttingDown = false;
   let shutdownPromise: Promise<void> | undefined;
   let canonicalRootPromise: Promise<string> | undefined;
@@ -248,6 +253,16 @@ export function createCodexAppServerManager(
     void barrier.catch(() => undefined);
     accountTerminations.set(accountId, barrier);
     dependencies.onDiagnostic?.('Codex app-server ownership could not be verified');
+  }
+
+  function emitLifecycle(accountId: string, event: CodexAccountLifecycleEvent): void {
+    for (const listener of [...(lifecycleListeners.get(accountId) ?? [])]) {
+      try {
+        listener(event);
+      } catch {
+        dependencies.onDiagnostic?.('Codex account lifecycle handler failed');
+      }
+    }
   }
 
   function trackAccountTermination(accountId: string, process: CodexJsonlProcess): Promise<void> {
@@ -339,6 +354,7 @@ export function createCodexAppServerManager(
         expectedCodexHome: codexHome,
         onDiagnostic: dependencies.onDiagnostic,
         onFatal: (_error, processEnded) => {
+          emitLifecycle(accountId, { type: 'process-death', retryable: true });
           if (processEnded) entry.processEnded = true;
           if (sessions.get(accountId)?.token === entry.token) sessions.delete(accountId);
           if (!processEnded) trackAccountTermination(accountId, child);
@@ -391,7 +407,7 @@ export function createCodexAppServerManager(
     const session = await getSession(accountId);
     const parsed = parseAccountReadResponse(await session.client.request(
       'account/read',
-      { refreshToken: false },
+      { refreshToken: true },
     ));
     if (!parsed) throw new CodexRuntimeError('protocol-error');
     return parsed;
@@ -408,6 +424,7 @@ export function createCodexAppServerManager(
   function threadParams(options: CodexExecutionThreadOptions) {
     return {
       cwd: options.cwd,
+      runtimeWorkspaceRoots: options.runtimeWorkspaceRoots,
       model: options.model,
       developerInstructions: options.developerInstructions,
       approvalPolicy: options.approvalPolicy,
@@ -431,6 +448,18 @@ export function createCodexAppServerManager(
       return () => {
         listeners?.delete(listener);
         if (listeners?.size === 0) notificationListeners.delete(accountId);
+      };
+    },
+    subscribeLifecycle(accountId, listener) {
+      let listeners = lifecycleListeners.get(accountId);
+      if (!listeners) {
+        listeners = new Set();
+        lifecycleListeners.set(accountId, listeners);
+      }
+      listeners.add(listener);
+      return () => {
+        listeners?.delete(listener);
+        if (listeners?.size === 0) lifecycleListeners.delete(accountId);
       };
     },
     async startThread(accountId, options) {
@@ -458,6 +487,7 @@ export function createCodexAppServerManager(
         input: [{ type: 'text', text: options.input, text_elements: [] }],
         cwd: options.cwd,
         model: options.model,
+        runtimeWorkspaceRoots: options.runtimeWorkspaceRoots,
         ...(options.reasoningEffort ? { effort: options.reasoningEffort } : {}),
         ...(options.outputSchema ? { outputSchema: options.outputSchema } : {}),
         approvalPolicy: options.approvalPolicy,
@@ -474,6 +504,7 @@ export function createCodexAppServerManager(
       const entry = sessions.get(accountId);
       if (!entry) return;
       const session = await entry.promise;
+      emitLifecycle(accountId, { type: 'retiring', retryable: true });
       if (sessions.get(accountId)?.token === entry.token) sessions.delete(accountId);
       session.client.close();
       await trackAccountTermination(accountId, session.process);
@@ -510,10 +541,23 @@ export function createCodexAppServerManager(
       await dependencies.onCatalogModels?.(accountId, models);
       return models;
     },
+    async verifyExecutionModel(accountId, modelId, reasoningEffort) {
+      const models = await this.listModels(accountId);
+      const selected = models.find((model) => (
+        model.id === modelId && model.availability === 'available'
+      ));
+      if (!selected || (reasoningEffort &&
+        !selected.thinking.effortLevels.includes(reasoningEffort))) {
+        throw new CodexRuntimeError('discovery-failed');
+      }
+    },
     async shutdown() {
       if (shutdownPromise) return shutdownPromise;
       shuttingDown = true;
       const active = [...sessions.entries()];
+      for (const [accountId] of active) {
+        emitLifecycle(accountId, { type: 'retiring', retryable: true });
+      }
       for (const [, entry] of active) entry.client?.close();
       sessions.clear();
       const operations = [

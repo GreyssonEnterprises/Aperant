@@ -75,6 +75,7 @@ vi.mock('../../session/progress-tracker', () => ({
 
 // Import after mocks
 import { WorkerBridge } from '../worker-bridge';
+import { translateCodexNotification } from '../../../services/codex/codex-event-translator';
 
 // =============================================================================
 // Helpers
@@ -163,16 +164,10 @@ describe('WorkerBridge', () => {
         .not.toContain('must-never-cross');
       worker.emit('message', {
         type: 'codex-execute',
-        taskId: 'task-123',
-        projectId: 'proj-456',
         requestId: 'request-1',
         data: {
-          accountId: 'account-codex',
-          modelId: 'gpt-5.3-codex',
           systemPrompt: 'test',
           input: 'hello',
-          worktreePath: '/project',
-          specDir: '/specs',
           phase: 'coding',
         },
       } satisfies WorkerMessage);
@@ -190,6 +185,105 @@ describe('WorkerBridge', () => {
         type: 'result', taskId: 'task-123', projectId: 'proj-456', data: createSessionResult(),
       } satisfies WorkerMessage);
       expect(exit).toHaveBeenCalledWith('task-123', 0, 'task-execution', 'proj-456');
+    });
+
+    it('derives Codex identity and filesystem authority only from spawn configuration', async () => {
+      mockCodexRun.mockReturnValue(new Promise<SessionResult>(() => undefined));
+      const config = createConfig();
+      config.session.executionBackend = 'codex-app-server';
+      config.session.accountId = 'authorized-account';
+      config.session.modelId = 'gpt-5.3-codex';
+      config.session.specDir = '/authorized/worktree/specs/task-123';
+      config.session.toolContext.cwd = '/authorized/worktree';
+      bridge.spawn(config);
+
+      getWorker().emit('message', {
+        type: 'codex-execute',
+        requestId: 'request-1',
+        data: {
+          phase: 'coding',
+          systemPrompt: 'test',
+          input: 'hello',
+        },
+      } as unknown as WorkerMessage);
+
+      await vi.waitFor(() => expect(mockCodexRun).toHaveBeenCalled());
+      expect(mockCodexRun).toHaveBeenCalledWith(expect.objectContaining({
+        taskId: 'task-123',
+        accountId: 'authorized-account',
+        modelId: 'gpt-5.3-codex',
+        worktreePath: '/authorized/worktree',
+        specDir: '/authorized/worktree/specs/task-123',
+      }), expect.any(Function));
+      expect(mockCodexRun).toHaveBeenCalledWith(expect.not.objectContaining({
+        accountId: 'attacker-account',
+        worktreePath: '/private',
+      }), expect.any(Function));
+    });
+
+    it('rejects worker attempts to substitute Codex authority', async () => {
+      const config = createConfig();
+      config.session.executionBackend = 'codex-app-server';
+      config.session.accountId = 'authorized-account';
+      bridge.spawn(config);
+
+      const worker = getWorker();
+      worker.emit('message', {
+        type: 'codex-execute',
+        requestId: 'request-1',
+        data: {
+          phase: 'coding', systemPrompt: 'test', input: 'hello',
+          accountId: 'attacker-account', worktreePath: '/private',
+        },
+      } as unknown as WorkerMessage);
+
+      await vi.waitFor(() => expect(worker.postMessage).toHaveBeenCalledWith({
+        type: 'codex-error',
+        requestId: 'request-1',
+        message: 'Invalid Codex worker request',
+      }));
+      expect(mockCodexRun).not.toHaveBeenCalled();
+    });
+
+    it('never forwards Codex command output or command details to renderer events', async () => {
+      mockCodexRun.mockReturnValue(new Promise<SessionResult>(() => undefined));
+      const config = createConfig();
+      config.session.executionBackend = 'codex-app-server';
+      config.session.accountId = 'account-codex';
+      const log = vi.fn();
+      bridge.on('log', log);
+      bridge.spawn(config);
+
+      getWorker().emit('message', {
+        type: 'codex-execute', requestId: 'request-1',
+        data: { phase: 'coding', systemPrompt: 'test', input: 'hello' },
+      } satisfies WorkerMessage);
+      await vi.waitFor(() => expect(mockCodexRun).toHaveBeenCalled());
+      const emit = mockCodexRun.mock.calls[0]?.[1] as (event: never) => void;
+      const context = { threadId: 'thread-1', turnId: 'turn-1' };
+      for (const event of [
+        ...translateCodexNotification('item/started', {
+          ...context,
+          item: {
+            type: 'commandExecution', id: 'cmd-1', command: 'printf renderer-secret',
+            cwd: '/private/renderer-secret', status: 'inProgress',
+          },
+        }, context),
+        ...translateCodexNotification('item/commandExecution/outputDelta', {
+          ...context, itemId: 'cmd-1', delta: 'renderer-secret',
+        }, context),
+        ...translateCodexNotification('item/completed', {
+          ...context,
+          item: {
+            type: 'commandExecution', id: 'cmd-1', command: 'printf renderer-secret',
+            cwd: '/private/renderer-secret', status: 'completed', exitCode: 0,
+            aggregatedOutput: 'renderer-secret',
+          },
+        }, context),
+      ]) emit(event as never);
+
+      expect(log).not.toHaveBeenCalled();
+      expect(JSON.stringify(mockProcessEvent.mock.calls)).not.toContain('renderer-secret');
     });
   });
 
@@ -332,25 +426,48 @@ describe('WorkerBridge', () => {
   // ---------------------------------------------------------------------------
 
   describe('crash handling', () => {
-    it('emits error and cleans up on worker error event', () => {
+    it('cancels an active Codex backend before cleaning up a worker crash', async () => {
+      mockCodexRun.mockReturnValue(new Promise(() => undefined));
+      const config = createConfig();
+      config.session.executionBackend = 'codex-app-server';
+      config.session.accountId = 'account-codex';
+      bridge.on('error', vi.fn());
+      bridge.spawn(config);
+      const worker = getWorker();
+      worker.emit('message', {
+        type: 'codex-execute', requestId: 'request-1',
+        data: { phase: 'coding', systemPrompt: 'test', input: 'hello' },
+      } satisfies WorkerMessage);
+
+      worker.emit('error', new Error('Worker crashed'));
+
+      await vi.waitFor(() => expect(mockCodexCancel).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(bridge.isActive).toBe(false));
+    });
+
+    it('emits error and cleans up on worker error event', async () => {
       const errorHandler = vi.fn();
       bridge.on('error', errorHandler);
       bridge.spawn(createConfig());
 
       getWorker().emit('error', new Error('Worker crashed'));
 
-      expect(errorHandler).toHaveBeenCalledWith('task-123', 'Worker crashed', 'proj-456');
+      await vi.waitFor(() => expect(errorHandler).toHaveBeenCalledWith(
+        'task-123', 'Worker crashed', 'proj-456',
+      ));
       expect(bridge.isActive).toBe(false);
     });
 
-    it('emits exit on worker exit event (non-zero code)', () => {
+    it('emits exit on worker exit event (non-zero code)', async () => {
       const exitHandler = vi.fn();
       bridge.on('exit', exitHandler);
       bridge.spawn(createConfig());
 
       getWorker().emit('exit', 1);
 
-      expect(exitHandler).toHaveBeenCalledWith('task-123', 1, 'task-execution', 'proj-456');
+      await vi.waitFor(() => expect(exitHandler).toHaveBeenCalledWith(
+        'task-123', 1, 'task-execution', 'proj-456',
+      ));
       expect(bridge.isActive).toBe(false);
     });
 
@@ -408,11 +525,9 @@ describe('WorkerBridge', () => {
       bridge.spawn(config);
       getWorker().emit('message', {
         type: 'codex-execute',
-        taskId: 'task-123',
         requestId: 'request-1',
         data: {
-          accountId: 'account-codex', modelId: 'gpt-5.3-codex', systemPrompt: 'test',
-          input: 'hello', worktreePath: '/project', specDir: '/specs', phase: 'coding',
+          systemPrompt: 'test', input: 'hello', phase: 'coding',
         },
       } satisfies WorkerMessage);
 

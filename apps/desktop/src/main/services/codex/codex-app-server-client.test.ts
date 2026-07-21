@@ -80,7 +80,7 @@ describe('Codex app-server JSONL client', () => {
         method: 'initialize',
         params: {
           clientInfo: { name: 'aperant', title: 'Aperant', version: expect.any(String) },
-          capabilities: { experimentalApi: false, requestAttestation: false },
+          capabilities: { experimentalApi: true, requestAttestation: false },
         },
       },
       { method: 'initialized' },

@@ -1,5 +1,6 @@
 import { ChildProcess } from 'child_process';
 import type { Worker } from 'worker_threads';
+import type { SessionResult } from '../ai/session/types';
 import type { CompletablePhase, ExecutionPhase } from '../../shared/constants/phase-protocol';
 import type { TaskEventPayload } from './task-event-schema';
 
@@ -19,7 +20,7 @@ export interface AgentProcess {
   /** Worker thread instance for TypeScript AI SDK agent execution */
   worker?: Worker | null;
   /** Main-process bridge, also owns cooperative Codex cancellation. */
-  workerBridge?: { terminate(): Promise<void> } | null;
+  workerBridge?: { terminate(): Promise<SessionResult | undefined> } | null;
 }
 
 export interface ExecutionProgressData {
