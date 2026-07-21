@@ -22,6 +22,7 @@ export * from './app-update';
 export * from './cli';
 export * from './pr-status';
 export * from './provider-account';
+export * from './model-catalog';
 
 // IPC types (must be last to use types from other modules)
 export * from './ipc';

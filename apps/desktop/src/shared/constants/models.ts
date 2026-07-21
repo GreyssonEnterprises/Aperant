@@ -5,6 +5,23 @@
 
 import type { AgentProfile, PhaseModelConfig, FeatureModelConfig, FeatureThinkingConfig, PhaseThinkingConfig, ThinkingLevel, PipelinePhase } from '../types/settings';
 import type { BuiltinProvider } from '../types/provider-account';
+import {
+  BUNDLED_MODEL_CATALOG,
+  findModelDescriptor,
+  findModelDescriptorById,
+} from './model-catalog';
+
+export * from './model-catalog';
+export type {
+  CustomModelReference,
+  ModelAvailability,
+  ModelBackend,
+  ModelCatalogSnapshot,
+  ModelDescriptor,
+  ModelDescriptorSource,
+  ModelThinkingMode,
+  ModelThinkingSupport,
+} from '../types/model-catalog';
 
 // ============================================
 // Available Models
@@ -36,13 +53,46 @@ export interface ModelOption {
   };
 }
 
+function legacyAnthropicModel(
+  value: string,
+  descriptorId: string,
+  description: string,
+  contextWindow?: number,
+): ModelOption {
+  const descriptor = findModelDescriptor(
+    BUNDLED_MODEL_CATALOG,
+    'anthropic',
+    descriptorId,
+  );
+  const thinkingMode = descriptor?.thinking.mode;
+
+  return {
+    value,
+    label: descriptor?.label ?? descriptorId,
+    provider: 'anthropic',
+    description,
+    capabilities: {
+      thinking:
+        thinkingMode !== undefined &&
+        thinkingMode !== 'none' &&
+        thinkingMode !== 'unknown',
+      tools: true,
+      vision: true,
+      contextWindow: contextWindow ?? descriptor?.contextWindow ?? 200_000,
+    },
+  };
+}
+
 export const ALL_AVAILABLE_MODELS: ModelOption[] = [
   // Anthropic
-  { value: 'opus', label: 'Claude Opus 4.6', provider: 'anthropic', description: 'Most capable', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 200000 } },
-  { value: 'opus-1m', label: 'Claude Opus 4.6 (1M)', provider: 'anthropic', description: '1M context', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 1000000 } },
-  { value: 'sonnet', label: 'Claude Sonnet 4.6', provider: 'anthropic', description: 'Balanced', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 200000 } },
-  { value: 'opus-4.5', label: 'Claude Opus 4.5', provider: 'anthropic', description: 'Legacy', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 200000 } },
-  { value: 'haiku', label: 'Claude Haiku 4.5', provider: 'anthropic', description: 'Fast', capabilities: { thinking: false, tools: true, vision: true, contextWindow: 200000 } },
+  legacyAnthropicModel('opus', 'claude-opus-4-6', 'Most capable'),
+  {
+    ...legacyAnthropicModel('opus-1m', 'claude-opus-4-6', '1M context', 1_000_000),
+    label: 'Claude Opus 4.6 (1M)',
+  },
+  legacyAnthropicModel('sonnet', 'claude-sonnet-4-6', 'Balanced'),
+  legacyAnthropicModel('opus-4.5', 'claude-opus-4-5-20251101', 'Legacy'),
+  legacyAnthropicModel('haiku', 'claude-haiku-4-5-20251001', 'Fast'),
   // OpenAI
   { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', provider: 'openai', description: 'Agentic coding', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 1047576 } },
   { value: 'gpt-5.2', label: 'GPT-5.2', provider: 'openai', description: 'Flagship', apiKeyOnly: true, capabilities: { thinking: true, tools: true, vision: true, contextWindow: 400000 } },
@@ -557,6 +607,24 @@ export function getReasoningConfigForModel(
     }
   }
 
+  const descriptor = findModelDescriptor(BUNDLED_MODEL_CATALOG, provider, modelValue);
+  if (descriptor) {
+    switch (descriptor.thinking.mode) {
+      case 'adaptive':
+      case 'always-adaptive':
+        return { type: 'adaptive_effort', level: 'high' };
+      case 'manual':
+        return provider === 'openai'
+          ? { type: 'reasoning_effort', level: 'medium' }
+          : provider === 'google'
+            ? { type: 'thinking_toggle', level: 'medium' }
+            : { type: 'thinking_tokens', level: 'medium' };
+      case 'none':
+      case 'unknown':
+        return { type: 'none' };
+    }
+  }
+
   return { type: 'none' };
 }
 
@@ -597,6 +665,11 @@ export function getModelContextWindow(modelIdOrShorthand: string): number {
   const directMatch = ALL_AVAILABLE_MODELS.find((m) => m.value === modelIdOrShorthand);
   if (directMatch?.capabilities?.contextWindow) {
     return directMatch.capabilities.contextWindow;
+  }
+
+  const descriptor = findModelDescriptorById(BUNDLED_MODEL_CATALOG, modelIdOrShorthand);
+  if (descriptor?.contextWindow) {
+    return descriptor.contextWindow;
   }
 
   // Search equivalences for full model IDs (e.g., 'claude-opus-4-6' → find 'opus' entry)
