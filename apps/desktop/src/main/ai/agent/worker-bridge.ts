@@ -22,9 +22,13 @@ import type {
   WorkerConfig,
   WorkerMessage,
   AgentExecutorConfig,
+  WorkerCodexExecuteMessage,
 } from './types';
 import type { SessionResult } from '../session/types';
 import { ProgressTracker } from '../session/progress-tracker';
+import { createMainCodexExecutionBackend } from '../../services/codex/codex-execution-runtime';
+import type { CodexExecutionOutput } from '../../services/codex/codex-execution-backend';
+import { CodexRuntimeError } from '../../services/codex/codex-errors';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -66,6 +70,7 @@ function resolveWorkerPath(): string {
  */
 export class WorkerBridge extends EventEmitter {
   private worker: Worker | null = null;
+  private codexBackend: ReturnType<typeof createMainCodexExecutionBackend> | null = null;
   private progressTracker: ProgressTracker = new ProgressTracker();
   private taskId: string = '';
   private projectId: string | undefined;
@@ -87,11 +92,23 @@ export class WorkerBridge extends EventEmitter {
     this.processType = config.processType;
     this.progressTracker = new ProgressTracker();
 
+    const workerSession = config.session.executionBackend === 'codex-app-server'
+      ? (() => {
+          const {
+            apiKey: _apiKey,
+            baseURL: _baseURL,
+            configDir: _configDir,
+            oauthTokenFilePath: _oauthTokenFilePath,
+            ...safeSession
+          } = config.session;
+          return safeSession;
+        })()
+      : config.session;
     const workerConfig: WorkerConfig = {
       taskId: config.taskId,
       projectId: config.projectId,
       processType: config.processType,
-      session: config.session,
+      session: workerSession,
     };
 
     const workerPath = resolveWorkerPath();
@@ -124,6 +141,13 @@ export class WorkerBridge extends EventEmitter {
    * Sends an abort message first for graceful shutdown, then terminates.
    */
   async terminate(): Promise<void> {
+    if (this.codexBackend) {
+      try {
+        await this.codexBackend.cancel();
+      } catch {
+        // The backend returns a retryable result to the worker on unsafe stop.
+      }
+    }
     if (!this.worker) return;
 
     // Try graceful abort first
@@ -158,6 +182,57 @@ export class WorkerBridge extends EventEmitter {
   // Message Handling
   // ===========================================================================
 
+  private handleCodexExecute(message: WorkerCodexExecuteMessage): void {
+    if (!this.worker) return;
+    if (this.codexBackend?.isActive) {
+      this.worker.postMessage({
+        type: 'codex-error',
+        requestId: message.requestId,
+        message: 'Another Codex session is already active for this task',
+      });
+      return;
+    }
+    const backend = createMainCodexExecutionBackend();
+    this.codexBackend = backend;
+    void backend.run({
+      taskId: message.taskId,
+      ...message.data,
+    }, (event) => this.handleCodexEvent(message, event)).then(
+      (result) => this.worker?.postMessage({
+        type: 'codex-result',
+        requestId: message.requestId,
+        result,
+      }),
+      (error: unknown) => {
+        const publicMessage = error instanceof CodexRuntimeError
+          ? error.message
+          : 'Codex execution could not be started';
+        this.worker?.postMessage({
+          type: 'codex-error',
+          requestId: message.requestId,
+          message: publicMessage,
+        });
+      },
+    ).finally(() => {
+      if (this.codexBackend === backend) this.codexBackend = null;
+    });
+  }
+
+  private handleCodexEvent(message: WorkerCodexExecuteMessage, event: CodexExecutionOutput): void {
+    if (event.type === 'stream-event') {
+      this.handleWorkerMessage({
+        type: 'stream-event',
+        taskId: message.taskId,
+        projectId: message.projectId,
+        data: event.data,
+      });
+    } else if (event.type === 'warning') {
+      this.emitTyped('log', message.taskId, `Warning: ${event.message}\n`, message.projectId);
+    } else if (event.type === 'rate-limit') {
+      this.emitTyped('error', message.taskId, event.message, message.projectId);
+    }
+  }
+
   private handleWorkerMessage(message: WorkerMessage): void {
     switch (message.type) {
       case 'log':
@@ -188,6 +263,10 @@ export class WorkerBridge extends EventEmitter {
 
       case 'result':
         this.handleResult(message.taskId, message.data, message.projectId);
+        break;
+
+      case 'codex-execute':
+        this.handleCodexExecute(message);
         break;
     }
   }
@@ -246,5 +325,6 @@ export class WorkerBridge extends EventEmitter {
 
   private cleanup(): void {
     this.worker = null;
+    this.codexBackend = null;
   }
 }

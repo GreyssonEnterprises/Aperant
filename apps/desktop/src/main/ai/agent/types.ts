@@ -53,6 +53,10 @@ export interface SerializableSessionConfig {
   provider: string;
   /** Model ID for model reconstruction */
   modelId: string;
+  /** Main-process execution transport. Defaults to the Vercel worker backend. */
+  executionBackend?: 'vercel' | 'codex-app-server';
+  /** Provider account identifier. Required for the account-isolated Codex backend. */
+  accountId?: string;
   /** API key or token for auth */
   apiKey?: string;
   /** Base URL override for the provider */
@@ -101,7 +105,28 @@ export type WorkerMessage =
   | WorkerProgressMessage
   | WorkerStreamEventMessage
   | WorkerResultMessage
-  | WorkerTaskEventMessage;
+  | WorkerTaskEventMessage
+  | WorkerCodexExecuteMessage;
+
+export interface CodexWorkerExecutionRequest {
+  accountId: string;
+  modelId: string;
+  reasoningEffort?: string;
+  systemPrompt: string;
+  input: string;
+  worktreePath: string;
+  specDir: string;
+  phase: string;
+  outputSchema?: unknown;
+}
+
+export interface WorkerCodexExecuteMessage {
+  type: 'codex-execute';
+  taskId: string;
+  requestId: string;
+  data: CodexWorkerExecutionRequest;
+  projectId?: string;
+}
 
 export interface WorkerLogMessage {
   type: 'log';
@@ -151,7 +176,9 @@ export interface WorkerTaskEventMessage {
 
 /** Messages sent from main thread to worker */
 export type MainToWorkerMessage =
-  | { type: 'abort' };
+  | { type: 'abort' }
+  | { type: 'codex-result'; requestId: string; result: SessionResult }
+  | { type: 'codex-error'; requestId: string; message: string };
 
 // =============================================================================
 // Serialized Security Profile

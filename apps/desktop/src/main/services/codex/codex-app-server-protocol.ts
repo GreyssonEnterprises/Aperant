@@ -63,11 +63,66 @@ export interface CodexModelListResponse {
   nextCursor?: string | null;
 }
 
+export type CodexTurnStatus = 'completed' | 'interrupted' | 'failed' | 'inProgress';
+
+export interface CodexThreadStartParams {
+  cwd: string;
+  model: string;
+  developerInstructions: string;
+  approvalPolicy: 'never';
+  sandbox: 'workspace-write';
+  config: { sandbox_workspace_write: { network_access: false } };
+}
+
+export interface CodexThreadResumeParams {
+  threadId: string;
+  cwd: string;
+  model: string;
+  developerInstructions: string;
+  approvalPolicy: 'never';
+  sandbox: 'workspace-write';
+  config: { sandbox_workspace_write: { network_access: false } };
+}
+
+export interface CodexThreadResponse {
+  thread: { id: string };
+}
+
+export interface CodexTurnStartParams {
+  threadId: string;
+  input: Array<{ type: 'text'; text: string; text_elements: [] }>;
+  cwd: string;
+  model: string;
+  effort?: string;
+  outputSchema?: unknown;
+  approvalPolicy: 'never';
+  sandboxPolicy: {
+    type: 'workspaceWrite';
+    networkAccess: false;
+    writableRoots: string[];
+    excludeTmpdirEnvVar: true;
+    excludeSlashTmp: true;
+  };
+}
+
+export interface CodexTurnStartResponse {
+  turn: { id: string; status: CodexTurnStatus };
+}
+
+export interface CodexTurnInterruptParams {
+  threadId: string;
+  turnId: string;
+}
+
 export interface CodexClientRequestMap {
   initialize: { params: CodexInitializeParams; response: CodexInitializeResponse };
   'account/read': { params: { refreshToken: boolean }; response: CodexAccountReadResponse };
   'account/login/start': { params: CodexLoginStartParams; response: CodexLoginStartResponse };
   'model/list': { params: CodexModelListParams; response: CodexModelListResponse };
+  'thread/start': { params: CodexThreadStartParams; response: CodexThreadResponse };
+  'thread/resume': { params: CodexThreadResumeParams; response: CodexThreadResponse };
+  'turn/start': { params: CodexTurnStartParams; response: CodexTurnStartResponse };
+  'turn/interrupt': { params: CodexTurnInterruptParams; response: Record<string, never> };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -155,4 +210,27 @@ export function parseModelListResponse(value: unknown): CodexModelListResponse |
     }
   }
   return value as unknown as CodexModelListResponse;
+}
+
+function parseThreadResponse(value: unknown): CodexThreadResponse | null {
+  if (!isRecord(value) || !isRecord(value.thread) ||
+    !hasNonEmptyStrings(value.thread, ['id'])) return null;
+  return { thread: { id: value.thread.id as string } };
+}
+
+export const parseThreadStartResponse = parseThreadResponse;
+export const parseThreadResumeResponse = parseThreadResponse;
+
+export function parseTurnStartResponse(value: unknown): CodexTurnStartResponse | null {
+  if (!isRecord(value) || !isRecord(value.turn) ||
+    !hasNonEmptyStrings(value.turn, ['id', 'status']) ||
+    !['completed', 'interrupted', 'failed', 'inProgress'].includes(value.turn.status as string)) {
+    return null;
+  }
+  return {
+    turn: {
+      id: value.turn.id as string,
+      status: value.turn.status as CodexTurnStatus,
+    },
+  };
 }

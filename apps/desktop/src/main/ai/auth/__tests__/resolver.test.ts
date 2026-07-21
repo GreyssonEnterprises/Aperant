@@ -446,6 +446,28 @@ describe('resolveAuthFromQueue', () => {
 
     expect(result?.accountId).toBe('acc-2');
   });
+
+  it('routes OpenAI subscription OAuth accounts to app-server without legacy token files', async () => {
+    mockResolveModelEquivalent.mockReturnValueOnce({
+      modelId: 'gpt-5.3-codex',
+      reasoning: { type: 'reasoning_effort', level: 'high' },
+    });
+    const result = await resolveAuthFromQueue('gpt-5.3-codex', [{
+      ...baseAccount,
+      id: 'codex-sub',
+      provider: 'openai',
+      authType: 'oauth',
+      apiKey: undefined,
+      billingModel: 'subscription',
+    }]);
+
+    expect(result).toMatchObject({
+      accountId: 'codex-sub',
+      source: 'codex-app-server',
+      executionBackend: 'codex-app-server',
+      apiKey: '',
+    });
+  });
 });
 
 // =============================================================================

@@ -176,6 +176,7 @@ describe('createSimpleClient', () => {
       resolvedProvider: 'anthropic' as const,
       resolvedModelId: 'claude-opus-4-6',
       reasoningConfig: { type: 'none' as const },
+      executionBackend: 'vercel' as const,
     };
     mockResolveAuthFromQueue.mockResolvedValueOnce(queueAuth);
 
@@ -281,6 +282,7 @@ describe('createAgentClient', () => {
       resolvedProvider: 'anthropic' as const,
       resolvedModelId: 'claude-sonnet-4-5-20250929',
       reasoningConfig: { type: 'none' as const },
+      executionBackend: 'vercel' as const,
     };
     mockResolveAuthFromQueue.mockResolvedValueOnce(queueAuth);
 

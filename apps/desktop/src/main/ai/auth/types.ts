@@ -20,6 +20,7 @@ import type { ReasoningConfig } from '../../../shared/constants/models';
 export type AuthSource =
   | 'profile-oauth'       // OAuth token from claude-profile credential store
   | 'codex-oauth'         // OAuth token from OpenAI Codex PKCE flow
+  | 'codex-app-server'    // OpenAI subscription auth owned by isolated Codex app-server
   | 'profile-api-key'     // API key stored in profile settings
   | 'environment'         // Environment variable (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
   | 'default'             // Default provider credentials (e.g., built-in defaults)
@@ -124,4 +125,6 @@ export interface QueueResolvedAuth extends ResolvedAuth {
   resolvedModelId: string;
   /** Reasoning configuration for this model on this provider */
   reasoningConfig: ReasoningConfig;
+  /** Execution transport selected for this account. */
+  executionBackend: 'vercel' | 'codex-app-server';
 }

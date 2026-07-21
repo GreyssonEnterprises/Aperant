@@ -17,6 +17,7 @@ class ScriptedProcess extends EventEmitter implements CodexJsonlProcess {
   readonly stderr = new PassThrough();
   readonly stdin: Writable;
   readonly methods: string[] = [];
+  readonly requests: Array<{ id?: number; method: string; params?: Record<string, unknown> }> = [];
   pid = 8080;
   killed = false;
 
@@ -29,7 +30,12 @@ class ScriptedProcess extends EventEmitter implements CodexJsonlProcess {
         const lines = buffered.split('\n');
         buffered = lines.pop() ?? '';
         for (const line of lines) {
-          const request = JSON.parse(line) as { id?: number; method: string };
+          const request = JSON.parse(line) as {
+            id?: number;
+            method: string;
+            params?: Record<string, unknown>;
+          };
+          this.requests.push(request);
           this.methods.push(request.method);
           queueMicrotask(() => {
             if (request.method === 'initialize') {
@@ -67,6 +73,14 @@ class ScriptedProcess extends EventEmitter implements CodexJsonlProcess {
                 }],
                 nextCursor: null,
               });
+            } else if (request.method === 'thread/start') {
+              this.reply(request.id, { thread: { id: 'thread-new' } });
+            } else if (request.method === 'thread/resume') {
+              this.reply(request.id, { thread: { id: request.params?.threadId } });
+            } else if (request.method === 'turn/start') {
+              this.reply(request.id, { turn: { id: 'turn-1', status: 'inProgress' } });
+            } else if (request.method === 'turn/interrupt') {
+              this.reply(request.id, {});
             }
           });
         }
@@ -83,6 +97,10 @@ class ScriptedProcess extends EventEmitter implements CodexJsonlProcess {
     this.stdout.write(`${JSON.stringify({ id, result })}\n`);
   }
 
+  notify(method: string, params: unknown): void {
+    this.stdout.write(`${JSON.stringify({ method, params })}\n`);
+  }
+
   kill(): boolean {
     this.killed = true;
     return true;
@@ -90,6 +108,70 @@ class ScriptedProcess extends EventEmitter implements CodexJsonlProcess {
 }
 
 describe('per-account Codex app-server manager', () => {
+  it('keeps typed execution RPC and notifications inside the account manager', async () => {
+    let process: ScriptedProcess | undefined;
+    const terminate = vi.fn();
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: () => ({
+        found: true,
+        path: '/usr/local/bin/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      spawn: (_path, _args, options) => {
+        process = new ScriptedProcess(options.env.CODEX_HOME);
+        return process;
+      },
+      terminate,
+    });
+    const notifications = vi.fn();
+    const unsubscribe = manager.subscribe('account-a', notifications);
+    const options = {
+      cwd: '/worktree', model: 'gpt-5.3-codex', developerInstructions: 'Do the task',
+      approvalPolicy: 'never' as const, sandbox: 'workspace-write' as const,
+      networkAccess: false as const,
+    };
+
+    await expect(manager.startThread('account-a', options)).resolves.toEqual({
+      threadId: 'thread-new', runtimeVersion: '0.144.6',
+    });
+    await expect(manager.resumeThread('account-a', { ...options, threadId: 'thread-new' }))
+      .resolves.toEqual({ threadId: 'thread-new', runtimeVersion: '0.144.6' });
+    await expect(manager.startTurn('account-a', {
+      threadId: 'thread-new', input: 'Implement it', cwd: '/worktree',
+      model: 'gpt-5.3-codex', reasoningEffort: 'high', approvalPolicy: 'never',
+      sandboxPolicy: {
+        type: 'workspaceWrite', networkAccess: false, writableRoots: ['/worktree'],
+        excludeTmpdirEnvVar: true, excludeSlashTmp: true,
+      },
+    })).resolves.toEqual({ turnId: 'turn-1' });
+    await manager.interruptTurn('account-a', 'thread-new', 'turn-1');
+    process?.notify('warning', { threadId: 'thread-new', message: 'notice' });
+    expect(notifications).toHaveBeenCalledWith('warning', {
+      threadId: 'thread-new', message: 'notice',
+    });
+
+    expect(process?.requests.find((request) => request.method === 'thread/start')?.params)
+      .toEqual(expect.objectContaining({
+        cwd: '/worktree', approvalPolicy: 'never', sandbox: 'workspace-write',
+        config: { sandbox_workspace_write: { network_access: false } },
+      }));
+    expect(process?.requests.find((request) => request.method === 'turn/start')?.params)
+      .toEqual(expect.objectContaining({
+        input: [{ type: 'text', text: 'Implement it', text_elements: [] }],
+        effort: 'high',
+        sandboxPolicy: {
+          type: 'workspaceWrite', networkAccess: false, writableRoots: ['/worktree'],
+          excludeTmpdirEnvVar: true, excludeSlashTmp: true,
+        },
+      }));
+    unsubscribe();
+    await manager.retireAccount('account-a');
+    expect(terminate).toHaveBeenCalledWith(process);
+  });
   it('uses the canonical isolated home reported by macOS app-server', async () => {
     let spawnedHome = '';
     const manager = createCodexAppServerManager({

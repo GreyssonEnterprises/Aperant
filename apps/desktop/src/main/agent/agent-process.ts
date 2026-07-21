@@ -851,6 +851,7 @@ export class AgentProcessManager {
       startedAt: new Date(),
       spawnId,
       worker: null, // Will be set after bridge.spawn()
+      workerBridge: null,
     });
 
     // Check if killed during setup
@@ -918,7 +919,10 @@ export class AgentProcessManager {
     }
 
     // Store the worker reference for kill support
-    this.state.updateProcess(taskId, { worker: bridge.workerInstance });
+    this.state.updateProcess(taskId, {
+      worker: bridge.workerInstance,
+      workerBridge: bridge,
+    });
 
     // Check if killed during bridge setup
     const currentSpawnId = this.state.getProcess(taskId)?.spawnId ?? spawnId;
@@ -951,12 +955,18 @@ export class AgentProcessManager {
     // If process hasn't been spawned yet (still in async setup phase, before spawn() returns),
     // just remove from tracking. The spawn() call will still complete, but the spawned process
     // will be terminated by the post-spawn wasSpawnKilled() check (see spawnProcess() after updateProcess).
-    if (!agentProcess.process && !agentProcess.worker) {
+    if (!agentProcess.process && !agentProcess.worker && !agentProcess.workerBridge) {
       this.state.deleteProcess(taskId);
       return true;
     }
 
     // Handle worker thread termination
+    if (agentProcess.workerBridge) {
+      void agentProcess.workerBridge.terminate();
+      this.state.deleteProcess(taskId);
+      return true;
+    }
+
     if (agentProcess.worker) {
       try {
         agentProcess.worker.terminate();
@@ -995,14 +1005,14 @@ export class AgentProcessManager {
         }
 
         // If process/worker hasn't been spawned yet, just kill and resolve
-        if (!agentProcess.process && !agentProcess.worker) {
+        if (!agentProcess.process && !agentProcess.worker && !agentProcess.workerBridge) {
           this.killProcess(taskId);
           resolve();
           return;
         }
 
         // Worker threads terminate immediately
-        if (agentProcess.worker && !agentProcess.process) {
+        if ((agentProcess.worker || agentProcess.workerBridge) && !agentProcess.process) {
           this.killProcess(taskId);
           resolve();
           return;

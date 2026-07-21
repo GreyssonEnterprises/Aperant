@@ -421,6 +421,9 @@ export async function resolveAuthFromQueue(
       resolvedProvider: supportedProvider,
       resolvedModelId,
       reasoningConfig: modelSpec?.reasoning ?? { type: 'none' },
+      executionBackend: auth.source === 'codex-app-server'
+        ? 'codex-app-server'
+        : 'vercel',
     };
   }
 
@@ -503,6 +506,13 @@ async function resolveCredentialsForAccount(
       source: 'default',
       baseURL: account.baseUrl,
     };
+  }
+
+  // Subscription OAuth is owned by the isolated Codex app-server. No token or
+  // token-file path may enter workerData or the Vercel provider path.
+  if (account.authType === 'oauth' && account.provider === 'openai' &&
+    account.billingModel === 'subscription') {
+    return { apiKey: '', source: 'codex-app-server' };
   }
 
   // File-based OAuth (e.g., OpenAI Codex subscription)

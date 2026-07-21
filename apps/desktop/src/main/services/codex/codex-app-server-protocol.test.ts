@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  parseThreadResumeResponse,
+  parseThreadStartResponse,
+  parseTurnStartResponse,
   parseAccountReadResponse,
   parseInitializeResponse,
   parseLoginStartResponse,
@@ -7,6 +10,21 @@ import {
 } from './codex-app-server-protocol';
 
 describe('Codex app-server protocol validation', () => {
+  it('accepts the execution response subset and rejects missing identifiers', () => {
+    expect(parseThreadStartResponse({ thread: { id: 'thread-1' } })).toEqual({
+      thread: { id: 'thread-1' },
+    });
+    expect(parseThreadResumeResponse({ thread: { id: 'thread-1' } })).toEqual({
+      thread: { id: 'thread-1' },
+    });
+    expect(parseTurnStartResponse({ turn: { id: 'turn-1', status: 'inProgress' } })).toEqual({
+      turn: { id: 'turn-1', status: 'inProgress' },
+    });
+    expect(parseThreadStartResponse({ thread: {} })).toBeNull();
+    expect(parseThreadResumeResponse({})).toBeNull();
+    expect(parseTurnStartResponse({ turn: { id: '', status: 'inProgress' } })).toBeNull();
+    expect(parseTurnStartResponse({ turn: { id: 'turn-1', status: 'unknown' } })).toBeNull();
+  });
   it('rejects empty required initialize, login, and model strings', () => {
     expect(parseInitializeResponse({
       codexHome: '',

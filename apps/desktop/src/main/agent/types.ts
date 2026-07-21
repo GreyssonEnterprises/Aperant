@@ -18,6 +18,8 @@ export interface AgentProcess {
   queueProcessType?: QueueProcessType; // Type of queue process (ideation or roadmap)
   /** Worker thread instance for TypeScript AI SDK agent execution */
   worker?: Worker | null;
+  /** Main-process bridge, also owns cooperative Codex cancellation. */
+  workerBridge?: { terminate(): Promise<void> } | null;
 }
 
 export interface ExecutionProgressData {

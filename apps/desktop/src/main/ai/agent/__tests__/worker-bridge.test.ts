@@ -10,6 +10,23 @@ import type { SessionResult } from '../../session/types';
 
 // Track created workers
 const createdWorkers: EventEmitter[] = [];
+const mockCodexRun = vi.fn();
+const mockCodexCancel = vi.fn().mockResolvedValue(undefined);
+let mockCodexActive = false;
+
+vi.mock('../../../services/codex/codex-execution-runtime', () => ({
+  createMainCodexExecutionBackend: () => ({
+    run: (...args: unknown[]) => {
+      mockCodexActive = true;
+      return mockCodexRun(...args);
+    },
+    cancel: async () => {
+      mockCodexActive = false;
+      return mockCodexCancel();
+    },
+    get isActive() { return mockCodexActive; },
+  }),
+}));
 
 vi.mock('worker_threads', () => {
   const { EventEmitter: EE } = require('events') as typeof import('events');
@@ -105,6 +122,9 @@ describe('WorkerBridge', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     createdWorkers.length = 0;
+    mockCodexActive = false;
+    mockCodexRun.mockReset();
+    mockCodexCancel.mockClear();
     bridge = new WorkerBridge();
   });
 
@@ -122,6 +142,54 @@ describe('WorkerBridge', () => {
     it('throws if worker already active', () => {
       bridge.spawn(createConfig());
       expect(() => bridge.spawn(createConfig())).toThrow('already has an active worker');
+    });
+
+    it('routes Codex subscription execution in main without transferring credentials', async () => {
+      let finish!: (value: SessionResult) => void;
+      mockCodexRun.mockReturnValue(new Promise<SessionResult>((resolve) => { finish = resolve; }));
+      const config = createConfig();
+      config.session.executionBackend = 'codex-app-server';
+      config.session.accountId = 'account-codex';
+      config.session.apiKey = 'must-never-cross';
+      config.session.modelId = 'gpt-5.3-codex';
+      const exit = vi.fn();
+      bridge.on('exit', exit);
+
+      bridge.spawn(config);
+
+      const worker = getWorker();
+      expect(createdWorkers).toHaveLength(1);
+      expect(JSON.stringify((worker as unknown as { workerData: unknown }).workerData))
+        .not.toContain('must-never-cross');
+      worker.emit('message', {
+        type: 'codex-execute',
+        taskId: 'task-123',
+        projectId: 'proj-456',
+        requestId: 'request-1',
+        data: {
+          accountId: 'account-codex',
+          modelId: 'gpt-5.3-codex',
+          systemPrompt: 'test',
+          input: 'hello',
+          worktreePath: '/project',
+          specDir: '/specs',
+          phase: 'coding',
+        },
+      } satisfies WorkerMessage);
+      expect(mockCodexRun).toHaveBeenCalledWith(expect.not.objectContaining({
+        apiKey: expect.anything(),
+      }), expect.any(Function));
+      expect(mockCodexRun).toHaveBeenCalledWith(expect.objectContaining({
+        accountId: 'account-codex', modelId: 'gpt-5.3-codex', worktreePath: '/project',
+      }), expect.any(Function));
+      finish(createSessionResult());
+      await vi.waitFor(() => expect(worker.postMessage).toHaveBeenCalledWith({
+        type: 'codex-result', requestId: 'request-1', result: createSessionResult(),
+      }));
+      worker.emit('message', {
+        type: 'result', taskId: 'task-123', projectId: 'proj-456', data: createSessionResult(),
+      } satisfies WorkerMessage);
+      expect(exit).toHaveBeenCalledWith('task-123', 0, 'task-execution', 'proj-456');
     });
   });
 
@@ -330,6 +398,28 @@ describe('WorkerBridge', () => {
       });
 
       await expect(bridge.terminate()).resolves.toBeUndefined();
+    });
+
+    it('cancels a main-process Codex execution cooperatively', async () => {
+      mockCodexRun.mockReturnValue(new Promise(() => undefined));
+      const config = createConfig();
+      config.session.executionBackend = 'codex-app-server';
+      config.session.accountId = 'account-codex';
+      bridge.spawn(config);
+      getWorker().emit('message', {
+        type: 'codex-execute',
+        taskId: 'task-123',
+        requestId: 'request-1',
+        data: {
+          accountId: 'account-codex', modelId: 'gpt-5.3-codex', systemPrompt: 'test',
+          input: 'hello', worktreePath: '/project', specDir: '/specs', phase: 'coding',
+        },
+      } satisfies WorkerMessage);
+
+      await bridge.terminate();
+
+      expect(mockCodexCancel).toHaveBeenCalledTimes(1);
+      expect(bridge.isActive).toBe(false);
     });
   });
 });

@@ -140,6 +140,8 @@ export class AgentManager extends EventEmitter {
     provider: string;
     modelId: string;
     configDir?: string;
+    accountId?: string;
+    executionBackend: 'vercel' | 'codex-app-server';
   }> {
     // Read provider accounts and priority order from settings
     const settings = readSettingsFile();
@@ -181,6 +183,8 @@ export class AgentManager extends EventEmitter {
           provider: resolved.resolvedProvider,
           modelId: resolved.resolvedModelId,
           configDir: undefined, // Queue-based auth handles its own token refresh
+          accountId: resolved.accountId,
+          executionBackend: resolved.executionBackend,
         };
       }
       console.warn('[AgentManager] No available account in provider queue, falling back to legacy profile');
@@ -192,7 +196,7 @@ export class AgentManager extends EventEmitter {
     const configDir = activeProfile?.configDir;
     const auth = await resolveAuth({ provider: 'anthropic', configDir });
     const provider = detectProviderFromModel(requestedModel) ?? 'anthropic';
-    return { auth, provider, modelId: requestedModel, configDir };
+    return { auth, provider, modelId: requestedModel, configDir, executionBackend: 'vercel' };
   }
 
   /**
@@ -391,10 +395,14 @@ export class AgentManager extends EventEmitter {
       projectDir: projectPath,
       provider: resolved.provider,
       modelId: resolved.modelId,
-      apiKey: resolved.auth?.apiKey,
-      baseURL: resolved.auth?.baseURL,
-      configDir: resolved.configDir,
-      oauthTokenFilePath: resolved.auth?.oauthTokenFilePath,
+      executionBackend: resolved.executionBackend,
+      accountId: resolved.accountId,
+      ...(resolved.executionBackend === 'vercel' ? {
+        apiKey: resolved.auth?.apiKey,
+        baseURL: resolved.auth?.baseURL,
+        configDir: resolved.configDir,
+        oauthTokenFilePath: resolved.auth?.oauthTokenFilePath,
+      } : {}),
       mcpOptions: {
         context7Enabled: true,
         memoryEnabled: !!process.env.GRAPHITI_MCP_URL,
@@ -515,10 +523,14 @@ export class AgentManager extends EventEmitter {
       sourceSpecDir: worktreePath ? specDir : undefined,
       provider: resolved.provider,
       modelId: resolved.modelId,
-      apiKey: resolved.auth?.apiKey,
-      baseURL: resolved.auth?.baseURL,
-      configDir: resolved.configDir,
-      oauthTokenFilePath: resolved.auth?.oauthTokenFilePath,
+      executionBackend: resolved.executionBackend,
+      accountId: resolved.accountId,
+      ...(resolved.executionBackend === 'vercel' ? {
+        apiKey: resolved.auth?.apiKey,
+        baseURL: resolved.auth?.baseURL,
+        configDir: resolved.configDir,
+        oauthTokenFilePath: resolved.auth?.oauthTokenFilePath,
+      } : {}),
       mcpOptions: {
         context7Enabled: true,
         memoryEnabled: !!process.env.GRAPHITI_MCP_URL,
@@ -618,10 +630,14 @@ export class AgentManager extends EventEmitter {
       projectDir: effectiveProjectDir,
       provider: resolved.provider,
       modelId: resolved.modelId,
-      apiKey: resolved.auth?.apiKey,
-      baseURL: resolved.auth?.baseURL,
-      configDir: resolved.configDir,
-      oauthTokenFilePath: resolved.auth?.oauthTokenFilePath,
+      executionBackend: resolved.executionBackend,
+      accountId: resolved.accountId,
+      ...(resolved.executionBackend === 'vercel' ? {
+        apiKey: resolved.auth?.apiKey,
+        baseURL: resolved.auth?.baseURL,
+        configDir: resolved.configDir,
+        oauthTokenFilePath: resolved.auth?.oauthTokenFilePath,
+      } : {}),
       mcpOptions: {
         context7Enabled: true,
         memoryEnabled: !!process.env.GRAPHITI_MCP_URL,

@@ -12,10 +12,18 @@ import {
   parseAccountReadResponse,
   parseLoginStartResponse,
   parseModelListResponse,
+  parseThreadResumeResponse,
+  parseThreadStartResponse,
+  parseTurnStartResponse,
   type CodexAccountReadResponse,
   type CodexLoginStartResponse,
   type CodexModel,
 } from './codex-app-server-protocol';
+import type {
+  CodexExecutionManager,
+  CodexExecutionThreadOptions,
+  CodexExecutionTurnOptions,
+} from './codex-execution-backend';
 
 const MAX_MODEL_PAGES = 20;
 const MAX_CATALOG_MODELS = 1_000;
@@ -50,7 +58,7 @@ export interface CodexAppServerManagerDependencies {
   onNotification?: (accountId: string, method: string, params: unknown) => void | Promise<void>;
 }
 
-export interface CodexAppServerManager {
+export interface CodexAppServerManager extends CodexExecutionManager {
   readAccount(accountId: string): Promise<CodexAccountReadResponse>;
   startLogin(accountId: string): Promise<CodexLoginStartResponse>;
   listModels(accountId: string): Promise<ModelDescriptor[]>;
@@ -60,6 +68,7 @@ export interface CodexAppServerManager {
 interface AccountSession {
   client: CodexAppServerClient;
   process: CodexJsonlProcess;
+  runtimeVersion: string;
 }
 
 interface PendingSession {
@@ -202,6 +211,10 @@ export function createCodexAppServerManager(
   const canonicalOwners = new Map<string, string>();
   const terminations = new WeakMap<object, Promise<void>>();
   const expectedTerminations = new WeakSet<object>();
+  const notificationListeners = new Map<
+    string,
+    Set<(method: string, params: unknown) => void>
+  >();
   let shuttingDown = false;
   let shutdownPromise: Promise<void> | undefined;
   let canonicalRootPromise: Promise<string> | undefined;
@@ -332,6 +345,13 @@ export function createCodexAppServerManager(
           else if (!expectedTerminations.has(child)) quarantineAccount(accountId);
         },
         onNotification: (method, params) => {
+          for (const listener of notificationListeners.get(accountId) ?? []) {
+            try {
+              listener(method, params);
+            } catch {
+              dependencies.onDiagnostic?.('Codex execution notification handler failed');
+            }
+          }
           void Promise.resolve(dependencies.onNotification?.(accountId, method, params)).catch(() => {
             dependencies.onDiagnostic?.('Codex app-server notification handler failed');
           });
@@ -344,7 +364,7 @@ export function createCodexAppServerManager(
           `Codex CLI ${detection.version ?? 'newer'} passed runtime protocol validation`,
         );
       }
-      return { client, process: child };
+      return { client, process: child, runtimeVersion: detection.version ?? 'unknown' };
     } catch (error) {
       if (entry.process && !entry.processEnded) await terminateOnce(entry.process);
       throw publicError(error);
@@ -377,8 +397,87 @@ export function createCodexAppServerManager(
     return parsed;
   }
 
+  async function authenticatedSession(accountId: string): Promise<AccountSession> {
+    const account = await readAccount(accountId);
+    if (account.account?.type !== 'chatgpt') {
+      throw new CodexRuntimeError('authentication-required');
+    }
+    return getSession(accountId);
+  }
+
+  function threadParams(options: CodexExecutionThreadOptions) {
+    return {
+      cwd: options.cwd,
+      model: options.model,
+      developerInstructions: options.developerInstructions,
+      approvalPolicy: options.approvalPolicy,
+      sandbox: options.sandbox,
+      config: { sandbox_workspace_write: { network_access: options.networkAccess } },
+    } as const;
+  }
+
   return {
     readAccount,
+    async getRuntimeVersion(accountId) {
+      return (await authenticatedSession(accountId)).runtimeVersion;
+    },
+    subscribe(accountId, listener) {
+      let listeners = notificationListeners.get(accountId);
+      if (!listeners) {
+        listeners = new Set();
+        notificationListeners.set(accountId, listeners);
+      }
+      listeners.add(listener);
+      return () => {
+        listeners?.delete(listener);
+        if (listeners?.size === 0) notificationListeners.delete(accountId);
+      };
+    },
+    async startThread(accountId, options) {
+      const session = await authenticatedSession(accountId);
+      const parsed = parseThreadStartResponse(await session.client.request(
+        'thread/start',
+        threadParams(options),
+      ));
+      if (!parsed) throw new CodexRuntimeError('protocol-error');
+      return { threadId: parsed.thread.id, runtimeVersion: session.runtimeVersion };
+    },
+    async resumeThread(accountId, options) {
+      const session = await authenticatedSession(accountId);
+      const parsed = parseThreadResumeResponse(await session.client.request(
+        'thread/resume',
+        { ...threadParams(options), threadId: options.threadId },
+      ));
+      if (!parsed) throw new CodexRuntimeError('protocol-error');
+      return { threadId: parsed.thread.id, runtimeVersion: session.runtimeVersion };
+    },
+    async startTurn(accountId, options: CodexExecutionTurnOptions) {
+      const session = await authenticatedSession(accountId);
+      const parsed = parseTurnStartResponse(await session.client.request('turn/start', {
+        threadId: options.threadId,
+        input: [{ type: 'text', text: options.input, text_elements: [] }],
+        cwd: options.cwd,
+        model: options.model,
+        ...(options.reasoningEffort ? { effort: options.reasoningEffort } : {}),
+        ...(options.outputSchema ? { outputSchema: options.outputSchema } : {}),
+        approvalPolicy: options.approvalPolicy,
+        sandboxPolicy: options.sandboxPolicy,
+      }));
+      if (!parsed) throw new CodexRuntimeError('protocol-error');
+      return { turnId: parsed.turn.id };
+    },
+    async interruptTurn(accountId, threadId, turnId) {
+      const session = await getSession(accountId);
+      await session.client.request('turn/interrupt', { threadId, turnId });
+    },
+    async retireAccount(accountId) {
+      const entry = sessions.get(accountId);
+      if (!entry) return;
+      const session = await entry.promise;
+      if (sessions.get(accountId)?.token === entry.token) sessions.delete(accountId);
+      session.client.close();
+      await trackAccountTermination(accountId, session.process);
+    },
     async startLogin(accountId) {
       const session = await getSession(accountId);
       const parsed = parseLoginStartResponse(await session.client.request(
@@ -389,11 +488,7 @@ export function createCodexAppServerManager(
       return parsed;
     },
     async listModels(accountId) {
-      const account = await readAccount(accountId);
-      if (account.account?.type !== 'chatgpt') {
-        throw new CodexRuntimeError('authentication-required');
-      }
-      const session = await getSession(accountId);
+      const session = await authenticatedSession(accountId);
       const models: ModelDescriptor[] = [];
       const seenCursors = new Set<string>();
       let cursor: string | null = null;

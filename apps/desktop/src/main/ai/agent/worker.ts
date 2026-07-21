@@ -48,6 +48,7 @@ import { loadProjectInstructions, injectContext } from '../prompts/prompt-loader
 import { createMcpClientsForAgent, mergeMcpTools, closeAllMcpClients } from '../mcp/client';
 import type { McpClientResult } from '../mcp/types';
 import { runProjectIndexer } from '../project/project-indexer';
+import { toJSONSchema } from 'zod';
 
 // =============================================================================
 // Validation
@@ -111,12 +112,71 @@ function postTaskEvent(eventType: string, extra?: Record<string, unknown>): void
 // =============================================================================
 
 const abortController = new AbortController();
+let codexRequestSequence = 0;
+const pendingCodexRequests = new Map<
+  string,
+  { resolve: (result: SessionResult) => void; reject: (error: Error) => void }
+>();
 
 parentPort.on('message', (msg: MainToWorkerMessage) => {
   if (msg.type === 'abort') {
     abortController.abort();
+    for (const request of pendingCodexRequests.values()) {
+      request.reject(new Error('Codex execution cancelled'));
+    }
+    pendingCodexRequests.clear();
+  } else if (msg.type === 'codex-result') {
+    const request = pendingCodexRequests.get(msg.requestId);
+    if (!request) return;
+    pendingCodexRequests.delete(msg.requestId);
+    request.resolve(msg.result);
+  } else if (msg.type === 'codex-error') {
+    const request = pendingCodexRequests.get(msg.requestId);
+    if (!request) return;
+    pendingCodexRequests.delete(msg.requestId);
+    request.reject(new Error(msg.message));
   }
 });
+
+function runCodexSessionInMain(
+  session: SerializableSessionConfig,
+  phase: Phase,
+  systemPrompt: string,
+  input: string,
+  reasoningEffort?: string,
+  outputSchema?: import('zod').ZodSchema,
+): Promise<SessionResult> {
+  if (!session.accountId) return Promise.reject(new Error('Codex subscription account is required'));
+  codexRequestSequence += 1;
+  const requestId = `${config.taskId}-${codexRequestSequence}`;
+  const result = new Promise<SessionResult>((resolve, reject) => {
+    pendingCodexRequests.set(requestId, { resolve, reject });
+  });
+  postMessage({
+    type: 'codex-execute',
+    taskId: config.taskId,
+    projectId: config.projectId,
+    requestId,
+    data: {
+      accountId: session.accountId,
+      modelId: session.modelId,
+      ...(reasoningEffort ? { reasoningEffort } : {}),
+      systemPrompt,
+      input,
+      worktreePath: session.toolContext.cwd,
+      specDir: session.specDir,
+      phase,
+      ...(outputSchema ? { outputSchema: toJSONSchema(outputSchema) } : {}),
+    },
+  });
+  return result.then((sessionResult) => {
+    if (!outputSchema || !sessionResult.structuredOutput) return sessionResult;
+    const validated = outputSchema.safeParse(sessionResult.structuredOutput);
+    return validated.success
+      ? { ...sessionResult, structuredOutput: validated.data as Record<string, unknown> }
+      : { ...sessionResult, structuredOutput: undefined };
+  });
+}
 
 // =============================================================================
 // Shared Helpers
@@ -262,6 +322,27 @@ async function runSingleSession(
   // would create a mismatch when the provider queue selected a non-Anthropic account.
   const phaseModelId = baseSession.modelId;
   const phaseThinking = await getPhaseThinking(specDir, phase);
+
+  if (baseSession.executionBackend === 'codex-app-server') {
+    const input = initialUserMessage ?? baseSession.initialMessages
+      .map((message) => `${message.role}: ${message.content}`)
+      .join('\n\n');
+    if (logWriter && !skipPhaseLogging) logWriter.startPhase(phase);
+    if (logWriter && subtaskId) logWriter.setSubtask(subtaskId);
+    const sessionResult = await runCodexSessionInMain(
+      baseSession,
+      phase,
+      systemPrompt,
+      input,
+      phaseThinking,
+      outputSchema,
+    );
+    if (logWriter && !skipPhaseLogging) {
+      logWriter.endPhase(phase, sessionResult.outcome === 'completed');
+    }
+    if (logWriter) logWriter.setSubtask(undefined);
+    return sessionResult;
+  }
 
   const model = createProvider({
     config: {
@@ -417,7 +498,7 @@ async function run(): Promise<void> {
 
     // Route to spec orchestrator for spec_orchestrator agent type
     if (session.agentType === 'spec_orchestrator') {
-      if (session.useAgenticOrchestration) {
+      if (session.useAgenticOrchestration && session.executionBackend !== 'codex-app-server') {
         await runAgenticSpecOrchestrator(session, toolContext, registry);
       } else {
         await runSpecOrchestrator(session, toolContext, registry);
@@ -446,6 +527,26 @@ async function runDefaultSession(
   toolContext: ToolContext,
   registry: ToolRegistry,
 ): Promise<void> {
+  if (session.executionBackend === 'codex-app-server') {
+    const phase = session.phase ?? 'coding';
+    const input = session.initialMessages
+      .map((message) => `${message.role}: ${message.content}`)
+      .join('\n\n');
+    const result = await runCodexSessionInMain(
+      session,
+      phase,
+      session.systemPrompt,
+      input,
+      session.thinkingLevel,
+    );
+    postMessage({
+      type: 'result',
+      taskId: config.taskId,
+      data: result,
+      projectId: config.projectId,
+    });
+    return;
+  }
   const model = createProvider({
     config: {
       provider: session.provider as SupportedProvider,
