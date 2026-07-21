@@ -1,9 +1,11 @@
 import { CodexRuntimeError } from './services/codex/codex-errors';
 
 export interface AppQuitCoordinatorDependencies {
-  cleanup: () => Promise<void>;
+  shutdownCodex: () => Promise<void>;
+  cleanupLegacy: () => Promise<void>;
   quit: () => void;
-  reportBlocked: (error: CodexRuntimeError) => void;
+  reportCodexBlocked: (error: CodexRuntimeError) => void;
+  reportCleanupFailure: (error: unknown) => void;
 }
 
 export interface AppQuitEvent {
@@ -17,34 +19,45 @@ export interface AppQuitCoordinator {
 export function createAppQuitCoordinator(
   dependencies: AppQuitCoordinatorDependencies,
 ): AppQuitCoordinator {
-  let state: 'idle' | 'cleaning' | 'ready' | 'blocked' = 'idle';
-  let cleanup: Promise<void> | undefined;
+  let state: 'idle' | 'cleaning' | 'ready' | 'codex-blocked' = 'idle';
+  let operation: Promise<void> | undefined;
   let blockedError: CodexRuntimeError | undefined;
+
+  async function runCleanup(): Promise<void> {
+    try {
+      await dependencies.shutdownCodex();
+    } catch (error) {
+      blockedError = error instanceof CodexRuntimeError
+        ? error
+        : new CodexRuntimeError('termination-failed');
+      state = 'codex-blocked';
+      dependencies.reportCodexBlocked(blockedError);
+      return;
+    }
+
+    try {
+      await dependencies.cleanupLegacy();
+    } catch (error) {
+      dependencies.reportCleanupFailure(error);
+    }
+    state = 'ready';
+    dependencies.quit();
+  }
 
   return {
     async handleBeforeQuit(event) {
       if (state === 'ready') return;
       event.preventDefault();
-      if (state === 'blocked') {
-        dependencies.reportBlocked(blockedError ?? new CodexRuntimeError('termination-failed'));
+      if (state === 'codex-blocked') {
+        dependencies.reportCodexBlocked(
+          blockedError ?? new CodexRuntimeError('termination-failed'),
+        );
         return;
       }
-      if (cleanup) return cleanup;
+      if (operation) return operation;
       state = 'cleaning';
-      cleanup = dependencies.cleanup().then(
-        () => {
-          state = 'ready';
-          dependencies.quit();
-        },
-        (error: unknown) => {
-          blockedError = error instanceof CodexRuntimeError
-            ? error
-            : new CodexRuntimeError('termination-failed');
-          state = 'blocked';
-          dependencies.reportBlocked(blockedError);
-        },
-      );
-      return cleanup;
+      operation = runCleanup();
+      return operation;
     },
   };
 }

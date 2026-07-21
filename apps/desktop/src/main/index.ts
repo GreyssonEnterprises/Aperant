@@ -664,18 +664,18 @@ app.on('window-all-closed', () => {
 });
 
 const appQuitCoordinator = createAppQuitCoordinator({
-  cleanup: async () => {
+  shutdownCodex: () => shutdownCodexAppServerRuntime(),
+  cleanupLegacy: async () => {
     stopPeriodicUpdates();
     getUsageMonitor().stop();
     console.warn('[main] Usage monitor stopped');
     if (agentManager) await agentManager.killAll();
     if (terminalManager) await terminalManager.killAll();
-    await shutdownCodexAppServerRuntime();
     ptyDaemonClient.shutdown();
     console.warn('[main] PTY daemon client shutdown complete');
   },
   quit: () => app.quit(),
-  reportBlocked: (error) => {
+  reportCodexBlocked: (error) => {
     const publicError = toPublicCatalogError(error);
     appLog.error('[main] Safe quit blocked:', publicError);
     dialog.showErrorBox(
@@ -686,10 +686,13 @@ const appQuitCoordinator = createAppQuitCoordinator({
       'unsupported on Windows.',
     );
   },
+  reportCleanupFailure: () => {
+    appLog.error('[main] Error during pre-quit cleanup');
+  },
 });
 
-// Pause quit until asynchronous cleanup is verified. A cleanup failure keeps
-// Electron alive instead of orphaning a Codex process or tearing down live PTYs.
+// Verify Codex ownership first. Only an unverified Codex exit blocks quitting;
+// legacy cleanup retains its prior best-effort quit behavior.
 app.on('before-quit', (event) => {
   void appQuitCoordinator.handleBeforeQuit(event);
 });
