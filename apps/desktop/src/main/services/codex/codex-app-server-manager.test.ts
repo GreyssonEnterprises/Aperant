@@ -10,6 +10,8 @@ import {
 import type { CodexJsonlProcess } from './codex-app-server-client';
 import { CodexRuntimeError } from './codex-errors';
 
+type FinalizeStdin = (process: ScriptedProcess, done: (error?: Error | null) => void) => void;
+
 class ScriptedProcess extends EventEmitter implements CodexJsonlProcess {
   readonly stdout = new PassThrough();
   readonly stderr = new PassThrough();
@@ -18,7 +20,7 @@ class ScriptedProcess extends EventEmitter implements CodexJsonlProcess {
   pid = 8080;
   killed = false;
 
-  constructor(readonly codexHome: string) {
+  constructor(readonly codexHome: string, finalizeStdin?: FinalizeStdin) {
     super();
     let buffered = '';
     this.stdin = new Writable({
@@ -69,6 +71,10 @@ class ScriptedProcess extends EventEmitter implements CodexJsonlProcess {
           });
         }
         done();
+      },
+      final: (done) => {
+        if (finalizeStdin) finalizeStdin(this, done);
+        else done();
       },
     });
   }
@@ -725,6 +731,181 @@ describe('per-account Codex app-server manager', () => {
 
     expect(process?.stdin.writableEnded).toBe(true);
     expect(process?.kill).not.toHaveBeenCalled();
+  });
+
+  it('closes the client before EOF fences a request already past getSession', async () => {
+    let process: ScriptedProcess | undefined;
+    const terminate = vi.fn(async (target: CodexJsonlProcess) => {
+      target.stdin.end();
+      (target as unknown as EventEmitter).emit('exit', 0, null);
+    });
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: async () => ({
+        found: true,
+        path: '/native/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      baseEnv: { PATH: '/usr/bin' },
+      spawn: (_path, _args, options) => {
+        process = new ScriptedProcess(options.env.CODEX_HOME);
+        return process;
+      },
+      terminate,
+    });
+    await manager.readAccount('account-a');
+    const accountReadCount = process?.methods.filter(
+      (method) => method === 'account/read',
+    ).length ?? 0;
+
+    const lateRequest = manager.readAccount('account-a');
+    const shutdown = manager.shutdown();
+
+    await expect(lateRequest).rejects.toMatchObject({ code: 'shutdown' });
+    await shutdown;
+    expect(process?.methods.filter((method) => method === 'account/read')).toHaveLength(
+      accountReadCount,
+    );
+    expect(terminate).toHaveBeenCalledOnce();
+  });
+
+  it.each(['EPIPE', 'ERR_STREAM_DESTROYED'] as const)(
+    'handles stdin %s but requires a later clean child exit and cleans observers',
+    async (errorCode) => {
+      vi.useFakeTimers();
+      try {
+        let process: ScriptedProcess | undefined;
+        let stdinErrorListeners = 0;
+        const manager = createCodexAppServerManager({
+          codexHomeRoot: '/tmp/aperant/codex-accounts',
+          detectCli: async () => ({
+            found: true,
+            path: '/native/codex',
+            version: '0.144.6',
+            runtimeValidationRequired: false,
+          }),
+          ensureDirectory: vi.fn(async () => undefined),
+          canonicalizeDirectory: async (directory) => directory,
+          baseEnv: { PATH: '/usr/bin' },
+          spawn: (_path, _args, options) => {
+            process = new ScriptedProcess(options.env.CODEX_HOME, (target, done) => {
+              stdinErrorListeners = target.stdin.listenerCount('error');
+              if (stdinErrorListeners > 0) {
+                done(Object.assign(new Error('closed pipe'), { code: errorCode }));
+              } else {
+                done();
+              }
+              queueMicrotask(() => target.emit('exit', 0, null));
+            });
+            return process;
+          },
+          shutdownTimeoutMs: 20,
+        });
+        await manager.readAccount('account-a');
+
+        await expect(manager.shutdown()).resolves.toBeUndefined();
+        expect(stdinErrorListeners).toBeGreaterThan(0);
+        expect(process?.stdin.listenerCount('error')).toBe(0);
+        expect(process?.stdin.listenerCount('close')).toBe(0);
+        expect(process?.stdin.listenerCount('finish')).toBe(0);
+        expect(process?.listenerCount('exit')).toBe(1);
+        expect(process?.listenerCount('error')).toBe(1);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('fails shutdown on a non-EPIPE stdin error even if the child exits zero', async () => {
+    let stdinErrorListeners = 0;
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: async () => ({
+        found: true,
+        path: '/native/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      baseEnv: { PATH: '/usr/bin' },
+      spawn: (_path, _args, options) => new ScriptedProcess(
+        options.env.CODEX_HOME,
+        (process, done) => {
+          stdinErrorListeners = process.stdin.listenerCount('error');
+          if (stdinErrorListeners > 0) {
+            done(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+          } else {
+            done();
+          }
+          queueMicrotask(() => process.emit('exit', 0, null));
+        },
+      ),
+      shutdownTimeoutMs: 20,
+    });
+    await manager.readAccount('account-a');
+
+    await expect(manager.shutdown()).rejects.toMatchObject({ code: 'termination-failed' });
+    expect(stdinErrorListeners).toBeGreaterThan(0);
+  });
+
+  it('observes stdin close but still times out without child exit', async () => {
+    let stdinCloseListeners = 0;
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: async () => ({
+        found: true,
+        path: '/native/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      baseEnv: { PATH: '/usr/bin' },
+      spawn: (_path, _args, options) => new ScriptedProcess(
+        options.env.CODEX_HOME,
+        (process, done) => {
+          stdinCloseListeners = process.stdin.listenerCount('close');
+          done();
+        },
+      ),
+      shutdownTimeoutMs: 5,
+    });
+    await manager.readAccount('account-a');
+
+    await expect(manager.shutdown()).rejects.toMatchObject({ code: 'termination-failed' });
+    expect(stdinCloseListeners).toBeGreaterThan(0);
+  });
+
+  it('accepts stdin that finished before shutdown but still requires a clean child exit', async () => {
+    let process: ScriptedProcess | undefined;
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: async () => ({
+        found: true,
+        path: '/native/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      baseEnv: { PATH: '/usr/bin' },
+      spawn: (_path, _args, options) => {
+        process = new ScriptedProcess(options.env.CODEX_HOME);
+        return process;
+      },
+      shutdownTimeoutMs: 20,
+    });
+    await manager.readAccount('account-a');
+    await new Promise<void>((resolve) => process?.stdin.end(resolve));
+    const shutdown = manager.shutdown();
+    queueMicrotask(() => process?.emit('exit', 0, null));
+
+    await expect(shutdown).resolves.toBeUndefined();
   });
 
   it('retains the account barrier when cooperative shutdown times out', async () => {

@@ -66,6 +66,7 @@ interface PendingSession {
   token: symbol;
   promise: Promise<AccountSession>;
   process?: CodexJsonlProcess;
+  client?: CodexAppServerClient;
   processEnded?: boolean;
 }
 
@@ -102,28 +103,75 @@ async function shutdownCodexProcess(
   const outcome = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
     (resolve, reject) => {
       let settled = false;
+      let stdinFailure: Error | undefined;
+      let stdinSettled = false;
+      let childFailure = false;
+      let childOutcome: { code: number | null; signal: NodeJS.Signals | null } | undefined;
       const cleanup = () => {
         clearTimeout(timer);
         child.removeListener('exit', onExit);
         child.removeListener('error', onError);
+        child.stdin.removeListener('error', onStdinError);
+        child.stdin.removeListener('close', onStdinClose);
+        child.stdin.removeListener('finish', onStdinFinish);
       };
-      const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        resolve({ code, signal });
-      };
-      const onError = () => {
+      const rejectTermination = () => {
         if (settled) return;
         settled = true;
         cleanup();
         reject(new CodexRuntimeError('termination-failed'));
       };
-      const timer = setTimeout(onError, timeoutMs);
+      const settleIfComplete = () => {
+        if (settled) return;
+        if (stdinSettled && (stdinFailure || childFailure)) {
+          rejectTermination();
+          return;
+        }
+        if (!stdinSettled || !childOutcome) return;
+        settled = true;
+        cleanup();
+        resolve(childOutcome);
+      };
+      const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+        childOutcome = { code, signal };
+        settleIfComplete();
+      };
+      const onError = () => {
+        childFailure = true;
+        settleIfComplete();
+      };
+      const onStdinError = (error: Error) => {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED') return;
+        stdinFailure = error;
+      };
+      const onStdinClose = () => {
+        stdinSettled = true;
+        settleIfComplete();
+      };
+      const onStdinFinish = () => {
+        stdinSettled = true;
+        settleIfComplete();
+      };
+      const timer = setTimeout(rejectTermination, timeoutMs);
       timer.unref?.();
       child.once('exit', onExit);
       child.once('error', onError);
-      child.stdin.end();
+      child.stdin.on('error', onStdinError);
+      child.stdin.on('close', onStdinClose);
+      child.stdin.on('finish', onStdinFinish);
+      stdinSettled = child.stdin.writableFinished || child.stdin.destroyed;
+      if (stdinSettled || child.stdin.writableEnded) {
+        settleIfComplete();
+        return;
+      }
+      try {
+        child.stdin.end();
+      } catch (error) {
+        onStdinError(error instanceof Error ? error : new Error(String(error)));
+        stdinSettled = true;
+        settleIfComplete();
+      }
     },
   );
   if (outcome.code !== 0 || outcome.signal !== null) {
@@ -289,6 +337,7 @@ export function createCodexAppServerManager(
           });
         },
       });
+      entry.client = client;
       await client.initialize();
       if (detection.runtimeValidationRequired) {
         dependencies.onDiagnostic?.(
@@ -370,6 +419,7 @@ export function createCodexAppServerManager(
       if (shutdownPromise) return shutdownPromise;
       shuttingDown = true;
       const active = [...sessions.entries()];
+      for (const [, entry] of active) entry.client?.close();
       sessions.clear();
       const operations = [
         ...accountTerminations.values(),

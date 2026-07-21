@@ -48,7 +48,7 @@ for (const envPath of possibleEnvPaths) {
   }
 }
 
-import { app, BrowserWindow, shell, nativeImage, session, screen, Menu, MenuItem } from 'electron';
+import { app, BrowserWindow, dialog, shell, nativeImage, session, screen, Menu, MenuItem } from 'electron';
 import { join } from 'path';
 import { accessSync, readFileSync, writeFileSync, rmSync, cpSync } from 'fs';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
@@ -70,6 +70,8 @@ import { isProfileAuthenticated } from './claude-profile/profile-utils';
 import { isMacOS, isWindows } from './platform';
 import { ptyDaemonClient } from './terminal/pty-daemon-client';
 import { shutdownCodexAppServerRuntime } from './services/codex/codex-app-server-runtime';
+import { toPublicCatalogError } from './services/codex/codex-errors';
+import { createAppQuitCoordinator } from './app-quit-coordinator';
 import type { AppSettings, AuthFailureInfo } from '../shared/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -189,12 +191,6 @@ let terminalManager: TerminalManager | null = null;
 app.on('child-process-gone', (_event, details) => {
   appLog.error('[main] child-process-gone:', details);
 });
-
-// Re-entrancy guard for before-quit handler.
-// The first before-quit call pauses quit for async cleanup, then calls app.quit() again.
-// The second call sees isQuitting=true and allows quit to proceed immediately.
-// Fixes: pty.node SIGABRT crash caused by environment teardown before PTY cleanup (GitHub #1469)
-let isQuitting = false;
 
 function createWindow(): void {
   // Get the primary display's work area (accounts for taskbar, dock, etc.)
@@ -667,52 +663,35 @@ app.on('window-all-closed', () => {
   }
 });
 
-// Cleanup before quit — uses event.preventDefault() to allow async PTY cleanup
-// before the JS environment tears down. Without this, pty.node's native
-// ThreadSafeFunction callbacks fire after teardown, causing SIGABRT (GitHub #1469).
+const appQuitCoordinator = createAppQuitCoordinator({
+  cleanup: async () => {
+    stopPeriodicUpdates();
+    getUsageMonitor().stop();
+    console.warn('[main] Usage monitor stopped');
+    if (agentManager) await agentManager.killAll();
+    if (terminalManager) await terminalManager.killAll();
+    await shutdownCodexAppServerRuntime();
+    ptyDaemonClient.shutdown();
+    console.warn('[main] PTY daemon client shutdown complete');
+  },
+  quit: () => app.quit(),
+  reportBlocked: (error) => {
+    const publicError = toPublicCatalogError(error);
+    appLog.error('[main] Safe quit blocked:', publicError);
+    dialog.showErrorBox(
+      'Aperant could not quit safely',
+      `${publicError.message}. Quitting was cancelled so Aperant won't orphan an unowned ` +
+      'Codex process. Stop the Aperant Codex app-server in Activity Monitor or your system ' +
+      'process manager, then force quit and relaunch Aperant. Codex app-server remains ' +
+      'unsupported on Windows.',
+    );
+  },
+});
+
+// Pause quit until asynchronous cleanup is verified. A cleanup failure keeps
+// Electron alive instead of orphaning a Codex process or tearing down live PTYs.
 app.on('before-quit', (event) => {
-  // Re-entrancy guard: the second app.quit() call (after cleanup) must pass through
-  if (isQuitting) {
-    return;
-  }
-  isQuitting = true;
-
-  // Pause quit to perform async cleanup
-  event.preventDefault();
-
-  // Stop synchronous services immediately
-  stopPeriodicUpdates();
-
-  const usageMonitor = getUsageMonitor();
-  usageMonitor.stop();
-  console.warn('[main] Usage monitor stopped');
-
-  // Perform async cleanup, then allow quit to proceed
-  (async () => {
-    try {
-      // Kill all running agent processes
-      if (agentManager) {
-        await agentManager.killAll();
-      }
-
-      // Kill all terminal processes — waits for PTY exit with bounded timeout
-      if (terminalManager) {
-        await terminalManager.killAll();
-      }
-
-      await shutdownCodexAppServerRuntime();
-
-      // Shut down PTY daemon client AFTER terminal cleanup completes,
-      // ensuring all kill commands reach PTY processes before the daemon disconnects
-      ptyDaemonClient.shutdown();
-      console.warn('[main] PTY daemon client shutdown complete');
-    } catch (error) {
-      console.error('[main] Error during pre-quit cleanup:', error);
-    } finally {
-      // Always allow quit to proceed, even if cleanup fails
-      app.quit();
-    }
-  })();
+  void appQuitCoordinator.handleBeforeQuit(event);
 });
 
 // Note: Uncaught exceptions and unhandled rejections are now

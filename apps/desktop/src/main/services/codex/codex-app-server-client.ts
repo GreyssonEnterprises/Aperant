@@ -63,15 +63,20 @@ export class CodexAppServerClient {
   private nextRequestId = 1;
   private initializePromise?: Promise<CodexInitializeResponse>;
   private closedError?: Error;
+  private processEndReported = false;
+  private readonly onStdoutData: (chunk: string | Buffer) => void;
+  private readonly onStderrData: () => void;
 
   constructor(
     readonly process: CodexJsonlProcess,
     private readonly options: CodexAppServerClientOptions,
   ) {
-    process.stdout.on('data', (chunk) => this.consumeStdout(chunk));
-    process.stderr.on('data', () => {
+    this.onStdoutData = (chunk) => this.consumeStdout(chunk);
+    this.onStderrData = () => {
       options.onDiagnostic?.('Codex app-server emitted stderr output');
-    });
+    };
+    process.stdout.on('data', this.onStdoutData);
+    process.stderr.on('data', this.onStderrData);
     process.on('error', () => this.fail(new CodexRuntimeError('process-exited'), true));
     process.on('exit', () => this.fail(new CodexRuntimeError('process-exited'), true));
   }
@@ -128,6 +133,19 @@ export class CodexAppServerClient {
       params,
       this.options.requestTimeoutMs ?? 30_000,
     ) as Promise<CodexClientRequestMap[M]['response']>;
+  }
+
+  close(error: Error = new CodexRuntimeError('shutdown')): void {
+    if (this.closedError) return;
+    this.closedError = error;
+    this.process.stdout.removeListener('data', this.onStdoutData);
+    this.process.stderr.removeListener('data', this.onStderrData);
+    this.buffer = '';
+    for (const request of this.pending.values()) {
+      clearTimeout(request.timer);
+      request.reject(error);
+    }
+    this.pending.clear();
   }
 
   private sendRequest(method: string, params: unknown, timeoutMs: number): Promise<unknown> {
@@ -222,13 +240,12 @@ export class CodexAppServerClient {
   }
 
   private fail(error: Error, processEnded = false): void {
-    if (this.closedError) return;
-    this.closedError = error;
-    for (const request of this.pending.values()) {
-      clearTimeout(request.timer);
-      request.reject(error);
+    if (processEnded && !this.processEndReported) {
+      this.processEndReported = true;
+      this.options.onFatal?.(error, true);
     }
-    this.pending.clear();
-    this.options.onFatal?.(error, processEnded);
+    if (this.closedError) return;
+    this.close(error);
+    if (!processEnded) this.options.onFatal?.(error, false);
   }
 }

@@ -240,6 +240,38 @@ describe('Codex app-server JSONL client', () => {
     }
   });
 
+  it('closes atomically, clears pending timers, and prevents later writes', async () => {
+    vi.useFakeTimers();
+    try {
+      const process = new FakeCodexProcess(() => undefined);
+      const onFatal = vi.fn();
+      const client = new CodexAppServerClient(process, {
+        expectedCodexHome: '/tmp/aperant-codex/account-a',
+        requestTimeoutMs: 60_000,
+        onFatal,
+      });
+      const pending = client.request('model/list', {});
+      const requestCount = process.requests.length;
+      expect(vi.getTimerCount()).toBe(1);
+
+      (client as unknown as { close: () => void }).close();
+
+      await expect(pending).rejects.toMatchObject({ code: 'shutdown' });
+      expect(vi.getTimerCount()).toBe(0);
+      await expect(client.request('model/list', {})).rejects.toMatchObject({ code: 'shutdown' });
+      expect(process.requests).toHaveLength(requestCount);
+      expect(process.stdout.listenerCount('data')).toBe(0);
+      expect(process.stderr.listenerCount('data')).toBe(0);
+      expect(process.stdout.readableFlowing).toBe(true);
+      expect(process.stderr.readableFlowing).toBe(true);
+
+      process.emit('exit', 0, null);
+      expect(onFatal).toHaveBeenCalledWith(expect.any(Error), true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('rejects string and unknown response IDs without correlating them', async () => {
     const stringProcess = new FakeCodexProcess(() => undefined);
     const stringClient = new CodexAppServerClient(stringProcess, {
