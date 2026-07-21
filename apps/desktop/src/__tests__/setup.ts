@@ -100,6 +100,9 @@ if (typeof window !== 'undefined') {
     onTaskStatusChange: vi.fn(() => vi.fn()),
     getSettings: vi.fn(),
     saveSettings: vi.fn(),
+    listModelCatalog: vi.fn().mockResolvedValue({ success: true, data: { models: [] } }),
+    refreshModelCatalog: vi.fn().mockResolvedValue({ success: true, data: { models: [] } }),
+    getModelCatalogStatus: vi.fn().mockResolvedValue({ success: true, data: { snapshots: [] } }),
     selectDirectory: vi.fn(),
     getAppVersion: vi.fn(),
     // Tab state persistence (IPC-based)

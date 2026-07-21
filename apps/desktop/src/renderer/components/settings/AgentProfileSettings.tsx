@@ -6,7 +6,6 @@ import { Brain, Scale, Zap, Check, Sparkles, ChevronDown, ChevronUp, RotateCcw }
 import { cn } from '../../lib/utils';
 import {
   DEFAULT_AGENT_PROFILES,
-  AVAILABLE_MODELS,
   THINKING_LEVELS,
   DEFAULT_PHASE_MODELS,
   DEFAULT_PHASE_THINKING,
@@ -20,6 +19,7 @@ import { Label } from '../ui/label';
 import { Button } from '../ui/button';
 import type { AgentProfile, PhaseModelConfig, PhaseThinkingConfig, ThinkingLevel } from '../../../shared/types/settings';
 import type { BuiltinProvider } from '../../../shared/types/provider-account';
+import { useModelCatalog } from '../../hooks/useModelCatalog';
 
 /**
  * Icon mapping for agent profile icons
@@ -44,6 +44,8 @@ export function AgentProfileSettings({ provider }: AgentProfileSettingsProps) {
   const { t } = useTranslation('settings');
   const settings = useSettingsStore((state) => state.settings);
   const { provider: activeProvider } = useActiveProvider();
+  const resolvedCatalogProvider = provider ?? activeProvider ?? 'anthropic';
+  const { options: catalogModels } = useModelCatalog({ provider: resolvedCatalogProvider });
   // Read per-provider config with fallback to global
   const providerConfig = provider ? settings.providerAgentConfig?.[provider] : undefined;
   const selectedProfileId = providerConfig?.selectedAgentProfile ?? settings.selectedAgentProfile ?? 'auto';
@@ -155,7 +157,9 @@ export function AgentProfileSettings({ provider }: AgentProfileSettingsProps) {
     if (resolvedProvider) {
       return getProviderModelLabel(modelValue, resolvedProvider);
     }
-    const model = AVAILABLE_MODELS.find((m) => m.value === modelValue);
+    const model = catalogModels.find(
+      (candidate) => candidate.provider === resolvedCatalogProvider && candidate.value === modelValue,
+    );
     return model?.label || modelValue;
   };
 

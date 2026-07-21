@@ -175,6 +175,11 @@ export const IPC_CHANNELS = {
   PROVIDER_ACCOUNTS_CHECK_ENV: 'provider-accounts:check-env',
   MODEL_OVERRIDES_SAVE: 'model-overrides:save',
 
+  // Provider-aware model catalog (credentials remain in main)
+  MODEL_CATALOG_LIST: 'model-catalog:list',
+  MODEL_CATALOG_REFRESH: 'model-catalog:refresh',
+  MODEL_CATALOG_STATUS: 'model-catalog:status',
+
   // Dialogs
   DIALOG_SELECT_DIRECTORY: 'dialog:selectDirectory',
   DIALOG_CREATE_PROJECT_FOLDER: 'dialog:createProjectFolder',

@@ -7,6 +7,7 @@
  */
 
 import type { ElectronAPI } from '../../shared/types';
+import { BUNDLED_MODEL_CATALOG } from '../../shared/constants/model-catalog';
 import {
   projectMock,
   taskMock,
@@ -46,6 +47,16 @@ const browserMockAPI: ElectronAPI = {
 
   // Settings
   ...settingsMock,
+
+  listModelCatalog: async () => ({
+    success: true,
+    data: { models: BUNDLED_MODEL_CATALOG },
+  }),
+  refreshModelCatalog: async () => ({
+    success: true,
+    data: { models: BUNDLED_MODEL_CATALOG },
+  }),
+  getModelCatalogStatus: async () => ({ success: true, data: { snapshots: [] } }),
 
   // Roadmap Operations
   getRoadmap: async () => ({

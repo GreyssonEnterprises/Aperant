@@ -175,7 +175,8 @@
     "ollamaLoading": "Chargement des modèles Ollama...",
     "ollamaNoModels": "Aucun modèle Ollama installé",
     "ollamaNoModelsHint": "Installez des modèles dans Paramètres agent → onglet Ollama",
-    "apiKeyOnly": "Clé API"
+    "apiKeyOnly": "Clé API",
+    "unavailable": "Indisponible"
   },
   "language": {
     "label": "Langue de l'interface",

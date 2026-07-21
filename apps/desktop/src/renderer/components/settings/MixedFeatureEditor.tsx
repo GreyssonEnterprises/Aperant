@@ -2,12 +2,13 @@ import { useTranslation } from 'react-i18next';
 import { useSettingsStore, saveSettings } from '../../stores/settings-store';
 import { MultiProviderModelSelect } from './MultiProviderModelSelect';
 import { ThinkingLevelSelect } from './ThinkingLevelSelect';
-import { ALL_AVAILABLE_MODELS, FEATURE_LABELS } from '@shared/constants/models';
+import { FEATURE_LABELS } from '@shared/constants/models';
 import { PROVIDER_REGISTRY } from '@shared/constants/providers';
 import { Label } from '../ui/label';
 import type { MixedFeatureConfig, MixedPhaseEntry, ThinkingLevel } from '@shared/types/settings';
 import type { BuiltinProvider } from '@shared/types/provider-account';
 import type { FeatureModelConfig } from '@shared/types/settings';
+import { useModelCatalog } from '../../hooks/useModelCatalog';
 
 type FeatureKey = keyof FeatureModelConfig;
 
@@ -32,15 +33,6 @@ const DEFAULT_MIXED_FEATURE_CONFIG: MixedFeatureConfig = {
   utility: { provider: 'anthropic', modelId: 'haiku', thinkingLevel: 'low' },
   naming: { provider: 'anthropic', modelId: 'haiku', thinkingLevel: 'low' },
 };
-
-/**
- * Resolve the provider for a given model ID from ALL_AVAILABLE_MODELS.
- * Falls back to 'anthropic' if not found.
- */
-function resolveProviderForModel(modelId: string): BuiltinProvider {
-  const found = ALL_AVAILABLE_MODELS.find((m) => m.value === modelId);
-  return found?.provider ?? 'anthropic';
-}
 
 /**
  * Get a short display name for a provider from PROVIDER_REGISTRY.
@@ -70,12 +62,13 @@ function ProviderBadge({ provider }: { provider: BuiltinProvider }) {
 export function MixedFeatureEditor() {
   const { t } = useTranslation('settings');
   const settings = useSettingsStore((s) => s.settings);
+  const { options: catalogModels } = useModelCatalog();
 
   const config: MixedFeatureConfig =
     settings.customMixedFeatureConfig ?? DEFAULT_MIXED_FEATURE_CONFIG;
 
   const handleModelChange = async (feature: FeatureKey, modelId: string) => {
-    const provider = resolveProviderForModel(modelId);
+    const provider = catalogModels.find((model) => model.value === modelId)?.provider ?? 'anthropic';
     const current: MixedPhaseEntry = config[feature];
 
     const updatedEntry: MixedPhaseEntry = {

@@ -42,3 +42,21 @@ export interface ModelCatalogSnapshot {
   sourceVersion?: string;
   models: ModelDescriptor[];
 }
+
+export interface ModelCatalogQuery {
+  provider?: BuiltinProvider;
+  accountId?: string;
+}
+
+export interface ModelCatalogSnapshotStatus {
+  provider: BuiltinProvider;
+  accountId?: string;
+  fetchedAt: string;
+  stale: boolean;
+  refreshing: boolean;
+  lastError?: string;
+}
+
+export interface ModelCatalogStatus {
+  snapshots: ModelCatalogSnapshotStatus[];
+}

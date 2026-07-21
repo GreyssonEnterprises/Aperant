@@ -1,8 +1,9 @@
 import { Brain, Scale, Zap, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { DEFAULT_AGENT_PROFILES, AVAILABLE_MODELS, THINKING_LEVELS } from '../../shared/constants';
+import { DEFAULT_AGENT_PROFILES, THINKING_LEVELS } from '../../shared/constants';
 import { useSettingsStore, saveSettings } from '../stores/settings-store';
 import type { AgentProfile } from '../../shared/types/settings';
+import { useModelCatalog } from '../hooks/useModelCatalog';
 
 /**
  * Icon mapping for agent profile icons
@@ -19,6 +20,7 @@ const iconMap: Record<string, React.ElementType> = {
  */
 export function AgentProfiles() {
   const settings = useSettingsStore((state) => state.settings);
+  const { options: catalogModels } = useModelCatalog({ provider: 'anthropic' });
   const selectedProfileId = settings.selectedAgentProfile || 'auto';
 
   const handleSelectProfile = async (profileId: string) => {
@@ -29,7 +31,9 @@ export function AgentProfiles() {
    * Get human-readable model label
    */
   const getModelLabel = (modelValue: string): string => {
-    const model = AVAILABLE_MODELS.find((m) => m.value === modelValue);
+    const model = catalogModels.find(
+      (candidate) => candidate.provider === 'anthropic' && candidate.value === modelValue,
+    );
     return model?.label || modelValue;
   };
 

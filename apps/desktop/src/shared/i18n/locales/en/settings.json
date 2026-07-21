@@ -175,7 +175,8 @@
     "ollamaLoading": "Loading Ollama models...",
     "ollamaNoModels": "No Ollama models installed",
     "ollamaNoModelsHint": "Install models in Agent Settings → Ollama tab",
-    "apiKeyOnly": "API key"
+    "apiKeyOnly": "API key",
+    "unavailable": "Unavailable"
   },
   "language": {
     "label": "Interface Language",

@@ -2,12 +2,12 @@ import { useTranslation } from 'react-i18next';
 import { useSettingsStore, saveSettings } from '../../stores/settings-store';
 import { MultiProviderModelSelect } from './MultiProviderModelSelect';
 import { ThinkingLevelSelect } from './ThinkingLevelSelect';
-import { ALL_AVAILABLE_MODELS } from '@shared/constants/models';
 import { PROVIDER_REGISTRY } from '@shared/constants/providers';
 import { PHASE_KEYS } from '@shared/constants/models';
 import { Label } from '../ui/label';
 import type { MixedPhaseConfig, MixedPhaseEntry, PipelinePhase, ThinkingLevel } from '@shared/types/settings';
 import type { BuiltinProvider } from '@shared/types/provider-account';
+import { useModelCatalog } from '../../hooks/useModelCatalog';
 
 /**
  * Default config used when customMixedPhaseConfig is not set.
@@ -19,15 +19,6 @@ const DEFAULT_MIXED_PHASE_CONFIG: MixedPhaseConfig = {
   coding: { provider: 'anthropic', modelId: 'opus', thinkingLevel: 'high' },
   qa: { provider: 'anthropic', modelId: 'opus', thinkingLevel: 'high' },
 };
-
-/**
- * Resolve the provider for a given model ID from ALL_AVAILABLE_MODELS.
- * Falls back to 'anthropic' if not found.
- */
-function resolveProviderForModel(modelId: string): BuiltinProvider {
-  const found = ALL_AVAILABLE_MODELS.find((m) => m.value === modelId);
-  return found?.provider ?? 'anthropic';
-}
 
 /**
  * Get a short display name for a provider from PROVIDER_REGISTRY.
@@ -57,12 +48,13 @@ function ProviderBadge({ provider }: { provider: BuiltinProvider }) {
 export function MixedPhaseEditor() {
   const { t } = useTranslation('settings');
   const settings = useSettingsStore((s) => s.settings);
+  const { options: catalogModels } = useModelCatalog();
 
   const config: MixedPhaseConfig =
     settings.customMixedPhaseConfig ?? DEFAULT_MIXED_PHASE_CONFIG;
 
   const handleModelChange = async (phase: PipelinePhase, modelId: string) => {
-    const provider = resolveProviderForModel(modelId);
+    const provider = catalogModels.find((model) => model.value === modelId)?.provider ?? 'anthropic';
     const current: MixedPhaseEntry = config[phase];
 
     const updatedEntry: MixedPhaseEntry = {

@@ -17,7 +17,9 @@ import {
   SelectTrigger,
   SelectValue
 } from './ui/select';
-import { AVAILABLE_MODELS, THINKING_LEVELS } from '../../shared/constants';
+import { THINKING_LEVELS } from '../../shared/constants';
+import { useModelCatalog } from '../hooks/useModelCatalog';
+import { ensureSavedModelOption } from '../lib/model-catalog-options';
 import type { InsightsModelConfig } from '../../shared/types';
 import type { ModelType, ThinkingLevel } from '../../shared/types';
 
@@ -35,6 +37,12 @@ export function CustomModelModal({ currentConfig, onSave, onClose, open = true }
   );
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(
     currentConfig?.thinkingLevel || 'medium'
+  );
+  const { options: catalogModels } = useModelCatalog({ provider: 'anthropic' });
+  const modelOptions = ensureSavedModelOption(
+    catalogModels.filter((option) => option.provider === 'anthropic'),
+    model,
+    'anthropic',
   );
 
   // Sync internal state when modal opens or config changes
@@ -71,8 +79,12 @@ export function CustomModelModal({ currentConfig, onSave, onClose, open = true }
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {AVAILABLE_MODELS.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
+                {modelOptions.map((m) => (
+                  <SelectItem
+                    key={m.value}
+                    value={m.value}
+                    disabled={m.availability === 'unavailable'}
+                  >
                     {m.label}
                   </SelectItem>
                 ))}

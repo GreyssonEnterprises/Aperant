@@ -9,9 +9,10 @@ import {
   DropdownMenuTrigger,
   DropdownMenuLabel
 } from './ui/dropdown-menu';
-import { DEFAULT_AGENT_PROFILES, AVAILABLE_MODELS } from '../../shared/constants';
+import { DEFAULT_AGENT_PROFILES } from '../../shared/constants';
 import type { InsightsModelConfig } from '../../shared/types';
 import { CustomModelModal } from './CustomModelModal';
+import { useModelCatalog } from '../hooks/useModelCatalog';
 
 interface InsightsModelSelectorProps {
   currentConfig?: InsightsModelConfig;
@@ -32,6 +33,7 @@ export function InsightsModelSelector({
   disabled
 }: InsightsModelSelectorProps) {
   const [showCustomModal, setShowCustomModal] = useState(false);
+  const { options: catalogModels } = useModelCatalog({ provider: 'anthropic' });
 
   // Default to 'balanced' if no config, or if 'auto' profile was selected (not applicable for insights)
   const rawProfileId = currentConfig?.profileId || 'balanced';
@@ -67,7 +69,9 @@ export function InsightsModelSelector({
   // Build display text for current selection
   const getDisplayText = () => {
     if (selectedProfileId === 'custom' && currentConfig) {
-      const modelLabel = AVAILABLE_MODELS.find(m => m.value === currentConfig.model)?.label || currentConfig.model;
+      const modelLabel = catalogModels.find(
+        (model) => model.provider === 'anthropic' && model.value === currentConfig.model,
+      )?.label || currentConfig.model;
       return `${modelLabel} + ${currentConfig.thinkingLevel}`;
     }
     return profile?.name || 'Balanced';
@@ -95,7 +99,9 @@ export function InsightsModelSelector({
           {DEFAULT_AGENT_PROFILES.filter(p => !p.isAutoProfile).map((p) => {
             const ProfileIcon = iconMap[p.icon || 'Brain'];
             const isSelected = selectedProfileId === p.id;
-            const modelLabel = AVAILABLE_MODELS.find(m => m.value === p.model)?.label;
+            const modelLabel = catalogModels.find(
+              (model) => model.provider === 'anthropic' && model.value === p.model,
+            )?.label ?? p.model;
             return (
               <DropdownMenuItem
                 key={p.id}

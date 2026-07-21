@@ -23,14 +23,14 @@ import {
 import { ThinkingLevelSelect } from './settings/ThinkingLevelSelect';
 import {
   DEFAULT_AGENT_PROFILES,
-  AVAILABLE_MODELS,
-  ALL_AVAILABLE_MODELS,
   DEFAULT_PHASE_MODELS,
   DEFAULT_PHASE_THINKING,
 } from '../../shared/constants';
 import type { ModelType, ThinkingLevel } from '../../shared/types';
 import type { PhaseModelConfig, PhaseThinkingConfig } from '../../shared/types/settings';
 import { cn } from '../lib/utils';
+import { useModelCatalog } from '../hooks/useModelCatalog';
+import { ensureSavedModelOption } from '../lib/model-catalog-options';
 
 interface AgentProfileSelectorProps {
   /** Currently selected profile ID ('auto', 'complex', 'balanced', 'quick', or 'custom') */
@@ -87,6 +87,9 @@ export function AgentProfileSelector({
 }: AgentProfileSelectorProps) {
   const { t } = useTranslation('settings');
   const { provider: activeProvider } = useActiveProvider();
+  const { options: catalogModels } = useModelCatalog(
+    activeProvider ? { provider: activeProvider } : { provider: 'anthropic' },
+  );
   const [showPhaseDetails, setShowPhaseDetails] = useState(false);
 
   // Ollama models are user-installed — fetch dynamically from the local server
@@ -126,19 +129,18 @@ export function AgentProfileSelector({
 
   // Build model options filtered to the active provider (falls back to Anthropic models)
   const phaseModelOptions = useMemo(() => {
-    if (!activeProvider || activeProvider === 'anthropic') {
-      return AVAILABLE_MODELS.map(m => ({ value: m.value, label: m.label }));
-    }
     // Ollama: use dynamically fetched installed models
     if (activeProvider === 'ollama' && ollamaModels.length > 0) {
-      return ollamaModels;
+      return ollamaModels.map((option) => ({ ...option, availability: 'available' as const }));
     }
-    const providerModels = ALL_AVAILABLE_MODELS.filter(m => m.provider === activeProvider);
-    if (providerModels.length === 0) {
-      return AVAILABLE_MODELS.map(m => ({ value: m.value, label: m.label }));
+    const provider = activeProvider ?? 'anthropic';
+    let providerModels = catalogModels.filter((option) => option.provider === provider);
+    for (const saved of Object.values(currentPhaseModels)) {
+      providerModels = ensureSavedModelOption(providerModels, saved, provider);
     }
-    return providerModels.map(m => ({ value: m.value, label: m.label }));
-  }, [activeProvider, ollamaModels]);
+    if (model) providerModels = ensureSavedModelOption(providerModels, model, provider);
+    return providerModels;
+  }, [activeProvider, catalogModels, currentPhaseModels, model, ollamaModels]);
 
   const handleProfileSelect = (selectedId: string) => {
     if (selectedId === 'custom') {
@@ -228,9 +230,11 @@ export function AgentProfileSelector({
           <SelectContent>
             {DEFAULT_AGENT_PROFILES.map((profile) => {
               const ProfileIcon = iconMap[profile.icon || 'Scale'] || Scale;
-              const modelLabel = activeProvider
+              const modelLabel = phaseModelOptions.find(
+                (option) => option.value === profile.model,
+              )?.label ?? (activeProvider
                 ? getProviderModelLabel(profile.model, activeProvider)
-                : AVAILABLE_MODELS.find(m => m.value === profile.model)?.label;
+                : profile.model);
               return (
                 <SelectItem key={profile.id} value={profile.id}>
                   <div className="flex items-center gap-2">
@@ -298,9 +302,11 @@ export function AgentProfileSelector({
             <div className="px-4 pb-4 -mt-1">
               <div className="grid grid-cols-2 gap-2 text-xs">
                 {(Object.keys(PHASE_LABEL_KEYS) as Array<keyof PhaseModelConfig>).map((phase) => {
-                  const modelLabel = activeProvider
+                  const modelLabel = phaseModelOptions.find(
+                    (option) => option.value === currentPhaseModels[phase],
+                  )?.label ?? (activeProvider
                     ? getProviderModelLabel(currentPhaseModels[phase], activeProvider)
-                    : (AVAILABLE_MODELS.find(m => m.value === currentPhaseModels[phase])?.label?.replace('Claude ', '') || currentPhaseModels[phase]);
+                    : currentPhaseModels[phase]);
                   return (
                     <div key={phase} className="flex items-center justify-between rounded bg-background/50 px-2 py-1">
                       <span className="text-muted-foreground">{t(PHASE_LABEL_KEYS[phase].label)}:</span>
@@ -338,8 +344,15 @@ export function AgentProfileSelector({
                         </SelectTrigger>
                         <SelectContent>
                           {phaseModelOptions.map((m) => (
-                            <SelectItem key={m.value} value={m.value}>
+                            <SelectItem
+                              key={m.value}
+                              value={m.value}
+                              disabled={m.availability === 'unavailable'}
+                            >
                               {m.label}
+                              {m.availability === 'unavailable'
+                                ? ` (${t('modelSelect.unavailable')})`
+                                : ''}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -378,8 +391,15 @@ export function AgentProfileSelector({
               </SelectTrigger>
               <SelectContent>
                 {phaseModelOptions.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
+                  <SelectItem
+                    key={m.value}
+                    value={m.value}
+                    disabled={m.availability === 'unavailable'}
+                  >
                     {m.label}
+                    {m.availability === 'unavailable'
+                      ? ` (${t('modelSelect.unavailable')})`
+                      : ''}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -17,12 +17,13 @@ import {
   SelectValue
 } from '../ui/select';
 import { Separator } from '../ui/separator';
-import { AVAILABLE_MODELS } from '../../../shared/constants';
 import type {
   Project,
   ProjectSettings as ProjectSettingsType,
   AutoBuildVersionInfo
 } from '../../../shared/types';
+import { useModelCatalog } from '../../hooks/useModelCatalog';
+import { ensureSavedModelOption } from '../../lib/model-catalog-options';
 
 interface GeneralSettingsProps {
   project: Project;
@@ -44,6 +45,12 @@ export function GeneralSettings({
   handleInitialize
 }: GeneralSettingsProps) {
   const { t } = useTranslation(['settings']);
+  const { options: catalogModels } = useModelCatalog({ provider: 'anthropic' });
+  const modelOptions = ensureSavedModelOption(
+    catalogModels.filter((option) => option.provider === 'anthropic'),
+    settings.model,
+    'anthropic',
+  );
 
   return (
     <>
@@ -122,8 +129,12 @@ export function GeneralSettings({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {AVAILABLE_MODELS.map((model) => (
-                    <SelectItem key={model.value} value={model.value}>
+                  {modelOptions.map((model) => (
+                    <SelectItem
+                      key={model.value}
+                      value={model.value}
+                      disabled={model.availability === 'unavailable'}
+                    >
                       {model.label}
                     </SelectItem>
                   ))}

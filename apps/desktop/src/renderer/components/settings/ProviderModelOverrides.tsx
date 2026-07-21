@@ -4,9 +4,11 @@ import { RotateCcw } from 'lucide-react';
 import { useActiveProvider } from '../../hooks/useActiveProvider';
 import { useSettingsStore } from '../../stores/settings-store';
 import { PROVIDER_REGISTRY } from '@shared/constants/providers';
-import { DEFAULT_MODEL_EQUIVALENCES, ALL_AVAILABLE_MODELS } from '@shared/constants/models';
+import { DEFAULT_MODEL_EQUIVALENCES } from '@shared/constants/models';
 import type { BuiltinProvider } from '@shared/types/provider-account';
 import type { ProviderModelSpec } from '@shared/constants/models';
+import { useModelCatalog } from '../../hooks/useModelCatalog';
+import { ensureSavedModelOption } from '../../lib/model-catalog-options';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
@@ -33,6 +35,9 @@ export function ProviderModelOverrides() {
     activeTab && (nonAnthropicProviders as BuiltinProvider[]).includes(activeTab)
       ? activeTab
       : nonAnthropicProviders[0] ?? null;
+  const { options: catalogModels } = useModelCatalog(
+    resolvedTab ? { provider: resolvedTab } : {},
+  );
 
   // Shorthands that have a mapping entry for the currently selected provider
   const shorthandsForProvider = useMemo(() => {
@@ -45,8 +50,13 @@ export function ProviderModelOverrides() {
   // Models available for the currently selected provider
   const modelsForProvider = useMemo(() => {
     if (!resolvedTab) return [];
-    return ALL_AVAILABLE_MODELS.filter((m) => m.provider === resolvedTab);
-  }, [resolvedTab]);
+    let models = catalogModels.filter((model) => model.provider === resolvedTab);
+    for (const providerMap of Object.values(settings.modelOverrides ?? {})) {
+      const saved = (providerMap as Partial<Record<BuiltinProvider, ProviderModelSpec>>)[resolvedTab];
+      if (saved) models = ensureSavedModelOption(models, saved.modelId, resolvedTab);
+    }
+    return models;
+  }, [catalogModels, resolvedTab, settings.modelOverrides]);
 
   const currentOverrides = settings.modelOverrides ?? {};
 
@@ -55,16 +65,14 @@ export function ProviderModelOverrides() {
     const override = (currentOverrides as Record<string, Partial<Record<BuiltinProvider, ProviderModelSpec>>>)[shorthand]?.[resolvedTab];
     if (!override) return USE_DEFAULT;
     // Find matching model in our catalog by modelId
-    const match = modelsForProvider.find((m) => m.value === override.modelId);
-    return match ? match.value : USE_DEFAULT;
+    return override.modelId;
   }
 
   function getDefaultLabel(shorthand: string): string {
     if (!resolvedTab) return '';
     const spec = DEFAULT_MODEL_EQUIVALENCES[shorthand]?.[resolvedTab];
     if (!spec) return '';
-    const match = modelsForProvider.find((m) => m.value === spec.modelId) ??
-      ALL_AVAILABLE_MODELS.find((m) => m.provider === resolvedTab && m.value === spec.modelId);
+    const match = modelsForProvider.find((m) => m.value === spec.modelId);
     return match ? match.label : spec.modelId;
   }
 
@@ -224,8 +232,15 @@ export function ProviderModelOverrides() {
                     {t('agentProfile.providerOverrides.useDefault')}
                   </SelectItem>
                   {modelsForProvider.map((model) => (
-                    <SelectItem key={model.value} value={model.value}>
+                    <SelectItem
+                      key={model.value}
+                      value={model.value}
+                      disabled={model.availability === 'unavailable'}
+                    >
                       {model.label}
+                      {model.availability === 'unavailable'
+                        ? ` (${t('modelSelect.unavailable')})`
+                        : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>

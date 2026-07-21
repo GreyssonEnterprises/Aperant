@@ -1,10 +1,16 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, Search, Check, Brain, Eye, Wrench, ExternalLink, Loader2 } from 'lucide-react';
-import { ALL_AVAILABLE_MODELS, resolveModelEquivalent, type ModelOption } from '@shared/constants/models';
+import { resolveModelEquivalent } from '@shared/constants/models';
 import { PROVIDER_REGISTRY } from '@shared/constants/providers';
 import type { BuiltinProvider } from '@shared/types/provider-account';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useModelCatalog } from '@/hooks/useModelCatalog';
+import {
+  ensureSavedModelOption,
+  groupCatalogModelOptions,
+  type CatalogModelOption,
+} from '@/lib/model-catalog-options';
 import { cn } from '../../lib/utils';
 import { Input } from '../ui/input';
 
@@ -30,9 +36,12 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
 
   const settings = useSettingsStore(s => s.settings);
   const providerAccounts = settings.providerAccounts ?? [];
+  const { options: catalogModels, isLoading: catalogLoading } = useModelCatalog(
+    filterProvider ? { provider: filterProvider } : {},
+  );
 
   // Dynamic Ollama model fetching
-  const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([]);
+  const [ollamaModels, setOllamaModels] = useState<CatalogModelOption[]>([]);
   const [ollamaLoading, setOllamaLoading] = useState(false);
 
   useEffect(() => {
@@ -54,10 +63,11 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
         if (result?.success && result.data?.models) {
           const llmModels = result.data.models
             .filter((m: { is_embedding: boolean }) => !m.is_embedding)
-            .map((m: { name: string; size_bytes: number; size_gb: number }): ModelOption => ({
+            .map((m: { name: string; size_bytes: number; size_gb: number }): CatalogModelOption => ({
               value: m.name,
               label: m.name,
               provider: 'ollama' as BuiltinProvider,
+              availability: 'available',
               description: m.size_gb >= 1 ? `${m.size_gb.toFixed(1)} GB` : `${Math.round(m.size_bytes / 1e6)} MB`,
             }));
           setOllamaModels(llmModels);
@@ -72,12 +82,6 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
     return () => controller.abort();
   }, [filterProvider, providerAccounts]);
 
-  // Determine if all OpenAI accounts are OAuth-only (Codex subscription)
-  const openaiIsOAuthOnly = useMemo(() => {
-    const openaiAccounts = providerAccounts.filter(a => a.provider === 'openai');
-    return openaiAccounts.length > 0 && openaiAccounts.every(a => a.authType === 'oauth');
-  }, [providerAccounts]);
-
   // Check if user has mixed auth types for OpenAI (both OAuth and API key)
   const openaiHasMixedAuth = useMemo(() => {
     const openaiAccounts = providerAccounts.filter(a => a.provider === 'openai');
@@ -86,39 +90,14 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
     return hasOAuth && hasApiKey;
   }, [providerAccounts]);
 
-  // Group models by provider, including custom models from openai-compatible accounts
+  // Group models supplied by the main-process catalog.
   const groupedModels = useMemo(() => {
-    const groups = new Map<BuiltinProvider, ModelOption[]>();
-    for (const model of ALL_AVAILABLE_MODELS) {
-      // When filterProvider is set, only include models for that provider
-      if (filterProvider && model.provider !== filterProvider) continue;
-      // Hide apiKeyOnly OpenAI models when all OpenAI accounts are OAuth (Codex subscription)
-      if (model.apiKeyOnly && model.provider === 'openai' && openaiIsOAuthOnly) continue;
-      if (!groups.has(model.provider)) groups.set(model.provider, []);
-      groups.get(model.provider)!.push(model);
-    }
-
-    // Merge user-configured custom models from openai-compatible accounts
-    if (!filterProvider || filterProvider === 'openai-compatible') {
-      const customAccounts = providerAccounts.filter(
-        a => a.provider === 'openai-compatible' && a.customModels?.length
-      );
-      for (const account of customAccounts) {
-        for (const cm of account.customModels!) {
-          // Avoid duplicates — skip if already present
-          const existing = groups.get('openai-compatible');
-          if (existing?.some(m => m.value === cm.id)) continue;
-          if (!groups.has('openai-compatible')) groups.set('openai-compatible', []);
-          groups.get('openai-compatible')!.push({
-            value: cm.id,
-            label: cm.label,
-            provider: 'openai-compatible',
-            description: account.name,
-            capabilities: { thinking: false, tools: true, vision: false, contextWindow: 128000 },
-          });
-        }
-      }
-    }
+    const selectedProvider = filterProvider ??
+      catalogModels.find((model) => model.value === value)?.provider ??
+      'anthropic';
+    const visible = catalogModels.filter((model) => !filterProvider || model.provider === filterProvider);
+    const withSavedValue = ensureSavedModelOption(visible, value, selectedProvider);
+    const groups = groupCatalogModelOptions(withSavedValue);
 
     // Inject dynamically fetched Ollama LLM models
     if (ollamaModels.length > 0 && (!filterProvider || filterProvider === 'ollama')) {
@@ -127,22 +106,13 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
     }
 
     return groups;
-  }, [filterProvider, providerAccounts, ollamaModels, openaiIsOAuthOnly]);
-
-  // Check if provider has credentials
-  const hasCredentials = (provider: BuiltinProvider): boolean => {
-    // Anthropic is always available (built-in OAuth support)
-    if (provider === 'anthropic') return true;
-    // Ollama doesn't need API keys — just an account entry means it's connected
-    if (provider === 'ollama') return providerAccounts.some(a => a.provider === 'ollama');
-    return providerAccounts.some(a => a.provider === provider && (a.apiKey || a.claudeProfileId || a.authType === 'oauth'));
-  };
+  }, [catalogModels, filterProvider, ollamaModels, value]);
 
   // Filter models by search
   const filteredGroups = useMemo(() => {
     if (!search.trim()) return groupedModels;
     const lower = search.toLowerCase();
-    const filtered = new Map<BuiltinProvider, ModelOption[]>();
+    const filtered = new Map<BuiltinProvider, CatalogModelOption[]>();
     for (const [provider, models] of groupedModels) {
       const providerInfo = PROVIDER_REGISTRY.find(p => p.id === provider);
       const providerMatches = providerInfo?.name.toLowerCase().includes(lower);
@@ -167,25 +137,22 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
     // Ollama uses raw model names — skip equivalence resolution
     if (filterProvider === 'ollama') return value;
     // Check if the value already belongs to the target provider
-    const directMatch = ALL_AVAILABLE_MODELS.find(m => m.value === value && m.provider === filterProvider);
+    const directMatch = catalogModels.find(m => m.value === value && m.provider === filterProvider);
     if (directMatch) return value;
     // Resolve via equivalence mapping
     const equiv = resolveModelEquivalent(value, filterProvider);
     if (equiv) {
       // Find the catalog entry for the resolved model ID
-      const catalogEntry = ALL_AVAILABLE_MODELS.find(
+      const catalogEntry = catalogModels.find(
         m => m.provider === filterProvider && m.value === equiv.modelId
       );
       if (catalogEntry) return catalogEntry.value;
     }
     return value;
-  }, [value, filterProvider]);
+  }, [value, filterProvider, catalogModels]);
 
   // Find current selection label (check grouped models which includes custom models)
   const selectedModel = useMemo(() => {
-    const fromCatalog = ALL_AVAILABLE_MODELS.find(m => m.value === resolvedValue);
-    if (fromCatalog) return fromCatalog;
-    // Check custom models from grouped results
     for (const models of groupedModels.values()) {
       const found = models.find(m => m.value === resolvedValue);
       if (found) return found;
@@ -280,7 +247,7 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
           {/* Model groups */}
           <div className="flex-1 overflow-y-auto">
             {/* Ollama loading state */}
-            {ollamaLoading && filterProvider === 'ollama' && (
+            {(ollamaLoading || catalogLoading) && filterProvider === 'ollama' && (
               <div className="p-3 flex items-center justify-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {t('settings:modelSelect.ollamaLoading', { defaultValue: 'Loading Ollama models...' })}
@@ -297,14 +264,14 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
                 </p>
               </div>
             )}
-            {filteredGroups.size === 0 && !ollamaLoading ? (
+            {filteredGroups.size === 0 && !ollamaLoading && !catalogLoading ? (
               <div className="p-3 text-center text-sm text-muted-foreground">
                 {t('settings:modelSelect.noResults', { defaultValue: 'No models match your search' })}
               </div>
             ) : (
               Array.from(filteredGroups.entries()).map(([provider, models]) => {
                 const providerInfo = PROVIDER_REGISTRY.find(p => p.id === provider);
-                const configured = hasCredentials(provider);
+                const configured = models.some((model) => model.availability !== 'unavailable');
 
                 return (
                   <div key={provider}>
@@ -333,17 +300,18 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
                     {/* Models in this provider */}
                     {models.map(model => {
                       const isSelected = resolvedValue === model.value;
+                      const available = model.availability !== 'unavailable';
                       return (
                         <button
                           key={model.value}
                           type="button"
-                          onClick={() => configured ? handleSelect(model.value) : undefined}
-                          disabled={!configured}
+                          onClick={() => available ? handleSelect(model.value) : undefined}
+                          disabled={!available}
                           className={cn(
                             'w-full px-3 py-2 text-left text-sm flex items-start gap-2',
                             'hover:bg-accent transition-colors',
                             isSelected && 'bg-accent',
-                            !configured && 'opacity-50 cursor-not-allowed'
+                            !available && 'opacity-50 cursor-not-allowed'
                           )}
                         >
                           <div className="flex-1 min-w-0">
@@ -357,6 +325,11 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
                               {model.apiKeyOnly && openaiHasMixedAuth && (
                                 <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 shrink-0">
                                   {t('settings:modelSelect.apiKeyOnly', { defaultValue: 'API key' })}
+                                </span>
+                              )}
+                              {!available && (
+                                <span className="text-[9px] text-muted-foreground">
+                                  {t('settings:modelSelect.unavailable')}
                                 </span>
                               )}
                             </div>

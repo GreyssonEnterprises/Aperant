@@ -73,6 +73,7 @@ import type {
   TerminalProfileChangedEvent
 } from './agent';
 import type { AppSettings } from './settings';
+import type { ModelCatalogQuery, ModelCatalogStatus, ModelDescriptor } from './model-catalog';
 import type { AppUpdateInfo, AppUpdateProgress, AppUpdateAvailableEvent, AppUpdateDownloadedEvent, AppUpdateErrorEvent } from './app-update';
 import type {
   ChangelogTask,
@@ -411,6 +412,11 @@ export interface ElectronAPI {
   saveModelOverrides: (overrides: Record<string, unknown>) => Promise<IPCResult>;
   testProviderConnection: (provider: string, config: { apiKey?: string; baseUrl?: string; region?: string }) => Promise<IPCResult<{ success: boolean; error?: string }>>;
   checkEnvCredentials: () => Promise<IPCResult<Record<string, boolean>>>;
+
+  // Provider-aware model catalog. Credentials are resolved in main.
+  listModelCatalog: (query?: ModelCatalogQuery) => Promise<IPCResult<{ models: ModelDescriptor[] }>>;
+  refreshModelCatalog: (query?: ModelCatalogQuery) => Promise<IPCResult<{ models: ModelDescriptor[] }>>;
+  getModelCatalogStatus: () => Promise<IPCResult<ModelCatalogStatus>>;
 
   // Codex OAuth authentication
   codexAuthLogin: () => Promise<{ success: boolean; data?: { accessToken: string; refreshToken: string; expiresAt: number; email?: string }; error?: string }>;
