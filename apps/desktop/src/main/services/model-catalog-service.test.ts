@@ -233,7 +233,7 @@ describe('model catalog service', () => {
     expect(models.every((model) => model.availability === 'unverified')).toBe(true);
     expect((await service.status()).snapshots[0]).toMatchObject({
       lastErrorCode: 'discovery-failed',
-      lastError: 'Model discovery failed',
+      lastError: 'Anthropic model discovery failed with HTTP 503',
     });
   });
 

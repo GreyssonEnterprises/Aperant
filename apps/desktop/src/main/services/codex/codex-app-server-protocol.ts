@@ -78,8 +78,12 @@ function hasStrings(value: Record<string, unknown>, keys: readonly string[]): bo
   return keys.every((key) => typeof value[key] === 'string');
 }
 
+function hasNonEmptyStrings(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return keys.every((key) => typeof value[key] === 'string' && value[key].trim().length > 0);
+}
+
 export function parseInitializeResponse(value: unknown): CodexInitializeResponse | null {
-  if (!isRecord(value) || !hasStrings(value, [
+  if (!isRecord(value) || !hasNonEmptyStrings(value, [
     'codexHome', 'platformFamily', 'platformOs', 'userAgent',
   ])) return null;
   return value as unknown as CodexInitializeResponse;
@@ -93,23 +97,27 @@ export function parseAccountReadResponse(value: unknown): CodexAccountReadRespon
     if (value.account.type === 'chatgpt' && (
       !('email' in value.account) ||
       (value.account.email !== null && typeof value.account.email !== 'string') ||
-      typeof value.account.planType !== 'string'
+      typeof value.account.planType !== 'string' || value.account.planType.trim().length === 0
     )) return null;
+    if (value.account.type === 'amazonBedrock' &&
+      value.account.credentialSource !== undefined &&
+      (typeof value.account.credentialSource !== 'string' ||
+        value.account.credentialSource.trim().length === 0)) return null;
   }
   return value as unknown as CodexAccountReadResponse;
 }
 
 export function parseLoginStartResponse(value: unknown): CodexLoginStartResponse | null {
-  if (!isRecord(value) || typeof value.type !== 'string' || typeof value.loginId !== 'string') {
+  if (!isRecord(value) || typeof value.type !== 'string' ||
+      !hasNonEmptyStrings(value, ['loginId'])) {
     return null;
   }
-  if (value.type === 'chatgpt' && typeof value.authUrl === 'string') {
+  if (value.type === 'chatgpt' && hasNonEmptyStrings(value, ['authUrl'])) {
     return value as unknown as CodexLoginStartResponse;
   }
   if (
     value.type === 'chatgptDeviceCode' &&
-    typeof value.userCode === 'string' &&
-    typeof value.verificationUrl === 'string'
+    hasNonEmptyStrings(value, ['userCode', 'verificationUrl'])
   ) return value as unknown as CodexLoginStartResponse;
   return null;
 }
@@ -117,18 +125,18 @@ export function parseLoginStartResponse(value: unknown): CodexLoginStartResponse
 export function parseModelListResponse(value: unknown): CodexModelListResponse | null {
   if (!isRecord(value) || !Array.isArray(value.data)) return null;
   if (value.nextCursor !== undefined && value.nextCursor !== null &&
-      typeof value.nextCursor !== 'string') return null;
+      (typeof value.nextCursor !== 'string' || value.nextCursor.trim().length === 0)) return null;
   for (const model of value.data) {
-    if (!isRecord(model) || !hasStrings(model, [
+    if (!isRecord(model) || !hasStrings(model, ['description']) || !hasNonEmptyStrings(model, [
       'id',
       'model',
       'displayName',
-      'description',
       'defaultReasoningEffort',
     ]) || typeof model.hidden !== 'boolean' || typeof model.isDefault !== 'boolean' ||
       !Array.isArray(model.supportedReasoningEfforts)) return null;
     for (const effort of model.supportedReasoningEfforts) {
-      if (!isRecord(effort) || !hasStrings(effort, ['reasoningEffort', 'description'])) {
+      if (!isRecord(effort) || !hasStrings(effort, ['description']) ||
+        !hasNonEmptyStrings(effort, ['reasoningEffort'])) {
         return null;
       }
     }

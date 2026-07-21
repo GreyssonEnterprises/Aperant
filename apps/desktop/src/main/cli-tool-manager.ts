@@ -21,7 +21,7 @@
  */
 
 import { execFileSync, execFile, type ExecFileOptionsWithStringEncoding, type ExecFileSyncOptions } from 'child_process';
-import { existsSync, readdirSync, promises as fsPromises } from 'fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, promises as fsPromises } from 'fs';
 import path from 'path';
 import os from 'os';
 import { promisify } from 'util';
@@ -29,6 +29,10 @@ import { app } from 'electron';
 import { findExecutable, findExecutableAsync, getAugmentedEnv, getAugmentedEnvAsync, shouldUseShell, existsAsync } from './env-utils';
 import { isWindows, isMacOS, isUnix, joinPaths, getExecutableExtension } from './platform';
 import type { ToolDetectionResult } from '../shared/types';
+import {
+  createCodexEnvironment,
+  trustedWindowsCommandProcessor,
+} from './services/codex/codex-environment';
 import { findHomebrewPython as findHomebrewPythonUtil } from './utils/homebrew-python';
 
 const execFileAsync = promisify(execFile);
@@ -100,44 +104,72 @@ export interface CodexCliVersionReadDependencies {
   shouldUseShell: (executable: string) => boolean;
 }
 
+export interface CodexCliAsyncVersionReadDependencies {
+  baseEnv: () => Promise<NodeJS.ProcessEnv>;
+  createTemporaryHome: () => Promise<string>;
+  removeTemporaryHome: (directory: string) => Promise<void>;
+  execFile: (
+    executable: string,
+    args: string[],
+    options: ExecFileAsyncOptionsWithVerbatim,
+  ) => Promise<{ stdout: string | Buffer }>;
+  isSecurePath: (executable: string) => boolean;
+  shouldUseShell: (executable: string) => boolean;
+  systemRoot?: string;
+}
+
 export function readCodexCliVersion(
   executable: string,
-  dependencies: CodexCliVersionReadDependencies = {
-    comSpec: process.env.ComSpec ??
-      path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe'),
-    env: getAugmentedEnv(),
-    execFile: (command, args, options) => execFileSync(command, args, options),
-    isSecurePath,
-    shouldUseShell,
-  },
+  dependencies?: CodexCliVersionReadDependencies,
 ): string {
-  const trimmed = executable.trim();
-  const unquoted = trimmed.startsWith('"') && trimmed.endsWith('"')
-    ? trimmed.slice(1, -1)
-    : trimmed;
-  if (dependencies.shouldUseShell(trimmed)) {
-    if (!dependencies.isSecurePath(unquoted)) {
-      throw new Error(`Codex CLI path failed security validation: ${unquoted}`);
+  let temporaryHome: string | undefined;
+  try {
+    const resolved = dependencies ?? (() => {
+      temporaryHome = mkdtempSync(path.join(os.tmpdir(), 'aperant-codex-version-'));
+      return {
+        comSpec: trustedWindowsCommandProcessor(),
+        env: createCodexEnvironment(getAugmentedEnv(), temporaryHome),
+        execFile: (command: string, args: string[], options: ExecFileSyncOptionsWithVerbatim) =>
+          execFileSync(command, args, options),
+        isSecurePath,
+        shouldUseShell,
+      };
+    })();
+    const trimmed = executable.trim();
+    const unquoted = trimmed.startsWith('"') && trimmed.endsWith('"')
+      ? trimmed.slice(1, -1)
+      : trimmed;
+    if (resolved.shouldUseShell(trimmed)) {
+      if (!resolved.isSecurePath(unquoted)) {
+        throw new Error(`Codex CLI path failed security validation: ${unquoted}`);
+      }
+      const trustedComSpec = trustedWindowsCommandProcessor(resolved.env);
+      if (path.win32.normalize(resolved.comSpec).toLowerCase() !==
+        path.win32.normalize(trustedComSpec).toLowerCase()) {
+        throw new Error('Codex CLI command processor failed security validation');
+      }
+      return normalizeExecOutput(resolved.execFile(
+        resolved.comSpec,
+        ['/d', '/s', '/c', `""${unquoted}" --version"`],
+        {
+          encoding: 'utf-8',
+          timeout: 5_000,
+          windowsHide: true,
+          windowsVerbatimArguments: true,
+          env: resolved.env,
+        },
+      ));
     }
-    return normalizeExecOutput(dependencies.execFile(
-      dependencies.comSpec,
-      ['/d', '/s', '/c', `""${unquoted}" --version"`],
-      {
-        encoding: 'utf-8',
-        timeout: 5_000,
-        windowsHide: true,
-        windowsVerbatimArguments: true,
-        env: dependencies.env,
-      },
-    ));
+    return normalizeExecOutput(resolved.execFile(unquoted, ['--version'], {
+      encoding: 'utf-8',
+      timeout: 5_000,
+      windowsHide: true,
+      shell: false,
+      env: resolved.env,
+    }));
+  } finally {
+    if (temporaryHome) rmSync(temporaryHome, { recursive: true, force: true });
   }
-  return normalizeExecOutput(dependencies.execFile(unquoted, ['--version'], {
-    encoding: 'utf-8',
-    timeout: 5_000,
-    windowsHide: true,
-    shell: false,
-    env: dependencies.env,
-  }));
 }
 
 export function parseCodexCliVersion(output: string): string | null {
@@ -204,39 +236,56 @@ export function detectCodexCli(
   }
 }
 
-export async function readCodexCliVersionAsync(executable: string): Promise<string> {
+export async function readCodexCliVersionAsync(
+  executable: string,
+  dependencies: CodexCliAsyncVersionReadDependencies = {
+    baseEnv: getAugmentedEnvAsync,
+    createTemporaryHome: () => fsPromises.mkdtemp(
+      path.join(os.tmpdir(), 'aperant-codex-version-'),
+    ),
+    removeTemporaryHome: (directory) => fsPromises.rm(directory, { recursive: true, force: true }),
+    execFile: (command, args, options) => execFileAsync(command, args, options),
+    isSecurePath,
+    shouldUseShell,
+    systemRoot: process.env.SystemRoot,
+  },
+): Promise<string> {
   const trimmed = executable.trim();
   const unquoted = trimmed.startsWith('"') && trimmed.endsWith('"')
     ? trimmed.slice(1, -1)
     : trimmed;
-  const env = await getAugmentedEnvAsync();
-  if (shouldUseShell(trimmed)) {
-    if (!isSecurePath(unquoted)) {
-      throw new Error(`Codex CLI path failed security validation: ${unquoted}`);
+  const temporaryHome = await dependencies.createTemporaryHome();
+  try {
+    const env = createCodexEnvironment(await dependencies.baseEnv(), temporaryHome);
+    if (dependencies.shouldUseShell(trimmed)) {
+      if (!dependencies.isSecurePath(unquoted)) {
+        throw new Error(`Codex CLI path failed security validation: ${unquoted}`);
+      }
+      const comSpec = trustedWindowsCommandProcessor({ SystemRoot: dependencies.systemRoot });
+      const result = await dependencies.execFile(
+        comSpec,
+        ['/d', '/s', '/c', `""${unquoted}" --version"`],
+        {
+          encoding: 'utf-8',
+          timeout: 5_000,
+          windowsHide: true,
+          windowsVerbatimArguments: true,
+          env,
+        },
+      );
+      return normalizeExecOutput(result.stdout);
     }
-    const comSpec = process.env.ComSpec ??
-      path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
-    const result = await execFileAsync(
-      comSpec,
-      ['/d', '/s', '/c', `""${unquoted}" --version"`],
-      {
-        encoding: 'utf-8',
-        timeout: 5_000,
-        windowsHide: true,
-        windowsVerbatimArguments: true,
-        env,
-      } as ExecFileAsyncOptionsWithVerbatim,
-    );
+    const result = await dependencies.execFile(unquoted, ['--version'], {
+      encoding: 'utf-8',
+      timeout: 5_000,
+      windowsHide: true,
+      shell: false,
+      env,
+    });
     return normalizeExecOutput(result.stdout);
+  } finally {
+    await dependencies.removeTemporaryHome(temporaryHome);
   }
-  const result = await execFileAsync(unquoted, ['--version'], {
-    encoding: 'utf-8',
-    timeout: 5_000,
-    windowsHide: true,
-    shell: false,
-    env,
-  });
-  return normalizeExecOutput(result.stdout);
 }
 
 export async function detectCodexCliAsync(

@@ -16,6 +16,13 @@ const MAX_ATTEMPTS = 3;
 const INITIAL_RETRY_DELAY_MS = 100;
 const MAX_RETRY_DELAY_MS = 1_000;
 
+class AnthropicDiscoveryError extends Error {
+  constructor(status: number) {
+    super(`Anthropic model discovery failed with HTTP ${status}`);
+    this.name = 'AnthropicDiscoveryError';
+  }
+}
+
 interface ModelCatalogCache {
   version: 1;
   snapshots: ModelCatalogSnapshot[];
@@ -185,7 +192,7 @@ export function createModelCatalogService(
           },
         });
         if (!response.ok) {
-          const error = new Error(`Anthropic model discovery failed with HTTP ${response.status}`);
+          const error = new AnthropicDiscoveryError(response.status);
           lastError = error;
           if (!isRetryable(response.status)) break;
         } else {
@@ -233,7 +240,9 @@ export function createModelCatalogService(
             : bundledForAccount(account.provider, account);
         }
       } catch (error) {
-        refreshError = toPublicCatalogError(error);
+        refreshError = error instanceof AnthropicDiscoveryError
+          ? { code: 'discovery-failed', message: error.message }
+          : toPublicCatalogError(error);
         models = bundledForAccount(account.provider, account).map((model) => ({
           ...model,
           availability: isCodexSubscriptionModel(model) ? 'unavailable' : 'unverified',

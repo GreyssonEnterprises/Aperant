@@ -14,10 +14,13 @@ export interface CodexJsonlProcess {
   stderr: Readable;
   pid?: number;
   killed?: boolean;
+  exitCode?: number | null;
+  signalCode?: NodeJS.Signals | null;
   kill(signal?: NodeJS.Signals): boolean;
   on(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): this;
   on(event: 'error', listener: (error: Error) => void): this;
   once(event: 'exit' | 'error', listener: (...args: unknown[]) => void): this;
+  removeListener(event: 'exit', listener: (...args: unknown[]) => void): this;
 }
 
 interface PendingRequest {
@@ -111,10 +114,12 @@ export class CodexAppServerClient {
   request<M extends keyof CodexClientRequestMap>(
     method: M,
     params: CodexClientRequestMap[M]['params'],
-  ): Promise<CodexClientRequestMap[M]['response']>;
-  request(method: string, params: unknown): Promise<unknown>;
-  request(method: string, params: unknown): Promise<unknown> {
-    return this.sendRequest(method, params, this.options.requestTimeoutMs ?? 30_000);
+  ): Promise<CodexClientRequestMap[M]['response']> {
+    return this.sendRequest(
+      method,
+      params,
+      this.options.requestTimeoutMs ?? 30_000,
+    ) as Promise<CodexClientRequestMap[M]['response']>;
   }
 
   private sendRequest(method: string, params: unknown, timeoutMs: number): Promise<unknown> {

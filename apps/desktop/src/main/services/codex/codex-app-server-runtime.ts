@@ -4,8 +4,11 @@ import {
   createCodexAppServerManager,
   type CodexAppServerManager,
 } from './codex-app-server-manager';
+import { CodexRuntimeError } from './codex-errors';
 
 let manager: CodexAppServerManager | undefined;
+let state: 'open' | 'shutting-down' | 'closed' = 'open';
+let shutdownPromise: Promise<void> | undefined;
 
 type InvalidateCatalog = (
   query: { provider: 'openai'; accountId: string },
@@ -27,6 +30,7 @@ export async function handleCodexNotification(
 }
 
 export function getCodexAppServerManager(): CodexAppServerManager {
+  if (state !== 'open') throw new CodexRuntimeError('shutdown');
   if (!manager) {
     manager = createCodexAppServerManager({
       clientVersion: app.getVersion(),
@@ -47,8 +51,25 @@ export function getCodexAppServerManager(): CodexAppServerManager {
 }
 
 export async function shutdownCodexAppServerRuntime(): Promise<void> {
-  if (!manager) return;
+  if (shutdownPromise) return shutdownPromise;
+  state = 'shutting-down';
   const active = manager;
+  shutdownPromise = (async () => {
+    try {
+      await active?.shutdown();
+    } finally {
+      manager = undefined;
+      state = 'closed';
+    }
+  })();
+  return shutdownPromise;
+}
+
+export function resetCodexAppServerRuntimeForTests(): void {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('Codex runtime reset is only available in tests');
+  }
   manager = undefined;
-  await active.shutdown();
+  state = 'open';
+  shutdownPromise = undefined;
 }

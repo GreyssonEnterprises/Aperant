@@ -21,7 +21,8 @@ export type ModelCatalogErrorCode =
   | 'request-timeout'
   | 'rpc-error'
   | 'shutdown'
-  | 'spawn-failed';
+  | 'spawn-failed'
+  | 'termination-failed';
 
 export interface ModelThinkingSupport {
   mode: ModelThinkingMode;

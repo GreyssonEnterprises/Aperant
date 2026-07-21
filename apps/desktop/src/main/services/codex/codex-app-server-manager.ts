@@ -1,13 +1,13 @@
-import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
+import { spawn as nodeSpawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmod, mkdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import type { ModelDescriptor } from '@shared/types/model-catalog';
 import { detectCodexCliAsync, type CodexCliDetectionResult } from '../../cli-tool-manager';
 import { getAugmentedEnv } from '../../env-utils';
-import { killProcessGracefully } from '../../platform';
 import { isSecurePath as isSecureWindowsPath } from '../../utils/windows-paths';
 import { CodexAppServerClient, type CodexJsonlProcess } from './codex-app-server-client';
+import { createCodexEnvironment, trustedWindowsCommandProcessor } from './codex-environment';
 import { CodexRuntimeError } from './codex-errors';
 import {
   parseAccountReadResponse,
@@ -69,48 +69,6 @@ interface PendingSession {
   process?: CodexJsonlProcess;
 }
 
-const ALLOWED_ENVIRONMENT_KEYS = new Set([
-  'APPDATA',
-  'COMSPEC',
-  'DISPLAY',
-  'HOMEDRIVE',
-  'HOMEPATH',
-  'LANG',
-  'LC_ALL',
-  'LC_CTYPE',
-  'LOCALAPPDATA',
-  'LOGNAME',
-  'OS',
-  'PATH',
-  'PATHEXT',
-  'PROGRAMDATA',
-  'PROGRAMFILES',
-  'PROGRAMFILES(X86)',
-  'PROGRAMW6432',
-  'SHELL',
-  'SYSTEMROOT',
-  'TEMP',
-  'TMP',
-  'TMPDIR',
-  'TZ',
-  'USER',
-  'USERPROFILE',
-  'WAYLAND_DISPLAY',
-  'WINDIR',
-  'XDG_RUNTIME_DIR',
-]);
-
-function cleanEnvironment(baseEnv: NodeJS.ProcessEnv, codexHome: string): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(baseEnv)) {
-    if (value !== undefined && ALLOWED_ENVIRONMENT_KEYS.has(key.toUpperCase())) {
-      env[key] = value;
-    }
-  }
-  env.CODEX_HOME = codexHome;
-  return env;
-}
-
 function toDescriptor(model: CodexModel): ModelDescriptor {
   return {
     id: model.model,
@@ -133,23 +91,52 @@ function isContained(pathApi: typeof path.posix, root: string, candidate: string
     !pathApi.isAbsolute(relative);
 }
 
-function defaultTerminate(process: CodexJsonlProcess): Promise<void> {
+export interface CodexTerminationOptions {
+  gracefulTimeoutMs?: number;
+  forceTimeoutMs?: number;
+}
+
+function hasExited(process: CodexJsonlProcess): boolean {
+  return process.exitCode !== undefined && process.exitCode !== null ||
+    process.signalCode !== undefined && process.signalCode !== null;
+}
+
+function signalAndWaitForExit(
+  process: CodexJsonlProcess,
+  signal: NodeJS.Signals,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (hasExited(process)) return Promise.resolve(true);
   return new Promise((resolve) => {
     let settled = false;
-    const finish = () => {
+    const finish = (exited: boolean) => {
       if (settled) return;
       settled = true;
-      clearTimeout(fallback);
-      resolve();
+      clearTimeout(timer);
+      process.removeListener('exit', onExit);
+      resolve(exited);
     };
-    const fallback = setTimeout(finish, TERMINATION_TIMEOUT_MS + 250);
-    process.once('exit', finish);
-    process.once('error', finish);
-    killProcessGracefully(process as unknown as ChildProcess, {
-      debugPrefix: '[CodexAppServer]',
-      timeoutMs: TERMINATION_TIMEOUT_MS,
-    });
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(hasExited(process)), timeoutMs);
+    timer.unref?.();
+    process.once('exit', onExit);
+    try {
+      process.kill(signal);
+    } catch {
+      finish(hasExited(process));
+    }
   });
+}
+
+export async function terminateCodexProcess(
+  process: CodexJsonlProcess,
+  options: CodexTerminationOptions = {},
+): Promise<void> {
+  const gracefulTimeoutMs = options.gracefulTimeoutMs ?? TERMINATION_TIMEOUT_MS;
+  const forceTimeoutMs = options.forceTimeoutMs ?? TERMINATION_TIMEOUT_MS;
+  if (await signalAndWaitForExit(process, 'SIGTERM', gracefulTimeoutMs)) return;
+  if (await signalAndWaitForExit(process, 'SIGKILL', forceTimeoutMs)) return;
+  throw new CodexRuntimeError('termination-failed');
 }
 
 export function createCodexAppServerManager(
@@ -166,8 +153,9 @@ export function createCodexAppServerManager(
   const spawn = dependencies.spawn ?? ((executable, args, options) => (
     nodeSpawn(executable, args, options) as unknown as CodexJsonlProcess
   ));
-  const terminate = dependencies.terminate ?? defaultTerminate;
+  const terminate = dependencies.terminate ?? terminateCodexProcess;
   const sessions = new Map<string, PendingSession>();
+  const accountTerminations = new Map<string, Promise<void>>();
   const canonicalOwners = new Map<string, string>();
   const terminations = new WeakMap<object, Promise<void>>();
   let shuttingDown = false;
@@ -187,8 +175,22 @@ export function createCodexAppServerManager(
   function terminateOnce(process: CodexJsonlProcess): Promise<void> {
     const existing = terminations.get(process);
     if (existing) return existing;
-    const operation = Promise.resolve(terminate(process)).then(() => undefined);
+    const operation = Promise.resolve().then(() => terminate(process)).then(() => undefined);
     terminations.set(process, operation);
+    return operation;
+  }
+
+  function trackAccountTermination(accountId: string, process: CodexJsonlProcess): Promise<void> {
+    const operation = terminateOnce(process);
+    accountTerminations.set(accountId, operation);
+    void operation.then(
+      () => {
+        if (accountTerminations.get(accountId) === operation) {
+          accountTerminations.delete(accountId);
+        }
+      },
+      () => dependencies.onDiagnostic?.('Codex app-server termination could not be verified'),
+    );
     return operation;
   }
 
@@ -218,8 +220,12 @@ export function createCodexAppServerManager(
     if (!securePath(executable) || /[%!^&|<>\r\n]/.test(executable)) {
       throw new CodexRuntimeError('spawn-failed');
     }
-    const comSpec = dependencies.comSpec ?? process.env.ComSpec ??
-      path.win32.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
+    const trustedComSpec = trustedWindowsCommandProcessor();
+    const comSpec = dependencies.comSpec ?? trustedComSpec;
+    if (path.win32.normalize(comSpec).toLowerCase() !==
+      path.win32.normalize(trustedComSpec).toLowerCase()) {
+      throw new CodexRuntimeError('spawn-failed');
+    }
     return {
       executable: comSpec,
       args: ['/d', '/s', '/c', `""${executable}" app-server --stdio"`],
@@ -229,6 +235,8 @@ export function createCodexAppServerManager(
 
   async function createSession(accountId: string, entry: PendingSession): Promise<AccountSession> {
     try {
+      assertOpen();
+      await accountTerminations.get(accountId);
       assertOpen();
       const detection = await detectCli();
       assertOpen();
@@ -259,7 +267,11 @@ export function createCodexAppServerManager(
 
       const invocation = spawnInvocation(detection.path);
       const child = spawn(invocation.executable, invocation.args, {
-        env: cleanEnvironment(dependencies.baseEnv ?? getAugmentedEnv(), codexHome),
+        env: createCodexEnvironment(
+          dependencies.baseEnv ?? getAugmentedEnv(),
+          codexHome,
+          platform,
+        ),
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
@@ -279,7 +291,7 @@ export function createCodexAppServerManager(
         onDiagnostic: dependencies.onDiagnostic,
         onFatal: (_error, processEnded) => {
           if (sessions.get(accountId)?.token === entry.token) sessions.delete(accountId);
-          if (!processEnded) void terminateOnce(child);
+          if (!processEnded) trackAccountTermination(accountId, child);
         },
         onNotification: (method, params) => {
           void Promise.resolve(dependencies.onNotification?.(accountId, method, params)).catch(() => {
@@ -367,11 +379,19 @@ export function createCodexAppServerManager(
     async shutdown() {
       if (shutdownPromise) return shutdownPromise;
       shuttingDown = true;
-      const active = [...sessions.values()];
+      const active = [...sessions.entries()];
       sessions.clear();
-      shutdownPromise = Promise.allSettled(active.flatMap((entry) => (
-        entry.process ? [terminateOnce(entry.process)] : []
-      ))).then(() => undefined);
+      const operations = [
+        ...accountTerminations.values(),
+        ...active.flatMap(([accountId, entry]) => (
+          entry.process ? [trackAccountTermination(accountId, entry.process)] : []
+        )),
+      ];
+      shutdownPromise = Promise.allSettled(operations).then((results) => {
+        if (results.some((result) => result.status === 'rejected')) {
+          throw new CodexRuntimeError('termination-failed');
+        }
+      });
       return shutdownPromise;
     },
   };

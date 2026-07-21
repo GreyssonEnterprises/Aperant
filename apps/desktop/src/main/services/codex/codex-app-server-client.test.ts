@@ -99,8 +99,8 @@ describe('Codex app-server JSONL client', () => {
     });
     await client.initialize();
 
-    const first = client.request('one', {});
-    const second = client.request('two', {});
+    const first = client.request('account/read', { refreshToken: false });
+    const second = client.request('model/list', {});
     process.send({ id: 3, result: 'second' });
     process.send({ id: 2, result: 'first' });
 
@@ -280,7 +280,8 @@ describe('Codex app-server JSONL client', () => {
       expectedCodexHome: '/tmp/aperant-codex/account-a',
     });
 
-    const error = await client.request('account/read', {}).catch((caught) => caught);
+    const error = await client.request('account/read', { refreshToken: false })
+      .catch((caught) => caught);
 
     expect(error).toMatchObject({ code: 'rpc-error', message: 'Codex app-server request failed' });
     expect(JSON.stringify(error)).not.toContain('rpc-super-secret');

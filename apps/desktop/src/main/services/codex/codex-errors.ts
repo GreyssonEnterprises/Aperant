@@ -12,6 +12,7 @@ const PUBLIC_MESSAGES: Record<ModelCatalogErrorCode, string> = {
   'rpc-error': 'Codex app-server request failed',
   shutdown: 'Codex app-server is shutting down',
   'spawn-failed': 'Codex app-server could not be started',
+  'termination-failed': 'Codex app-server termination could not be verified',
 };
 
 export class CodexRuntimeError extends Error {

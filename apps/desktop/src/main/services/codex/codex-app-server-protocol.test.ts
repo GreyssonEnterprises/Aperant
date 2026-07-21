@@ -1,0 +1,51 @@
+import { describe, expect, it } from 'vitest';
+import {
+  parseAccountReadResponse,
+  parseInitializeResponse,
+  parseLoginStartResponse,
+  parseModelListResponse,
+} from './codex-app-server-protocol';
+
+describe('Codex app-server protocol validation', () => {
+  it('rejects empty required initialize, login, and model strings', () => {
+    expect(parseInitializeResponse({
+      codexHome: '',
+      platformFamily: 'unix',
+      platformOs: 'macos',
+      userAgent: 'codex_cli_rs/0.144.6',
+    })).toBeNull();
+    expect(parseLoginStartResponse({
+      type: 'chatgpt',
+      loginId: '',
+      authUrl: 'https://auth.openai.com/example',
+    })).toBeNull();
+    expect(parseLoginStartResponse({
+      type: 'chatgpt',
+      loginId: 'login-1',
+      authUrl: '',
+    })).toBeNull();
+    expect(parseModelListResponse({
+      data: [{
+        id: 'model-id',
+        model: '',
+        displayName: 'Model',
+        description: 'Description',
+        hidden: false,
+        isDefault: true,
+        defaultReasoningEffort: 'medium',
+        supportedReasoningEfforts: [],
+      }],
+    })).toBeNull();
+  });
+
+  it('type-checks optional Bedrock credentialSource', () => {
+    expect(parseAccountReadResponse({
+      account: { type: 'amazonBedrock', credentialSource: 42 },
+      requiresOpenaiAuth: false,
+    })).toBeNull();
+    expect(parseAccountReadResponse({
+      account: { type: 'amazonBedrock', credentialSource: 'environment' },
+      requiresOpenaiAuth: false,
+    })).toMatchObject({ account: { credentialSource: 'environment' } });
+  });
+});
