@@ -457,4 +457,39 @@ describe('terminateProcessTree', () => {
     expect(signals).toEqual(['SIGTERM', 'SIGKILL']);
     expect(target.kill).not.toHaveBeenCalled();
   });
+
+  it('does not target a PID when the tracked child is already terminal', async () => {
+    Object.defineProperty(target, 'exitCode', { value: 0 });
+
+    await terminateProcessTree(target, { platform: 'win32' });
+
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(target.kill).not.toHaveBeenCalled();
+  });
+
+  it('suppresses the first signal when exit arrives during observer setup', async () => {
+    vi.useRealTimers();
+    const signals: NodeJS.Signals[] = [];
+    const originalOnce = target.once.bind(target);
+    let injectedExit = false;
+    target.once = ((event: string, listener: (...args: unknown[]) => void) => {
+      const result = originalOnce(event, listener);
+      if (event === 'exit' && !injectedExit) {
+        injectedExit = true;
+        Object.defineProperty(target, 'exitCode', { value: 0 });
+        target.emit('exit', 0, null);
+      }
+      return result;
+    }) as ChildProcess['once'];
+
+    await terminateProcessTree(target, {
+      platform: 'darwin',
+      processGroup: true,
+      signalProcessGroup: (_pid, signal) => signals.push(signal),
+      isProcessGroupAlive: () => false,
+    });
+
+    expect(signals).toEqual([]);
+    expect(target.kill).not.toHaveBeenCalled();
+  });
 });

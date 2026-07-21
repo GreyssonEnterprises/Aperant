@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { ModelDescriptor } from '@shared/types/model-catalog';
 import { detectCodexCliAsync, type CodexCliDetectionResult } from '../../cli-tool-manager';
 import { getAugmentedEnvAsync } from '../../env-utils';
-import { terminateProcessTree } from '../../platform';
+import { isProcessInTerminalState, terminateProcessTree } from '../../platform';
 import { isSecurePath as isSecureWindowsPath } from '../../utils/windows-paths';
 import { CodexAppServerClient, type CodexJsonlProcess } from './codex-app-server-client';
 import { createCodexEnvironment, trustedWindowsCommandProcessor } from './codex-environment';
@@ -69,6 +69,7 @@ interface PendingSession {
   token: symbol;
   promise: Promise<AccountSession>;
   process?: CodexJsonlProcess;
+  processEnded?: boolean;
 }
 
 function toDescriptor(model: CodexModel): ModelDescriptor {
@@ -256,6 +257,7 @@ export function createCodexAppServerManager(
         expectedCodexHome: codexHome,
         onDiagnostic: dependencies.onDiagnostic,
         onFatal: (_error, processEnded) => {
+          if (processEnded) entry.processEnded = true;
           if (sessions.get(accountId)?.token === entry.token) sessions.delete(accountId);
           if (!processEnded) trackAccountTermination(accountId, child);
         },
@@ -273,7 +275,9 @@ export function createCodexAppServerManager(
       }
       return { client, process: child };
     } catch (error) {
-      if (entry.process) await terminateOnce(entry.process);
+      if (entry.process && !entry.processEnded && !isProcessInTerminalState(
+        entry.process as unknown as ChildProcess,
+      )) await terminateOnce(entry.process);
       throw publicError(error);
     }
   }

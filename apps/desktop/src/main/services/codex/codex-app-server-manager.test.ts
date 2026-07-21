@@ -799,6 +799,45 @@ describe('per-account Codex app-server manager', () => {
     expect(terminate).toHaveBeenCalledWith(spawnedProcess);
   });
 
+  it('does not terminate a recycled PID when the client reports exit during initialize', async () => {
+    class ExitingInitializeProcess extends EventEmitter implements CodexJsonlProcess {
+      readonly stdout = new PassThrough();
+      readonly stderr = new PassThrough();
+      readonly stdin = new Writable({
+        write: (_chunk, _encoding, done) => {
+          this.emit('exit', 1, null);
+          done();
+        },
+      });
+      pid = 9393;
+      killed = false;
+      kill(): boolean {
+        this.killed = true;
+        return true;
+      }
+    }
+    const terminate = vi.fn();
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: async () => ({
+        found: true,
+        path: '/usr/bin/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      baseEnv: { PATH: '/usr/bin' },
+      spawn: () => new ExitingInitializeProcess(),
+      terminate,
+    });
+
+    await expect(manager.readAccount('account-a')).rejects.toMatchObject({
+      code: 'process-exited',
+    });
+    expect(terminate).not.toHaveBeenCalled();
+  });
+
   it('rejects old and unavailable Codex CLIs with actionable errors', async () => {
     const base = {
       codexHomeRoot: '/tmp/aperant/codex-accounts',
