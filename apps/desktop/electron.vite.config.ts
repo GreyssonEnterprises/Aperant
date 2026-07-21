@@ -29,6 +29,11 @@ const embeddedKeys = {
 export default defineConfig({
   main: {
     define: { ...sentryDefines, ...embeddedKeys },
+    resolve: {
+      alias: {
+        '@shared': resolve(__dirname, 'src/shared'),
+      },
+    },
     plugins: [externalizeDepsPlugin({
       // Bundle these packages into the main process (they won't be in node_modules in packaged app)
       exclude: [
@@ -92,6 +97,11 @@ export default defineConfig({
     }
   },
   preload: {
+    resolve: {
+      alias: {
+        '@shared': resolve(__dirname, 'src/shared'),
+      },
+    },
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
