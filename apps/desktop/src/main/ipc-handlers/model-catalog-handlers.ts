@@ -32,8 +32,12 @@ export function registerModelCatalogHandlers(service = getModelCatalogService())
     async (_event, input?: unknown): Promise<IPCResult<{ models: ModelDescriptor[] }>> => {
       try {
         return { success: true, data: { models: await service.list(parseQuery(input)) } };
-      } catch (error) {
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      } catch {
+        return {
+          success: false,
+          errorCode: 'discovery-failed',
+          error: 'Model catalog request failed',
+        };
       }
     },
   );
@@ -42,8 +46,12 @@ export function registerModelCatalogHandlers(service = getModelCatalogService())
     async (_event, input?: unknown): Promise<IPCResult<{ models: ModelDescriptor[] }>> => {
       try {
         return { success: true, data: { models: await service.refresh(parseQuery(input)) } };
-      } catch (error) {
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      } catch {
+        return {
+          success: false,
+          errorCode: 'discovery-failed',
+          error: 'Model catalog request failed',
+        };
       }
     },
   );
@@ -52,8 +60,12 @@ export function registerModelCatalogHandlers(service = getModelCatalogService())
     async (): Promise<IPCResult<ModelCatalogStatus>> => {
       try {
         return { success: true, data: await service.status() };
-      } catch (error) {
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      } catch {
+        return {
+          success: false,
+          errorCode: 'discovery-failed',
+          error: 'Model catalog request failed',
+        };
       }
     },
   );

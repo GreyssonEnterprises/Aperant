@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   detectCodexCli,
+  detectCodexCliAsync,
   evaluateCodexCliVersion,
   parseCodexCliVersion,
   readCodexCliVersion,
@@ -91,5 +92,18 @@ describe('Codex CLI detection', () => {
       shouldUseShell: () => true,
     })).toThrow('security validation');
     expect(execFile).not.toHaveBeenCalled();
+  });
+
+  it('discovers and versions Codex asynchronously for Electron main', async () => {
+    const findExecutableAsync = vi.fn(async () => '/opt/homebrew/bin/codex');
+    const readVersionAsync = vi.fn(async () => 'codex-cli 0.144.6\n');
+
+    await expect(detectCodexCliAsync({ findExecutableAsync, readVersionAsync })).resolves.toEqual({
+      found: true,
+      path: '/opt/homebrew/bin/codex',
+      version: '0.144.6',
+      runtimeValidationRequired: false,
+    });
+    expect(findExecutableAsync).toHaveBeenCalledWith('codex');
   });
 });

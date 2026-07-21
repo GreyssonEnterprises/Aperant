@@ -152,7 +152,7 @@ describe('Codex app-server JSONL client', () => {
     await secondClient.initialize();
     const exitedRequest = secondClient.request('model/list', {});
     secondProcess.emit('exit', 17, null);
-    await expect(exitedRequest).rejects.toThrow('exited');
+    await expect(exitedRequest).rejects.toMatchObject({ code: 'process-exited' });
   });
 
   it('rejects invalid initialize shapes and a mismatched isolated home', async () => {
@@ -206,5 +206,83 @@ describe('Codex app-server JSONL client', () => {
 
     expect(onDiagnostic).toHaveBeenCalledWith('Codex app-server emitted stderr output');
     expect(JSON.stringify(onDiagnostic.mock.calls)).not.toContain('secret-token');
+  });
+
+  it('times out unanswered requests and initialize handshakes', async () => {
+    vi.useFakeTimers();
+    try {
+      const process = new FakeCodexProcess(() => undefined);
+      const client = new CodexAppServerClient(process, {
+        expectedCodexHome: '/tmp/aperant-codex/account-a',
+        initializeTimeoutMs: 20,
+        requestTimeoutMs: 10,
+      });
+
+      const request = client.request('model/list', {});
+      const requestExpectation = expect(request).rejects.toMatchObject({ code: 'request-timeout' });
+      await vi.advanceTimersByTimeAsync(11);
+      await requestExpectation;
+
+      const initializeProcess = new FakeCodexProcess(() => undefined);
+      const initializeClient = new CodexAppServerClient(initializeProcess, {
+        expectedCodexHome: '/tmp/aperant-codex/account-b',
+        initializeTimeoutMs: 20,
+        requestTimeoutMs: 10,
+      });
+      const initialize = initializeClient.initialize();
+      const initializeExpectation = expect(initialize).rejects.toMatchObject({
+        code: 'request-timeout',
+      });
+      await vi.advanceTimersByTimeAsync(21);
+      await initializeExpectation;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects string and unknown response IDs without correlating them', async () => {
+    const stringProcess = new FakeCodexProcess(() => undefined);
+    const stringClient = new CodexAppServerClient(stringProcess, {
+      expectedCodexHome: '/tmp/aperant-codex/account-a',
+    });
+    const stringPending = stringClient.request('model/list', {});
+    stringProcess.send({ id: '1', result: {} });
+    await expect(stringPending).rejects.toMatchObject({ code: 'protocol-error' });
+
+    const unknownProcess = new FakeCodexProcess(() => undefined);
+    const unknownClient = new CodexAppServerClient(unknownProcess, {
+      expectedCodexHome: '/tmp/aperant-codex/account-a',
+    });
+    const unknownPending = unknownClient.request('model/list', {});
+    unknownProcess.send({ id: 99, result: {} });
+    await expect(unknownPending).rejects.toMatchObject({ code: 'protocol-error' });
+  });
+
+  it('bounds incomplete JSONL input before it can exhaust memory', async () => {
+    const process = new FakeCodexProcess(() => undefined);
+    const client = new CodexAppServerClient(process, {
+      expectedCodexHome: '/tmp/aperant-codex/account-a',
+      maxBufferBytes: 16,
+    });
+    const pending = client.request('model/list', {});
+
+    process.stdout.write('x'.repeat(17));
+
+    await expect(pending).rejects.toMatchObject({ code: 'protocol-error' });
+  });
+
+  it('redacts raw JSON-RPC error text into a typed public error', async () => {
+    const process = new FakeCodexProcess((request) => ({
+      id: request.id,
+      error: { code: -32_000, message: 'Bearer rpc-super-secret' },
+    }));
+    const client = new CodexAppServerClient(process, {
+      expectedCodexHome: '/tmp/aperant-codex/account-a',
+    });
+
+    const error = await client.request('account/read', {}).catch((caught) => caught);
+
+    expect(error).toMatchObject({ code: 'rpc-error', message: 'Codex app-server request failed' });
+    expect(JSON.stringify(error)).not.toContain('rpc-super-secret');
   });
 });

@@ -231,7 +231,10 @@ describe('model catalog service', () => {
     expect(models.length).toBeGreaterThan(0);
     expect(models.every((model) => model.source === 'bundled')).toBe(true);
     expect(models.every((model) => model.availability === 'unverified')).toBe(true);
-    expect((await service.status()).snapshots[0].lastError).toContain('503');
+    expect((await service.status()).snapshots[0]).toMatchObject({
+      lastErrorCode: 'discovery-failed',
+      lastError: 'Model discovery failed',
+    });
   });
 
   it('does not retry non-transient authentication failures', async () => {

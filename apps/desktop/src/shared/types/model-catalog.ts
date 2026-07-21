@@ -10,6 +10,18 @@ export type ModelThinkingMode =
 export type ModelBackend = 'vercel' | 'codex-app-server';
 export type ModelDescriptorSource = 'bundled' | 'provider' | 'custom';
 export type ModelAvailability = 'available' | 'unavailable' | 'unverified';
+export type ModelCatalogErrorCode =
+  | 'authentication-required'
+  | 'cli-unavailable'
+  | 'cli-unsupported'
+  | 'discovery-failed'
+  | 'isolation-failed'
+  | 'process-exited'
+  | 'protocol-error'
+  | 'request-timeout'
+  | 'rpc-error'
+  | 'shutdown'
+  | 'spawn-failed';
 
 export interface ModelThinkingSupport {
   mode: ModelThinkingMode;
@@ -54,6 +66,7 @@ export interface ModelCatalogSnapshotStatus {
   fetchedAt: string;
   stale: boolean;
   refreshing: boolean;
+  lastErrorCode?: ModelCatalogErrorCode;
   lastError?: string;
 }
 

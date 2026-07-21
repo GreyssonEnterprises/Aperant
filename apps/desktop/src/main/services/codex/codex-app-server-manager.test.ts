@@ -93,7 +93,9 @@ describe('per-account Codex app-server manager', () => {
         runtimeValidationRequired: false,
       }),
       ensureDirectory: vi.fn(async () => undefined),
-      canonicalizeDirectory: async (directory) => directory.replace('/var/', '/private/var/'),
+      canonicalizeDirectory: async (directory) => directory.startsWith('/private/')
+        ? directory
+        : directory.replace('/var/', '/private/var/'),
       spawn: (_path, _args, options) => {
         spawnedHome = options.env.CODEX_HOME;
         return new ScriptedProcess(spawnedHome);
@@ -119,6 +121,15 @@ describe('per-account Codex app-server manager', () => {
       }),
       ensureDirectory: vi.fn(async () => undefined),
       canonicalizeDirectory: async (directory) => directory,
+      baseEnv: {
+        PATH: '/usr/bin',
+        TEMP: '/tmp',
+        SENTRY_DSN: 'sentry-secret',
+        anthropic_api_key: 'anthropic-secret',
+        OpenAi_Api_Key: 'openai-secret',
+        AWS_SECRET_ACCESS_KEY: 'aws-secret',
+        CUSTOM_TOKEN: 'token-secret',
+      },
       spawn: (_path, _args, options) => {
         spawns.push(options);
         const process = new ScriptedProcess(options.env.CODEX_HOME);
@@ -136,7 +147,172 @@ describe('per-account Codex app-server manager', () => {
     expect(spawns[0].env.CODEX_HOME).toMatch(/^\/tmp\/aperant\/codex-accounts\/[a-f0-9]{24}$/);
     expect(spawns[0].env.CODEX_HOME).not.toContain('account-a');
     expect(spawns[0].env.OPENAI_API_KEY).toBeUndefined();
+    expect(spawns[0].env).toEqual({
+      CODEX_HOME: spawns[0].env.CODEX_HOME,
+      PATH: '/usr/bin',
+      TEMP: '/tmp',
+    });
     expect(processes[0].methods.filter((method) => method === 'initialize')).toHaveLength(1);
+  });
+
+  it('spawns npm codex.cmd through a secure cmd.exe wrapper', async () => {
+    const spawn = vi.fn((_path, _args, options: CodexAppServerSpawnOptions) => (
+      new ScriptedProcess(options.env.CODEX_HOME)
+    ));
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: 'C:\\Aperant\\codex-accounts',
+      detectCli: async () => ({
+        found: true,
+        path: 'C:\\Users\\grimm\\AppData\\Roaming\\npm\\codex.cmd',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      platform: 'win32',
+      comSpec: 'C:\\Windows\\System32\\cmd.exe',
+      isSecurePath: () => true,
+      spawn,
+      terminate: vi.fn(),
+    });
+
+    await manager.readAccount('account-a');
+
+    expect(spawn).toHaveBeenCalledWith(
+      'C:\\Windows\\System32\\cmd.exe',
+      ['/d', '/s', '/c', expect.stringContaining('codex.cmd" app-server --stdio')],
+      expect.objectContaining({ shell: false, windowsVerbatimArguments: true }),
+    );
+  });
+
+  it('fails closed when canonical account homes escape or alias another account', async () => {
+    const escapedSpawn = vi.fn();
+    const escaped = createCodexAppServerManager({
+      codexHomeRoot: '/safe/root',
+      detectCli: async () => ({
+        found: true,
+        path: '/usr/bin/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => (
+        directory === '/safe/root' ? '/safe/root' : '/escaped/account'
+      ),
+      spawn: escapedSpawn,
+      terminate: vi.fn(),
+    });
+    await expect(escaped.readAccount('account-a')).rejects.toMatchObject({
+      code: 'isolation-failed',
+    });
+    expect(escapedSpawn).not.toHaveBeenCalled();
+
+    const alias = createCodexAppServerManager({
+      codexHomeRoot: '/safe/root',
+      detectCli: async () => ({
+        found: true,
+        path: '/usr/bin/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => (
+        directory === '/safe/root' ? '/safe/root' : '/safe/root/shared'
+      ),
+      spawn: (_path, _args, options) => new ScriptedProcess(options.env.CODEX_HOME),
+      terminate: vi.fn(),
+    });
+    await alias.readAccount('account-a');
+    await expect(alias.readAccount('account-b')).rejects.toMatchObject({
+      code: 'isolation-failed',
+    });
+  });
+
+  it('routes production notifications with their owning account', async () => {
+    const onNotification = vi.fn();
+    let process: ScriptedProcess | undefined;
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: async () => ({
+        found: true,
+        path: '/usr/bin/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      spawn: (_path, _args, options) => {
+        process = new ScriptedProcess(options.env.CODEX_HOME);
+        return process;
+      },
+      terminate: vi.fn(),
+      onNotification,
+    });
+    await manager.readAccount('account-a');
+
+    process?.stdout.write(`${JSON.stringify({
+      method: 'account/updated',
+      params: { authMode: 'chatgpt' },
+    })}\n`);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(onNotification).toHaveBeenCalledWith(
+      'account-a',
+      'account/updated',
+      { authMode: 'chatgpt' },
+    );
+  });
+
+  it('refuses new work and terminates a hung initialize without awaiting it on shutdown', async () => {
+    class HangingProcess extends EventEmitter implements CodexJsonlProcess {
+      readonly stdout = new PassThrough();
+      readonly stderr = new PassThrough();
+      readonly stdin = new Writable({ write: (_chunk, _encoding, done) => done() });
+      pid = 9191;
+      killed = false;
+      kill(): boolean {
+        this.killed = true;
+        return true;
+      }
+    }
+    const process = new HangingProcess();
+    let releaseTermination: (() => void) | undefined;
+    const terminationReleased = new Promise<void>((resolve) => {
+      releaseTermination = resolve;
+    });
+    const terminate = vi.fn(async (target: CodexJsonlProcess) => {
+      (target as unknown as EventEmitter).emit('exit', 0, null);
+      await terminationReleased;
+    });
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: async () => ({
+        found: true,
+        path: '/usr/bin/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      spawn: () => process,
+      terminate,
+    });
+    const pending = manager.readAccount('account-a').catch((error) => error);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    let stopped = false;
+    const shutdown = manager.shutdown().then(() => {
+      stopped = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(stopped).toBe(false);
+    expect(terminate).toHaveBeenCalledWith(process);
+    releaseTermination?.();
+    await shutdown;
+    expect(stopped).toBe(true);
+    await expect(manager.readAccount('account-b')).rejects.toMatchObject({ code: 'shutdown' });
+    await pending;
   });
 
   it('supports account read, login start, and authenticated model list', async () => {
@@ -260,6 +436,93 @@ describe('per-account Codex app-server manager', () => {
     ]);
   });
 
+  it('bounds model/list pages and total catalog models', async () => {
+    function model(id: string) {
+      return {
+        id,
+        model: id,
+        displayName: id,
+        description: id,
+        hidden: false,
+        isDefault: false,
+        defaultReasoningEffort: 'medium',
+        supportedReasoningEfforts: [],
+      };
+    }
+
+    class BoundedProcess extends EventEmitter implements CodexJsonlProcess {
+      readonly stdout = new PassThrough();
+      readonly stderr = new PassThrough();
+      readonly stdin: Writable;
+      pid = 8282;
+      killed = false;
+      page = 0;
+
+      constructor(readonly codexHome: string, private readonly mode: 'pages' | 'models') {
+        super();
+        this.stdin = new Writable({
+          write: (chunk, _encoding, done) => {
+            const request = JSON.parse(chunk.toString()) as { id: number; method: string };
+            let result: unknown;
+            if (request.method === 'initialize') {
+              result = {
+                codexHome,
+                platformFamily: 'unix',
+                platformOs: 'macos',
+                userAgent: 'codex_cli_rs/0.144.6',
+              };
+            } else if (request.method === 'account/read') {
+              result = {
+                account: { type: 'chatgpt', email: null, planType: 'plus' },
+                requiresOpenaiAuth: true,
+              };
+            } else if (request.method === 'model/list') {
+              this.page += 1;
+              result = this.mode === 'pages'
+                ? {
+                    data: [model(`page-${this.page}`)],
+                    nextCursor: this.page < 25 ? `cursor-${this.page}` : null,
+                  }
+                : { data: Array.from({ length: 1_001 }, (_, index) => model(`model-${index}`)) };
+            }
+            if (result) {
+              queueMicrotask(() => this.stdout.write(
+                `${JSON.stringify({ id: request.id, result })}\n`,
+              ));
+            }
+            done();
+          },
+        });
+      }
+
+      kill(): boolean {
+        this.killed = true;
+        return true;
+      }
+    }
+
+    const dependencies = (mode: 'pages' | 'models') => ({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: async () => ({
+        found: true,
+        path: '/usr/bin/codex',
+        version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory: string) => directory,
+      spawn: (_path: string, _args: string[], options: CodexAppServerSpawnOptions) => (
+        new BoundedProcess(options.env.CODEX_HOME, mode)
+      ),
+      terminate: vi.fn(),
+    });
+
+    await expect(createCodexAppServerManager(dependencies('pages')).listModels('account-a'))
+      .rejects.toMatchObject({ code: 'protocol-error' });
+    await expect(createCodexAppServerManager(dependencies('models')).listModels('account-a'))
+      .rejects.toMatchObject({ code: 'protocol-error' });
+  });
+
   it('keeps models gated when the isolated account is unauthenticated', async () => {
     const manager = createCodexAppServerManager({
       codexHomeRoot: '/tmp/aperant/codex-accounts',
@@ -288,7 +551,9 @@ describe('per-account Codex app-server manager', () => {
       terminate: vi.fn(),
     });
 
-    await expect(manager.listModels('account-a')).rejects.toThrow('not authenticated');
+    await expect(manager.listModels('account-a')).rejects.toMatchObject({
+      code: 'authentication-required',
+    });
   });
 
   it('runtime-validates a newer CLI and restarts after process death', async () => {
@@ -373,13 +638,17 @@ describe('per-account Codex app-server manager', () => {
       ...base,
       detectCli: () => ({ found: false, message: 'Install Codex CLI' }),
     });
-    await expect(missing.readAccount('account-a')).rejects.toThrow('Install Codex CLI');
+    await expect(missing.readAccount('account-a')).rejects.toMatchObject({
+      code: 'cli-unavailable',
+    });
 
     const old = createCodexAppServerManager({
       ...base,
       detectCli: () => ({ found: false, version: '0.143.0', message: 'requires 0.144.0' }),
     });
-    await expect(old.readAccount('account-a')).rejects.toThrow('0.144.0');
+    await expect(old.readAccount('account-a')).rejects.toMatchObject({
+      code: 'cli-unsupported',
+    });
     expect(base.spawn).not.toHaveBeenCalled();
   });
 });

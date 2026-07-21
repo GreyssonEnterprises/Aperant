@@ -9,6 +9,7 @@ import type {
 import type { BuiltinProvider, ProviderAccount } from '@shared/types/provider-account';
 import { isCodexSubscriptionModel } from '@shared/utils/model-catalog';
 import { writeJsonAtomic } from '../utils/atomic-file';
+import { toPublicCatalogError } from './codex/codex-errors';
 
 export const MODEL_CATALOG_TTL_MS = 24 * 60 * 60 * 1_000;
 const MAX_ATTEMPTS = 3;
@@ -41,6 +42,11 @@ interface InFlightRefresh {
   generation: number;
   promise: Promise<ModelDescriptor[]>;
   provider: BuiltinProvider;
+}
+
+interface CatalogPublicError {
+  code: import('@shared/types/model-catalog').ModelCatalogErrorCode;
+  message: string;
 }
 
 function snapshotKey(provider: BuiltinProvider, accountId?: string): string {
@@ -123,7 +129,7 @@ export function createModelCatalogService(
   const snapshots = new Map<string, ModelCatalogSnapshot>();
   const inFlight = new Map<string, InFlightRefresh>();
   const generations = new Map<string, number>();
-  const errors = new Map<string, string>();
+  const errors = new Map<string, CatalogPublicError>();
   let loadPromise: Promise<void> | undefined;
   let saveChain = Promise.resolve();
 
@@ -209,7 +215,7 @@ export function createModelCatalogService(
 
     const operation = (async () => {
       let models: ModelDescriptor[];
-      let refreshError: string | undefined;
+      let refreshError: CatalogPublicError | undefined;
       try {
         if (
           account.provider === 'openai' &&
@@ -227,7 +233,7 @@ export function createModelCatalogService(
             : bundledForAccount(account.provider, account);
         }
       } catch (error) {
-        refreshError = error instanceof Error ? error.message : String(error);
+        refreshError = toPublicCatalogError(error);
         models = bundledForAccount(account.provider, account).map((model) => ({
           ...model,
           availability: isCodexSubscriptionModel(model) ? 'unavailable' : 'unverified',
@@ -348,7 +354,12 @@ export function createModelCatalogService(
           fetchedAt: snapshot.fetchedAt,
           stale: !isFresh(snapshot),
           refreshing: inFlight.has(key),
-          ...(errors.has(key) ? { lastError: errors.get(key) } : {}),
+          ...(errors.has(key)
+            ? {
+                lastErrorCode: errors.get(key)?.code,
+                lastError: errors.get(key)?.message,
+              }
+            : {}),
         })),
       };
     },

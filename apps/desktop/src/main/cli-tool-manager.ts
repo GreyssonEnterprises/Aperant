@@ -83,6 +83,11 @@ export interface CodexCliDetectionDependencies {
   readVersion: (executable: string) => string;
 }
 
+export interface CodexCliAsyncDetectionDependencies {
+  findExecutableAsync: (name: string) => Promise<string | null>;
+  readVersionAsync: (executable: string) => Promise<string>;
+}
+
 export interface CodexCliVersionReadDependencies {
   comSpec: string;
   env: Record<string, string>;
@@ -177,6 +182,78 @@ export function detectCodexCli(
   }
   try {
     const version = parseCodexCliVersion(dependencies.readVersion(executable));
+    if (!version) {
+      return { found: false, path: executable, message: 'Unable to parse Codex CLI version.' };
+    }
+    const policy = evaluateCodexCliVersion(version);
+    if (!policy.supported) {
+      return { found: false, path: executable, version, message: policy.message };
+    }
+    return {
+      found: true,
+      path: executable,
+      version,
+      runtimeValidationRequired: policy.runtimeValidationRequired ?? false,
+    };
+  } catch (error) {
+    return {
+      found: false,
+      path: executable,
+      message: `Failed to validate Codex CLI: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+export async function readCodexCliVersionAsync(executable: string): Promise<string> {
+  const trimmed = executable.trim();
+  const unquoted = trimmed.startsWith('"') && trimmed.endsWith('"')
+    ? trimmed.slice(1, -1)
+    : trimmed;
+  const env = await getAugmentedEnvAsync();
+  if (shouldUseShell(trimmed)) {
+    if (!isSecurePath(unquoted)) {
+      throw new Error(`Codex CLI path failed security validation: ${unquoted}`);
+    }
+    const comSpec = process.env.ComSpec ??
+      path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
+    const result = await execFileAsync(
+      comSpec,
+      ['/d', '/s', '/c', `""${unquoted}" --version"`],
+      {
+        encoding: 'utf-8',
+        timeout: 5_000,
+        windowsHide: true,
+        windowsVerbatimArguments: true,
+        env,
+      } as ExecFileAsyncOptionsWithVerbatim,
+    );
+    return normalizeExecOutput(result.stdout);
+  }
+  const result = await execFileAsync(unquoted, ['--version'], {
+    encoding: 'utf-8',
+    timeout: 5_000,
+    windowsHide: true,
+    shell: false,
+    env,
+  });
+  return normalizeExecOutput(result.stdout);
+}
+
+export async function detectCodexCliAsync(
+  dependencies: CodexCliAsyncDetectionDependencies = {
+    findExecutableAsync,
+    readVersionAsync: readCodexCliVersionAsync,
+  },
+): Promise<CodexCliDetectionResult> {
+  const executable = await dependencies.findExecutableAsync('codex');
+  if (!executable) {
+    return {
+      found: false,
+      message: 'Codex CLI not found. Install Codex CLI 0.144.0 or newer.',
+    };
+  }
+  try {
+    const version = parseCodexCliVersion(await dependencies.readVersionAsync(executable));
     if (!version) {
       return { found: false, path: executable, message: 'Unable to parse Codex CLI version.' };
     }
@@ -1381,7 +1458,17 @@ class CLIToolManager {
       case 'glab':
         return this.detectGitLabCLIAsync();
       case 'codex':
-        return this.detectToolPath('codex');
+        return detectCodexCliAsync({
+          findExecutableAsync: async (name) =>
+            this.userConfig.codexPath ?? findExecutableAsync(name),
+          readVersionAsync: readCodexCliVersionAsync,
+        }).then((result) => ({
+          found: result.found,
+          ...(result.path ? { path: result.path } : {}),
+          ...(result.version ? { version: result.version } : {}),
+          source: this.userConfig.codexPath ? 'user-config' : 'system-path',
+          message: result.message ?? `Using installed Codex CLI: ${result.path}`,
+        }));
       default:
         return {
           found: false,

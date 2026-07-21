@@ -63,6 +63,13 @@ export interface CodexModelListResponse {
   nextCursor?: string | null;
 }
 
+export interface CodexClientRequestMap {
+  initialize: { params: CodexInitializeParams; response: CodexInitializeResponse };
+  'account/read': { params: { refreshToken: boolean }; response: CodexAccountReadResponse };
+  'account/login/start': { params: CodexLoginStartParams; response: CodexLoginStartResponse };
+  'model/list': { params: CodexModelListParams; response: CodexModelListResponse };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -82,6 +89,7 @@ export function parseAccountReadResponse(value: unknown): CodexAccountReadRespon
   if (!isRecord(value) || typeof value.requiresOpenaiAuth !== 'boolean') return null;
   if (value.account !== undefined && value.account !== null) {
     if (!isRecord(value.account) || typeof value.account.type !== 'string') return null;
+    if (!['apiKey', 'chatgpt', 'amazonBedrock'].includes(value.account.type)) return null;
     if (value.account.type === 'chatgpt' && (
       !('email' in value.account) ||
       (value.account.email !== null && typeof value.account.email !== 'string') ||

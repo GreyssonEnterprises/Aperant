@@ -3,14 +3,12 @@ import { createHash } from 'node:crypto';
 import { chmod, mkdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import type { ModelDescriptor } from '@shared/types/model-catalog';
-import { detectCodexCli, type CodexCliDetectionResult } from '../../cli-tool-manager';
+import { detectCodexCliAsync, type CodexCliDetectionResult } from '../../cli-tool-manager';
 import { getAugmentedEnv } from '../../env-utils';
 import { killProcessGracefully } from '../../platform';
-import {
-  CodexAppServerClient,
-  CodexAppServerProtocolError,
-  type CodexJsonlProcess,
-} from './codex-app-server-client';
+import { isSecurePath as isSecureWindowsPath } from '../../utils/windows-paths';
+import { CodexAppServerClient, type CodexJsonlProcess } from './codex-app-server-client';
+import { CodexRuntimeError } from './codex-errors';
 import {
   parseAccountReadResponse,
   parseLoginStartResponse,
@@ -20,15 +18,21 @@ import {
   type CodexModel,
 } from './codex-app-server-protocol';
 
+const MAX_MODEL_PAGES = 20;
+const MAX_CATALOG_MODELS = 1_000;
+const TERMINATION_TIMEOUT_MS = 5_000;
+
 export interface CodexAppServerSpawnOptions {
   env: Record<string, string>;
+  shell: false;
   stdio: ['pipe', 'pipe', 'pipe'];
   windowsHide: true;
+  windowsVerbatimArguments?: boolean;
 }
 
 export interface CodexAppServerManagerDependencies {
   codexHomeRoot: string;
-  detectCli?: () => CodexCliDetectionResult;
+  detectCli?: () => CodexCliDetectionResult | Promise<CodexCliDetectionResult>;
   ensureDirectory?: (directory: string) => Promise<void>;
   canonicalizeDirectory?: (directory: string) => Promise<string>;
   spawn?: (
@@ -36,10 +40,15 @@ export interface CodexAppServerManagerDependencies {
     args: string[],
     options: CodexAppServerSpawnOptions,
   ) => CodexJsonlProcess;
-  terminate?: (process: CodexJsonlProcess) => void;
+  terminate?: (process: CodexJsonlProcess) => void | Promise<void>;
   baseEnv?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+  comSpec?: string;
+  isSecurePath?: (executable: string) => boolean;
+  clientVersion?: string;
   onCatalogModels?: (accountId: string, models: ModelDescriptor[]) => void | Promise<void>;
   onDiagnostic?: (message: string) => void;
+  onNotification?: (accountId: string, method: string, params: unknown) => void | Promise<void>;
 }
 
 export interface CodexAppServerManager {
@@ -57,25 +66,47 @@ interface AccountSession {
 interface PendingSession {
   token: symbol;
   promise: Promise<AccountSession>;
+  process?: CodexJsonlProcess;
 }
 
-function accountDirectory(root: string, accountId: string): string {
-  const digest = createHash('sha256').update(accountId).digest('hex').slice(0, 24);
-  return path.join(root, digest);
-}
-
-function assertAccountId(accountId: string): void {
-  if (!accountId.trim()) throw new Error('Codex account ID is required');
-}
+const ALLOWED_ENVIRONMENT_KEYS = new Set([
+  'APPDATA',
+  'COMSPEC',
+  'DISPLAY',
+  'HOMEDRIVE',
+  'HOMEPATH',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'LOCALAPPDATA',
+  'LOGNAME',
+  'OS',
+  'PATH',
+  'PATHEXT',
+  'PROGRAMDATA',
+  'PROGRAMFILES',
+  'PROGRAMFILES(X86)',
+  'PROGRAMW6432',
+  'SHELL',
+  'SYSTEMROOT',
+  'TEMP',
+  'TMP',
+  'TMPDIR',
+  'TZ',
+  'USER',
+  'USERPROFILE',
+  'WAYLAND_DISPLAY',
+  'WINDIR',
+  'XDG_RUNTIME_DIR',
+]);
 
 function cleanEnvironment(baseEnv: NodeJS.ProcessEnv, codexHome: string): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(baseEnv)) {
-    if (value !== undefined) env[key] = value;
+    if (value !== undefined && ALLOWED_ENVIRONMENT_KEYS.has(key.toUpperCase())) {
+      env[key] = value;
+    }
   }
-  delete env.OPENAI_API_KEY;
-  delete env.CODEX_API_KEY;
-  delete env.CODEX_HOME;
   env.CODEX_HOME = codexHome;
   return env;
 }
@@ -96,160 +127,252 @@ function toDescriptor(model: CodexModel): ModelDescriptor {
   };
 }
 
+function isContained(pathApi: typeof path.posix, root: string, candidate: string): boolean {
+  const relative = pathApi.relative(root, candidate);
+  return relative !== '' && !relative.startsWith(`..${pathApi.sep}`) && relative !== '..' &&
+    !pathApi.isAbsolute(relative);
+}
+
+function defaultTerminate(process: CodexJsonlProcess): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(fallback);
+      resolve();
+    };
+    const fallback = setTimeout(finish, TERMINATION_TIMEOUT_MS + 250);
+    process.once('exit', finish);
+    process.once('error', finish);
+    killProcessGracefully(process as unknown as ChildProcess, {
+      debugPrefix: '[CodexAppServer]',
+      timeoutMs: TERMINATION_TIMEOUT_MS,
+    });
+  });
+}
+
 export function createCodexAppServerManager(
   dependencies: CodexAppServerManagerDependencies,
 ): CodexAppServerManager {
-  const detectCli = dependencies.detectCli ?? detectCodexCli;
+  const platform = dependencies.platform ?? process.platform;
+  const pathApi = platform === 'win32' ? path.win32 : path.posix;
+  const detectCli = dependencies.detectCli ?? detectCodexCliAsync;
   const ensureDirectory = dependencies.ensureDirectory ?? (async (directory: string) => {
     await mkdir(directory, { recursive: true, mode: 0o700 });
     await chmod(directory, 0o700);
   });
-  const canonicalizeDirectory = dependencies.canonicalizeDirectory ?? (async (directory) => {
-    try {
-      return await realpath(directory);
-    } catch {
-      return path.resolve(directory);
-    }
-  });
+  const canonicalizeDirectory = dependencies.canonicalizeDirectory ?? realpath;
   const spawn = dependencies.spawn ?? ((executable, args, options) => (
     nodeSpawn(executable, args, options) as unknown as CodexJsonlProcess
   ));
-  const terminate = dependencies.terminate ?? ((process) => {
-    killProcessGracefully(process as unknown as ChildProcess, {
-      debugPrefix: '[CodexAppServer]',
-    });
-  });
+  const terminate = dependencies.terminate ?? defaultTerminate;
   const sessions = new Map<string, PendingSession>();
-  const terminated = new WeakSet<object>();
+  const canonicalOwners = new Map<string, string>();
+  const terminations = new WeakMap<object, Promise<void>>();
+  let shuttingDown = false;
+  let shutdownPromise: Promise<void> | undefined;
+  let canonicalRootPromise: Promise<string> | undefined;
 
-  function terminateOnce(process: CodexJsonlProcess): void {
-    if (terminated.has(process)) return;
-    terminated.add(process);
-    terminate(process);
+  function publicError(error: unknown): CodexRuntimeError {
+    return error instanceof CodexRuntimeError
+      ? error
+      : new CodexRuntimeError('spawn-failed');
   }
 
-  async function createSession(accountId: string, token: symbol): Promise<AccountSession> {
-    const detection = detectCli();
-    if (!detection.found || !detection.path) {
-      throw new Error(detection.message ?? "Codex CLI isn't available");
+  function assertOpen(): void {
+    if (shuttingDown) throw new CodexRuntimeError('shutdown');
+  }
+
+  function terminateOnce(process: CodexJsonlProcess): Promise<void> {
+    const existing = terminations.get(process);
+    if (existing) return existing;
+    const operation = Promise.resolve(terminate(process)).then(() => undefined);
+    terminations.set(process, operation);
+    return operation;
+  }
+
+  async function canonicalRoot(): Promise<string> {
+    if (!canonicalRootPromise) {
+      canonicalRootPromise = (async () => {
+        await ensureDirectory(dependencies.codexHomeRoot);
+        try {
+          return await canonicalizeDirectory(dependencies.codexHomeRoot);
+        } catch {
+          throw new CodexRuntimeError('isolation-failed');
+        }
+      })();
     }
+    return canonicalRootPromise;
+  }
 
-    const requestedCodexHome = accountDirectory(dependencies.codexHomeRoot, accountId);
-    await ensureDirectory(requestedCodexHome);
-    const codexHome = await canonicalizeDirectory(requestedCodexHome);
-    const process = spawn(detection.path, ['app-server', '--stdio'], {
-      env: cleanEnvironment(dependencies.baseEnv ?? getAugmentedEnv(), codexHome),
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+  function spawnInvocation(executable: string): {
+    executable: string;
+    args: string[];
+    windowsVerbatimArguments?: boolean;
+  } {
+    if (platform !== 'win32' || !/\.(cmd|bat)$/i.test(executable)) {
+      return { executable, args: ['app-server', '--stdio'] };
+    }
+    const securePath = dependencies.isSecurePath ?? isSecureWindowsPath;
+    if (!securePath(executable) || /[%!^&|<>\r\n]/.test(executable)) {
+      throw new CodexRuntimeError('spawn-failed');
+    }
+    const comSpec = dependencies.comSpec ?? process.env.ComSpec ??
+      path.win32.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
+    return {
+      executable: comSpec,
+      args: ['/d', '/s', '/c', `""${executable}" app-server --stdio"`],
+      windowsVerbatimArguments: true,
+    };
+  }
 
-    let client: CodexAppServerClient;
-    client = new CodexAppServerClient(process, {
-      expectedCodexHome: codexHome,
-      onDiagnostic: dependencies.onDiagnostic,
-      onFatal: (_error, processEnded) => {
-        if (sessions.get(accountId)?.token === token) sessions.delete(accountId);
-        if (!processEnded) terminateOnce(process);
-      },
-    });
-
+  async function createSession(accountId: string, entry: PendingSession): Promise<AccountSession> {
     try {
+      assertOpen();
+      const detection = await detectCli();
+      assertOpen();
+      if (!detection.found || !detection.path) {
+        throw new CodexRuntimeError(detection.version ? 'cli-unsupported' : 'cli-unavailable');
+      }
+
+      const root = await canonicalRoot();
+      assertOpen();
+      const requestedHome = pathApi.join(root, createHash('sha256')
+        .update(accountId)
+        .digest('hex')
+        .slice(0, 24));
+      await ensureDirectory(requestedHome);
+      let codexHome: string;
+      try {
+        codexHome = await canonicalizeDirectory(requestedHome);
+      } catch {
+        throw new CodexRuntimeError('isolation-failed');
+      }
+      assertOpen();
+      if (!isContained(pathApi, root, codexHome)) {
+        throw new CodexRuntimeError('isolation-failed');
+      }
+      const owner = canonicalOwners.get(codexHome);
+      if (owner && owner !== accountId) throw new CodexRuntimeError('isolation-failed');
+      canonicalOwners.set(codexHome, accountId);
+
+      const invocation = spawnInvocation(detection.path);
+      const child = spawn(invocation.executable, invocation.args, {
+        env: cleanEnvironment(dependencies.baseEnv ?? getAugmentedEnv(), codexHome),
+        shell: false,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+        ...(invocation.windowsVerbatimArguments
+          ? { windowsVerbatimArguments: invocation.windowsVerbatimArguments }
+          : {}),
+      });
+      entry.process = child;
+      if (shuttingDown) {
+        await terminateOnce(child);
+        throw new CodexRuntimeError('shutdown');
+      }
+
+      const client = new CodexAppServerClient(child, {
+        clientVersion: dependencies.clientVersion,
+        expectedCodexHome: codexHome,
+        onDiagnostic: dependencies.onDiagnostic,
+        onFatal: (_error, processEnded) => {
+          if (sessions.get(accountId)?.token === entry.token) sessions.delete(accountId);
+          if (!processEnded) void terminateOnce(child);
+        },
+        onNotification: (method, params) => {
+          void Promise.resolve(dependencies.onNotification?.(accountId, method, params)).catch(() => {
+            dependencies.onDiagnostic?.('Codex app-server notification handler failed');
+          });
+        },
+      });
       await client.initialize();
       if (detection.runtimeValidationRequired) {
         dependencies.onDiagnostic?.(
           `Codex CLI ${detection.version ?? 'newer'} passed runtime protocol validation`,
         );
       }
-      return { client, process };
+      return { client, process: child };
     } catch (error) {
-      terminateOnce(process);
-      throw error;
+      if (entry.process) await terminateOnce(entry.process);
+      throw publicError(error);
     }
   }
 
   function getSession(accountId: string): Promise<AccountSession> {
-    assertAccountId(accountId);
+    assertOpen();
+    if (!accountId.trim()) throw new CodexRuntimeError('isolation-failed');
     let entry = sessions.get(accountId);
     if (!entry) {
       const token = Symbol(accountId);
-      const promise = createSession(accountId, token).catch((error) => {
+      entry = { token, promise: undefined as unknown as Promise<AccountSession> };
+      entry.promise = createSession(accountId, entry).catch((error) => {
         if (sessions.get(accountId)?.token === token) sessions.delete(accountId);
         throw error;
       });
-      entry = { token, promise };
       sessions.set(accountId, entry);
     }
     return entry.promise;
   }
 
-  async function request(accountId: string, method: string, params: unknown): Promise<unknown> {
-    const session = await getSession(accountId);
-    return session.client.request(method, params);
-  }
-
   async function readAccount(accountId: string): Promise<CodexAccountReadResponse> {
-    const parsed = parseAccountReadResponse(await request(
-      accountId,
+    const session = await getSession(accountId);
+    const parsed = parseAccountReadResponse(await session.client.request(
       'account/read',
       { refreshToken: false },
     ));
-    if (!parsed) {
-      throw new CodexAppServerProtocolError('Invalid account/read response from Codex app-server');
-    }
+    if (!parsed) throw new CodexRuntimeError('protocol-error');
     return parsed;
   }
 
   return {
     readAccount,
     async startLogin(accountId) {
-      const parsed = parseLoginStartResponse(await request(accountId, 'account/login/start', {
-        type: 'chatgpt',
-        appBrand: 'codex',
-        codexStreamlinedLogin: true,
-      }));
-      if (!parsed) {
-        throw new CodexAppServerProtocolError(
-          'Invalid account/login/start response from Codex app-server',
-        );
-      }
+      const session = await getSession(accountId);
+      const parsed = parseLoginStartResponse(await session.client.request(
+        'account/login/start',
+        { type: 'chatgpt', appBrand: 'codex', codexStreamlinedLogin: true },
+      ));
+      if (!parsed) throw new CodexRuntimeError('protocol-error');
       return parsed;
     },
     async listModels(accountId) {
       const account = await readAccount(accountId);
       if (account.account?.type !== 'chatgpt') {
-        throw new Error('Codex subscription account is not authenticated');
+        throw new CodexRuntimeError('authentication-required');
       }
+      const session = await getSession(accountId);
       const models: ModelDescriptor[] = [];
       const seenCursors = new Set<string>();
       let cursor: string | null = null;
+      let pages = 0;
       do {
-        const parsed = parseModelListResponse(await request(accountId, 'model/list', {
+        pages += 1;
+        if (pages > MAX_MODEL_PAGES) throw new CodexRuntimeError('protocol-error');
+        const parsed = parseModelListResponse(await session.client.request('model/list', {
           cursor,
           includeHidden: false,
         }));
-        if (!parsed) {
-          throw new CodexAppServerProtocolError('Invalid model/list response from Codex app-server');
-        }
+        if (!parsed) throw new CodexRuntimeError('protocol-error');
         models.push(...parsed.data.filter((model) => !model.hidden).map(toDescriptor));
+        if (models.length > MAX_CATALOG_MODELS) throw new CodexRuntimeError('protocol-error');
         cursor = parsed.nextCursor ?? null;
-        if (cursor && seenCursors.has(cursor)) {
-          throw new CodexAppServerProtocolError(
-            'Codex app-server returned a repeated model/list cursor',
-          );
-        }
+        if (cursor && seenCursors.has(cursor)) throw new CodexRuntimeError('protocol-error');
         if (cursor) seenCursors.add(cursor);
       } while (cursor);
       await dependencies.onCatalogModels?.(accountId, models);
       return models;
     },
     async shutdown() {
-      const active = await Promise.allSettled(
-        [...sessions.values()].map((session) => session.promise),
-      );
+      if (shutdownPromise) return shutdownPromise;
+      shuttingDown = true;
+      const active = [...sessions.values()];
       sessions.clear();
-      for (const result of active) {
-        if (result.status === 'fulfilled') terminateOnce(result.value.process);
-      }
+      shutdownPromise = Promise.allSettled(active.flatMap((entry) => (
+        entry.process ? [terminateOnce(entry.process)] : []
+      ))).then(() => undefined);
+      return shutdownPromise;
     },
   };
 }

@@ -1,11 +1,12 @@
-import { realpathSync } from 'node:fs';
-import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import {
   parseInitializeResponse,
+  type CodexClientRequestMap,
+  type CodexInitializeParams,
   type CodexInitializeResponse,
 } from './codex-app-server-protocol';
+import { CodexRuntimeError } from './codex-errors';
 
 export interface CodexJsonlProcess {
   stdin: Writable;
@@ -22,20 +23,24 @@ export interface CodexJsonlProcess {
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
 }
 
 interface CodexAppServerClientOptions {
   expectedCodexHome: string;
   clientVersion?: string;
   canonicalizePath?: (value: string) => string;
+  initializeTimeoutMs?: number;
+  maxBufferBytes?: number;
+  requestTimeoutMs?: number;
   onDiagnostic?: (message: string) => void;
   onFatal?: (error: Error, processEnded: boolean) => void;
   onNotification?: (method: string, params: unknown) => void;
 }
 
-export class CodexAppServerProtocolError extends Error {
+export class CodexAppServerProtocolError extends CodexRuntimeError {
   constructor(message: string) {
-    super(message);
+    super('protocol-error', message);
     this.name = 'CodexAppServerProtocolError';
   }
 }
@@ -56,13 +61,8 @@ export class CodexAppServerClient {
     process.stderr.on('data', () => {
       options.onDiagnostic?.('Codex app-server emitted stderr output');
     });
-    process.on('error', (error) => this.fail(
-      new Error(`Codex app-server failed: ${error.message}`),
-      true,
-    ));
-    process.on('exit', (code, signal) => this.fail(new Error(
-      `Codex app-server exited (${signal ?? code ?? 'unknown'})`,
-    ), true));
+    process.on('error', () => this.fail(new CodexRuntimeError('process-exited'), true));
+    process.on('exit', () => this.fail(new CodexRuntimeError('process-exited'), true));
   }
 
   get isAlive(): boolean {
@@ -71,25 +71,24 @@ export class CodexAppServerClient {
 
   initialize(): Promise<CodexInitializeResponse> {
     if (!this.initializePromise) {
-      this.initializePromise = this.request('initialize', {
+      const params: CodexInitializeParams = {
         clientInfo: {
           name: 'aperant',
           title: 'Aperant',
-          version: this.options.clientVersion ?? '2.8.0',
+          version: this.options.clientVersion ?? process.env.npm_package_version ?? 'unknown',
         },
         capabilities: { experimentalApi: false, requestAttestation: false },
-      }).then((result) => {
+      };
+      this.initializePromise = this.sendRequest(
+        'initialize',
+        params,
+        this.options.initializeTimeoutMs ?? 15_000,
+      ).then((result) => {
         const parsed = parseInitializeResponse(result);
         if (!parsed) {
           throw new CodexAppServerProtocolError('Invalid initialize response from Codex app-server');
         }
-        const canonicalizePath = this.options.canonicalizePath ?? ((value: string) => {
-          try {
-            return realpathSync.native(value);
-          } catch {
-            return path.resolve(value);
-          }
-        });
+        const canonicalizePath = this.options.canonicalizePath ?? ((value: string) => value);
         if (
           canonicalizePath(parsed.codexHome) !==
           canonicalizePath(this.options.expectedCodexHome)
@@ -109,16 +108,33 @@ export class CodexAppServerClient {
     return this.initializePromise;
   }
 
+  request<M extends keyof CodexClientRequestMap>(
+    method: M,
+    params: CodexClientRequestMap[M]['params'],
+  ): Promise<CodexClientRequestMap[M]['response']>;
+  request(method: string, params: unknown): Promise<unknown>;
   request(method: string, params: unknown): Promise<unknown> {
+    return this.sendRequest(method, params, this.options.requestTimeoutMs ?? 30_000);
+  }
+
+  private sendRequest(method: string, params: unknown, timeoutMs: number): Promise<unknown> {
     if (this.closedError) return Promise.reject(this.closedError);
     const id = this.nextRequestId;
     this.nextRequestId += 1;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        if (!this.pending.delete(id)) return;
+        const error = new CodexRuntimeError('request-timeout');
+        reject(error);
+        this.fail(error);
+      }, timeoutMs);
+      timer.unref?.();
+      this.pending.set(id, { resolve, reject, timer });
       try {
         this.write({ id, method, params });
       } catch (error) {
         this.pending.delete(id);
+        clearTimeout(timer);
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
@@ -136,10 +152,15 @@ export class CodexAppServerClient {
   private consumeStdout(chunk: string | Buffer): void {
     if (this.closedError) return;
     this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
+    const maxBufferBytes = this.options.maxBufferBytes ?? 1024 * 1024;
     const lines = this.buffer.split('\n');
     this.buffer = lines.pop() ?? '';
     for (const line of lines) {
       if (!line.trim()) continue;
+      if (Buffer.byteLength(line, 'utf8') > maxBufferBytes) {
+        this.fail(new CodexAppServerProtocolError('Codex app-server JSONL message is too large'));
+        return;
+      }
       let message: unknown;
       try {
         message = JSON.parse(line);
@@ -148,6 +169,9 @@ export class CodexAppServerClient {
         return;
       }
       this.routeMessage(message);
+    }
+    if (Buffer.byteLength(this.buffer, 'utf8') > maxBufferBytes) {
+      this.fail(new CodexAppServerProtocolError('Codex app-server JSONL buffer limit exceeded'));
     }
   }
 
@@ -161,19 +185,20 @@ export class CodexAppServerClient {
       this.options.onNotification?.(record.method, record.params);
       return;
     }
-    if (typeof record.id !== 'number' && typeof record.id !== 'string') {
+    if (!Number.isSafeInteger(record.id) || (record.id as number) < 1) {
       this.fail(new CodexAppServerProtocolError('Invalid response id from Codex app-server'));
       return;
     }
-    const numericId = typeof record.id === 'number' ? record.id : Number(record.id);
+    const numericId = record.id as number;
     const pending = this.pending.get(numericId);
-    if (!pending) return;
+    if (!pending) {
+      this.fail(new CodexAppServerProtocolError('Unknown response id from Codex app-server'));
+      return;
+    }
     this.pending.delete(numericId);
+    clearTimeout(pending.timer);
     if ('error' in record) {
-      const error = record.error as Record<string, unknown> | undefined;
-      pending.reject(new Error(
-        typeof error?.message === 'string' ? error.message : 'Codex app-server request failed',
-      ));
+      pending.reject(new CodexRuntimeError('rpc-error'));
       return;
     }
     if (!('result' in record)) {
@@ -186,7 +211,10 @@ export class CodexAppServerClient {
   private fail(error: Error, processEnded = false): void {
     if (this.closedError) return;
     this.closedError = error;
-    for (const request of this.pending.values()) request.reject(error);
+    for (const request of this.pending.values()) {
+      clearTimeout(request.timer);
+      request.reject(error);
+    }
     this.pending.clear();
     this.options.onFatal?.(error, processEnded);
   }

@@ -6,5 +6,6 @@
 export interface IPCResult<T = unknown> {
   success: boolean;
   data?: T;
+  errorCode?: string;
   error?: string;
 }
