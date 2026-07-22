@@ -63,6 +63,30 @@ export class AgentQueueManager {
   /** Map of active AbortControllers for cancellation support */
   private abortControllers: Map<string, AbortController> = new Map();
 
+  private ownsRunner(
+    key: string,
+    projectId: string,
+    controller: AbortController,
+    spawnId: number,
+  ): boolean {
+    return this.abortControllers.get(key) === controller &&
+      this.state.getProcess(projectId)?.spawnId === spawnId;
+  }
+
+  private releaseRunner(
+    key: string,
+    projectId: string,
+    controller: AbortController,
+    spawnId: number,
+  ): void {
+    if (this.abortControllers.get(key) === controller) {
+      this.abortControllers.delete(key);
+    }
+    if (this.state.getProcess(projectId)?.spawnId === spawnId) {
+      this.state.deleteProcess(projectId);
+    }
+  }
+
   /**
    * Persist roadmap generation progress to disk.
    * Creates generation_progress.json with current state including timestamps.
@@ -204,7 +228,8 @@ export class AgentQueueManager {
     }
 
     const abortController = new AbortController();
-    this.abortControllers.set(`ideation:${projectId}`, abortController);
+    const runnerKey = `ideation:${projectId}`;
+    this.abortControllers.set(runnerKey, abortController);
 
     // Mark as running in state
     const spawnId = this.state.generateSpawnId();
@@ -267,11 +292,14 @@ export class AgentQueueManager {
             abortSignal: abortController.signal,
           },
           (event: IdeationStreamEvent) => {
+            if (!this.ownsRunner(runnerKey, projectId, abortController, spawnId)) return;
             if (event.type === 'text-delta') {
               this.emitter.emit('ideation-log', projectId, event.text);
             }
           }
         );
+
+        if (!this.ownsRunner(runnerKey, projectId, abortController, spawnId)) return;
 
         if (result.success) {
           completedTypes.add(ideationType);
@@ -303,6 +331,7 @@ export class AgentQueueManager {
           }
         }
       } catch (err) {
+        if (!this.ownsRunner(runnerKey, projectId, abortController, spawnId)) return;
         if (abortController.signal.aborted) {
           debugLog('[Agent Queue] Ideation type aborted:', ideationType);
           break;
@@ -312,11 +341,10 @@ export class AgentQueueManager {
       }
     }
 
-    // Clean up
-    this.abortControllers.delete(`ideation:${projectId}`);
-    this.state.deleteProcess(projectId);
+    if (!this.ownsRunner(runnerKey, projectId, abortController, spawnId)) return;
 
     if (abortController.signal.aborted) {
+      this.releaseRunner(runnerKey, projectId, abortController, spawnId);
       this.emitter.emit('ideation-stopped', projectId);
       return;
     }
@@ -347,6 +375,7 @@ export class AgentQueueManager {
       this.emitter.emit('ideation-error', projectId,
         `Failed to load ideation session: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
+    this.releaseRunner(runnerKey, projectId, abortController, spawnId);
   }
 
   /**
@@ -376,7 +405,8 @@ export class AgentQueueManager {
     }
 
     const abortController = new AbortController();
-    this.abortControllers.set(`roadmap:${projectId}`, abortController);
+    const runnerKey = `roadmap:${projectId}`;
+    this.abortControllers.set(runnerKey, abortController);
 
     // Mark as running in state
     const spawnId = this.state.generateSpawnId();
@@ -422,6 +452,7 @@ export class AgentQueueManager {
           abortSignal: abortController.signal,
         },
         (event: RoadmapStreamEvent) => {
+          if (!this.ownsRunner(runnerKey, projectId, abortController, spawnId)) return;
           switch (event.type) {
             case 'phase-start': {
               progressPhase = event.phase;
@@ -455,11 +486,10 @@ export class AgentQueueManager {
         }
       );
 
-      // Clean up
-      this.abortControllers.delete(`roadmap:${projectId}`);
-      this.state.deleteProcess(projectId);
+      if (!this.ownsRunner(runnerKey, projectId, abortController, spawnId)) return;
 
       if (abortController.signal.aborted) {
+        this.releaseRunner(runnerKey, projectId, abortController, spawnId);
         this.clearRoadmapProgress(projectPath);
         this.emitter.emit('roadmap-stopped', projectId);
         return;
@@ -511,9 +541,10 @@ export class AgentQueueManager {
         this.emitter.emit('roadmap-error', projectId,
           result.error || 'Roadmap generation failed');
       }
+      this.releaseRunner(runnerKey, projectId, abortController, spawnId);
     } catch (err) {
-      this.abortControllers.delete(`roadmap:${projectId}`);
-      this.state.deleteProcess(projectId);
+      if (!this.ownsRunner(runnerKey, projectId, abortController, spawnId)) return;
+      this.releaseRunner(runnerKey, projectId, abortController, spawnId);
       this.clearRoadmapProgress(projectPath);
 
       if (abortController.signal.aborted) {
@@ -538,7 +569,6 @@ export class AgentQueueManager {
     if (controller) {
       debugLog('[Agent Queue] Aborting ideation TS runner:', projectId);
       controller.abort();
-      this.abortControllers.delete(`ideation:${projectId}`);
       // Note: the runner's async loop will handle cleanup and emit ideation-stopped
       return true;
     }
@@ -580,7 +610,6 @@ export class AgentQueueManager {
     if (controller) {
       debugLog('[Agent Queue] Aborting roadmap TS runner:', projectId);
       controller.abort();
-      this.abortControllers.delete(`roadmap:${projectId}`);
       // Note: the runner's async method will handle cleanup and emit roadmap-stopped
       return true;
     }

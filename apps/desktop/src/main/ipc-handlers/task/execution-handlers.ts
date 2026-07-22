@@ -26,6 +26,7 @@ import { cancelFallbackTimer } from '../agent-events-handlers';
 import { readSettingsFile } from '../../settings-utils';
 import type { ProviderAccount } from '../../../shared/types/provider-account';
 import { runVerifiedTaskStop } from './task-stop';
+import { verifyManualStatusCancellation } from './task-status-cancellation';
 
 /**
  * Check if any provider account is configured (API key or OAuth).
@@ -51,6 +52,51 @@ function safeReadFileSync(filePath: string): string | null {
     }
     return null;
   }
+}
+
+function cleanupTaskWorktree(
+  taskId: string,
+  projectPath: string,
+  worktreePath: string,
+  specId: string,
+): void {
+  const { branch, usingFallback: usingFallbackBranch } = detectWorktreeBranch(
+    worktreePath,
+    specId,
+    { timeout: 30000, logPrefix: '[TASK_UPDATE_STATUS]' }
+  );
+  execFileSync(getToolPath('git'), ['worktree', 'remove', '--force', worktreePath], {
+    cwd: projectPath,
+    encoding: 'utf-8',
+    timeout: 30000,
+    env: getIsolatedGitEnv()
+  });
+  console.warn(`[TASK_UPDATE_STATUS] Worktree removed: ${worktreePath}`);
+
+  try {
+    execFileSync(getToolPath('git'), ['branch', '-D', branch], {
+      cwd: projectPath,
+      encoding: 'utf-8',
+      timeout: 30000,
+      env: getIsolatedGitEnv()
+    });
+    console.warn(`[TASK_UPDATE_STATUS] Branch deleted: ${branch}`);
+  } catch (branchDeleteError) {
+    if (usingFallbackBranch) {
+      console.warn(
+        `[TASK_UPDATE_STATUS] Could not delete branch ${branch} using fallback pattern. ` +
+        'Actual branch may still exist and need manual cleanup.',
+        branchDeleteError
+      );
+    } else {
+      console.warn(
+        `[TASK_UPDATE_STATUS] Could not delete branch ${branch} ` +
+        '(may not exist or be checked out elsewhere)',
+        branchDeleteError
+      );
+    }
+  }
+  console.warn(`[TASK_UPDATE_STATUS] Worktree cleanup completed for task ${taskId}`);
 }
 
 /**
@@ -598,6 +644,7 @@ export function registerTaskExecutionHandlers(
       if (!task || !project) {
         return { success: false, error: 'Task not found' };
       }
+      let worktreeToCleanup: string | undefined;
 
       // Validate status transition - 'done' can only be set through merge handler
       // UNLESS there's no worktree (limbo state - already merged/discarded or failed)
@@ -613,57 +660,9 @@ export function registerTaskExecutionHandlers(
             // User explicitly chose to keep worktree - allow marking as done
             console.warn(`[TASK_UPDATE_STATUS] Marking task ${taskId} as done while keeping worktree at ${worktreePath}`);
           } else if (options?.forceCleanup) {
-            // User confirmed cleanup - delete worktree and branch
+            // Defer destructive cleanup until any running task is stopped safely.
             console.warn(`[TASK_UPDATE_STATUS] Cleaning up worktree for task ${taskId} (user confirmed)`);
-            try {
-              // Get the branch name before removing the worktree
-              // Use shared utility to validate detected branch matches expected pattern
-              // This prevents deleting wrong branch when worktree is corrupted/orphaned
-              const { branch, usingFallback: usingFallbackBranch } = detectWorktreeBranch(
-                worktreePath,
-                task.specId,
-                { timeout: 30000, logPrefix: '[TASK_UPDATE_STATUS]' }
-              );
-
-              // Remove the worktree
-              execFileSync(getToolPath('git'), ['worktree', 'remove', '--force', worktreePath], {
-                cwd: project.path,
-                encoding: 'utf-8',
-                timeout: 30000,
-                env: getIsolatedGitEnv()
-              });
-              console.warn(`[TASK_UPDATE_STATUS] Worktree removed: ${worktreePath}`);
-
-              // Delete the branch (ignore errors if branch doesn't exist)
-              try {
-                execFileSync(getToolPath('git'), ['branch', '-D', branch], {
-                  cwd: project.path,
-                  encoding: 'utf-8',
-                  timeout: 30000,
-                  env: getIsolatedGitEnv()
-                });
-                console.warn(`[TASK_UPDATE_STATUS] Branch deleted: ${branch}`);
-              } catch (branchDeleteError) {
-                // Branch may not exist or may be the current branch
-                if (usingFallbackBranch) {
-                  // More concerning - fallback pattern didn't match actual branch
-                  console.warn(`[TASK_UPDATE_STATUS] Could not delete branch ${branch} using fallback pattern. Actual branch may still exist and need manual cleanup.`, branchDeleteError);
-                } else {
-                  console.warn(
-                    `[TASK_UPDATE_STATUS] Could not delete branch ${branch} (may not exist or be checked out elsewhere)`,
-                    branchDeleteError
-                  );
-                }
-              }
-
-              console.warn(`[TASK_UPDATE_STATUS] Worktree cleanup completed successfully`);
-            } catch (cleanupError) {
-              console.error(`[TASK_UPDATE_STATUS] Failed to cleanup worktree:`, cleanupError);
-              return {
-                success: false,
-                error: `Failed to cleanup worktree: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`
-              };
-            }
+            worktreeToCleanup = worktreePath;
           } else {
             // Worktree exists but no forceCleanup - return special response for UI to show confirmation
             console.warn(`[TASK_UPDATE_STATUS] Worktree exists for task ${taskId}. Requesting user confirmation.`);
@@ -711,6 +710,32 @@ export function registerTaskExecutionHandlers(
         }
       }
 
+      const cancellationVerified = await verifyManualStatusCancellation(
+        taskId,
+        task.status,
+        status,
+        agentManager.isRunning(taskId),
+        (id) => agentManager.killTask(id),
+      );
+      if (!cancellationVerified) {
+        return {
+          success: false,
+          error: 'Task could not be stopped safely. Status and plan were not changed.',
+        };
+      }
+
+      if (worktreeToCleanup) {
+        try {
+          cleanupTaskWorktree(taskId, project.path, worktreeToCleanup, task.specId);
+        } catch (cleanupError) {
+          console.error(`[TASK_UPDATE_STATUS] Failed to cleanup worktree:`, cleanupError);
+          return {
+            success: false,
+            error: `Failed to cleanup worktree: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`
+          };
+        }
+      }
+
       // Get the spec directory and plan path using shared utility
       const specsBaseDir = getSpecsDir(project.autoBuildPath);
       const specDir = path.join(project.path, specsBaseDir, task.specId);
@@ -728,13 +753,6 @@ export function registerTaskExecutionHandlers(
             // Invalidate cache after creating new plan
             projectStore.invalidateTasksCache(project.id);
           }
-        }
-
-        // Auto-stop task when status changes AWAY from 'in_progress' and process IS running
-        // This handles the case where user drags a running task back to Planning/backlog
-        if (status !== 'in_progress' && agentManager.isRunning(taskId)) {
-          console.warn('[TASK_UPDATE_STATUS] Stopping task due to status change away from in_progress:', taskId);
-          await agentManager.killTask(taskId);
         }
 
         // Auto-start task when status changes to 'in_progress' and no process is running

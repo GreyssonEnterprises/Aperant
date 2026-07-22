@@ -14,6 +14,16 @@ type CodexSessionsFile = {
 const writes = new Map<string, Promise<void>>();
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const PHASE_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
+const ROOT_KEYS = new Set(['schemaVersion', 'sessions']);
+const SESSION_KEYS = new Set([
+  'schemaVersion',
+  'threadId',
+  'accountId',
+  'modelId',
+  'worktreePath',
+  'codexVersion',
+  'updatedAt',
+]);
 
 function invalidMetadata(): Error {
   return new Error('Invalid Codex session metadata');
@@ -23,15 +33,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+function hasExactKeys(value: Record<string, unknown>, allowed: Set<string>): boolean {
+  const keys = Object.keys(value);
+  return keys.length === allowed.size && keys.every((key) => allowed.has(key));
+}
+
 function isMetadata(value: unknown): value is CodexSessionMetadata {
   if (!isRecord(value)) return false;
   const metadata = value as Record<string, unknown>;
-  if (metadata.schemaVersion !== 1 || Object.keys(metadata).some((key) => FORBIDDEN_KEYS.has(key))) {
+  if (metadata.schemaVersion !== 1 || !hasExactKeys(metadata, SESSION_KEYS) ||
+    Object.keys(metadata).some((key) => FORBIDDEN_KEYS.has(key))) {
     return false;
   }
   return ['threadId', 'accountId', 'worktreePath', 'codexVersion', 'updatedAt'].every(
     (key) => typeof metadata[key] === 'string' && (metadata[key] as string).trim().length > 0,
-  ) && typeof metadata.modelId === 'string' && metadata.modelId.trim().length > 0;
+  ) && typeof metadata.modelId === 'string' && metadata.modelId.trim().length > 0 &&
+    typeof metadata.worktreePath === 'string' && path.isAbsolute(metadata.worktreePath) &&
+    path.normalize(metadata.worktreePath) === metadata.worktreePath;
 }
 
 async function readCodexSessions(file: string): Promise<CodexSessionsFile> {
@@ -50,7 +68,7 @@ async function readCodexSessions(file: string): Promise<CodexSessionsFile> {
   } catch {
     throw invalidMetadata();
   }
-  if (!isRecord(parsed) || parsed.schemaVersion !== 1 ||
+  if (!isRecord(parsed) || parsed.schemaVersion !== 1 || !hasExactKeys(parsed, ROOT_KEYS) ||
     Object.keys(parsed).some((key) => FORBIDDEN_KEYS.has(key)) ||
     !isRecord(parsed.sessions) ||
     Object.keys(parsed.sessions).some((key) => FORBIDDEN_KEYS.has(key) || !PHASE_PATTERN.test(key)) ||

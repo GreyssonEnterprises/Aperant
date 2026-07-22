@@ -57,6 +57,61 @@ describe('Codex session metadata store', () => {
     expect(await readFile(file, 'utf8')).toBe(original);
   });
 
+  it('rejects relative worktree evidence', async () => {
+    const specDir = await mkdtemp(path.join(tmpdir(), 'aperant-codex-session-'));
+    await writeFile(path.join(specDir, 'codex_sessions.json'), JSON.stringify({
+      schemaVersion: 1,
+      sessions: {
+        coding: {
+          schemaVersion: 1,
+          threadId: 'thread-1', accountId: 'account-1', worktreePath: '../worktree',
+          modelId: 'gpt-5.3-codex', codexVersion: '0.144.6',
+          updatedAt: '2026-07-21T00:00:00.000Z',
+        },
+      },
+    }));
+
+    await expect(createCodexSessionMetadataStore().read(specDir, 'coding'))
+      .rejects.toThrow('Invalid Codex session metadata');
+  });
+
+  it.each([
+    ['unknown root field', { importedFrom: 'task_metadata.json' }],
+    ['credential-shaped root field', { oauthToken: 'must-not-persist' }],
+  ])('rejects an %s', async (_label, extra) => {
+    const specDir = await mkdtemp(path.join(tmpdir(), 'aperant-codex-session-'));
+    await writeFile(path.join(specDir, 'codex_sessions.json'), JSON.stringify({
+      schemaVersion: 1,
+      sessions: {},
+      ...extra,
+    }));
+
+    await expect(createCodexSessionMetadataStore().read(specDir, 'coding'))
+      .rejects.toThrow('Invalid Codex session metadata');
+  });
+
+  it.each([
+    ['unknown nested field', { note: 'unexpected' }],
+    ['credential-shaped nested field', { apiKey: 'must-not-persist' }],
+  ])('rejects an %s', async (_label, extra) => {
+    const specDir = await mkdtemp(path.join(tmpdir(), 'aperant-codex-session-'));
+    await writeFile(path.join(specDir, 'codex_sessions.json'), JSON.stringify({
+      schemaVersion: 1,
+      sessions: {
+        coding: {
+          schemaVersion: 1,
+          threadId: 'thread-1', accountId: 'account-1', worktreePath: '/worktree',
+          modelId: 'gpt-5.3-codex', codexVersion: '0.144.6',
+          updatedAt: '2026-07-21T00:00:00.000Z',
+          ...extra,
+        },
+      },
+    }));
+
+    await expect(createCodexSessionMetadataStore().read(specDir, 'coding'))
+      .rejects.toThrow('Invalid Codex session metadata');
+  });
+
   it('serializes concurrent per-phase writes without losing either session', async () => {
     const specDir = await mkdtemp(path.join(tmpdir(), 'aperant-codex-session-'));
     const store = createCodexSessionMetadataStore();

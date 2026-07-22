@@ -66,8 +66,14 @@ export async function startIdeationGeneration(
     thinkingLevel: configWithSettings.thinkingLevel,
   });
 
-  // Start ideation generation via agent manager
-  await agentManager.startIdeationGeneration(projectId, project.path, configWithSettings, false);
+  // ipcMain.on doesn't observe returned promises, so settle failures here.
+  void agentManager.startIdeationGeneration(
+    projectId, project.path, configWithSettings, false,
+  ).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : "Ideation generation could not start";
+    debugLog("[Ideation Handler] Generation start failed:", { projectId, message });
+    safeSendToRenderer(getMainWindow, IPC_CHANNELS.IDEATION_ERROR, projectId, message);
+  });
 
   // Send initial progress
   safeSendToRenderer(getMainWindow, IPC_CHANNELS.IDEATION_PROGRESS, projectId, {
@@ -109,8 +115,14 @@ export async function refreshIdeationSession(
     return;
   }
 
-  // Start ideation regeneration with refresh flag
-  await agentManager.startIdeationGeneration(projectId, project.path, configWithSettings, true);
+  // ipcMain.on doesn't observe returned promises, so settle failures here.
+  void agentManager.startIdeationGeneration(
+    projectId, project.path, configWithSettings, true,
+  ).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : "Ideation refresh could not start";
+    debugLog("[Ideation Handler] Refresh start failed:", { projectId, message });
+    safeSendToRenderer(getMainWindow, IPC_CHANNELS.IDEATION_ERROR, projectId, message);
+  });
 
   // Send initial progress
   safeSendToRenderer(getMainWindow, IPC_CHANNELS.IDEATION_PROGRESS, projectId, {

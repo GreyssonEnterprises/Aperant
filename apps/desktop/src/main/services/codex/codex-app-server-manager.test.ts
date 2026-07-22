@@ -169,6 +169,69 @@ describe('per-account Codex app-server manager', () => {
     ]);
   });
 
+  it('makes concurrent retirement callers await the same successful termination barrier', async () => {
+    let releaseTermination!: () => void;
+    const termination = new Promise<void>((resolve) => { releaseTermination = resolve; });
+    const terminate = vi.fn(async () => termination);
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: () => ({
+        found: true, path: '/usr/local/bin/codex', version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      spawn: (_path, _args, options) => new ScriptedProcess(options.env.CODEX_HOME),
+      terminate,
+    });
+    await manager.readAccount('account-a');
+
+    const first = manager.retireAccount('account-a');
+    await vi.waitFor(() => expect(terminate).toHaveBeenCalledOnce());
+    let secondSettled = false;
+    const second = manager.retireAccount('account-a').then(() => { secondSettled = true; });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(secondSettled).toBe(false);
+
+    releaseTermination();
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+    expect(terminate).toHaveBeenCalledOnce();
+  });
+
+  it('propagates the same concurrent retirement failure to every caller', async () => {
+    let failTermination!: () => void;
+    const termination = new Promise<void>((_resolve, reject) => {
+      failTermination = () => reject(new Error('private termination failure'));
+    });
+    const terminate = vi.fn(async () => termination);
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: () => ({
+        found: true, path: '/usr/local/bin/codex', version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      spawn: (_path, _args, options) => new ScriptedProcess(options.env.CODEX_HOME),
+      terminate,
+    });
+    await manager.readAccount('account-a');
+
+    const first = manager.retireAccount('account-a');
+    await vi.waitFor(() => expect(terminate).toHaveBeenCalledOnce());
+    const second = manager.retireAccount('account-a');
+    failTermination();
+    const [firstResult, secondResult] = await Promise.allSettled([first, second]);
+
+    expect(firstResult.status).toBe('rejected');
+    expect(secondResult.status).toBe('rejected');
+    if (firstResult.status === 'rejected' && secondResult.status === 'rejected') {
+      expect(firstResult.reason).toBe(secondResult.reason);
+      expect(firstResult.reason).toMatchObject({ code: 'termination-failed' });
+    }
+    expect(terminate).toHaveBeenCalledOnce();
+  });
+
   it('keeps typed execution RPC and notifications inside the account manager', async () => {
     let process: ScriptedProcess | undefined;
     const terminate = vi.fn();

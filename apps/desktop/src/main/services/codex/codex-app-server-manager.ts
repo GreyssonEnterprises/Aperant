@@ -502,7 +502,11 @@ export function createCodexAppServerManager(
     },
     async retireAccount(accountId) {
       const entry = sessions.get(accountId);
-      if (!entry) return;
+      if (!entry) {
+        const termination = accountTerminations.get(accountId);
+        if (termination) await termination;
+        return;
+      }
       const session = await entry.promise;
       emitLifecycle(accountId, { type: 'retiring' });
       if (sessions.get(accountId)?.token === entry.token) sessions.delete(accountId);

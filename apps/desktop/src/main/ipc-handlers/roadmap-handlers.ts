@@ -206,7 +206,7 @@ export function registerRoadmapHandlers(
 
   ipcMain.on(
     IPC_CHANNELS.ROADMAP_GENERATE,
-    async (
+    (
       _,
       projectId: string,
       enableCompetitorAnalysis?: boolean,
@@ -247,15 +247,19 @@ export function registerRoadmapHandlers(
         config,
       });
 
-      // Start roadmap generation via agent manager
-      await agentManager.startRoadmapGeneration(
+      // ipcMain.on doesn't observe returned promises, so settle failures here.
+      void agentManager.startRoadmapGeneration(
         projectId,
         project.path,
         false, // refresh (not a refresh operation)
         enableCompetitorAnalysis ?? false,
         refreshCompetitorAnalysis ?? false,
         config
-      );
+      ).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "Roadmap generation could not start";
+        debugError("[Roadmap Handler] Generation start failed:", { projectId, message });
+        safeSendToRenderer(getMainWindow, IPC_CHANNELS.ROADMAP_ERROR, projectId, message);
+      });
 
       // Send initial progress
       safeSendToRenderer(getMainWindow, IPC_CHANNELS.ROADMAP_PROGRESS, projectId, {
@@ -268,7 +272,7 @@ export function registerRoadmapHandlers(
 
   ipcMain.on(
     IPC_CHANNELS.ROADMAP_REFRESH,
-    async (
+    (
       _,
       projectId: string,
       enableCompetitorAnalysis?: boolean,
@@ -302,15 +306,19 @@ export function registerRoadmapHandlers(
         return;
       }
 
-      // Start roadmap regeneration with refresh flag
-      await agentManager.startRoadmapGeneration(
+      // ipcMain.on doesn't observe returned promises, so settle failures here.
+      void agentManager.startRoadmapGeneration(
         projectId,
         project.path,
         true, // refresh (this is a refresh operation)
         enableCompetitorAnalysis ?? false,
         refreshCompetitorAnalysis ?? false,
         config
-      );
+      ).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "Roadmap refresh could not start";
+        debugError("[Roadmap Handler] Refresh start failed:", { projectId, message });
+        safeSendToRenderer(getMainWindow, IPC_CHANNELS.ROADMAP_ERROR, projectId, message);
+      });
 
       // Send initial progress
       safeSendToRenderer(getMainWindow, IPC_CHANNELS.ROADMAP_PROGRESS, projectId, {
