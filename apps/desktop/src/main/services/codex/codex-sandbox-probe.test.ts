@@ -22,7 +22,14 @@ const policy = {
   excludeSlashTmp: true as const,
 };
 
-function harness(results: Array<{ exitCode: number; stdout: string; stderr: string }>) {
+type MarkerName = 'allowed' | 'outside' | 'git' | 'completed';
+
+function harness(results: Array<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  markers?: MarkerName[];
+}>) {
   const existing = new Set<string>();
   const execute = vi.fn(async (_accountId: string, request: {
     command: string[];
@@ -30,12 +37,14 @@ function harness(results: Array<{ exitCode: number; stdout: string; stderr: stri
   }) => {
     const result = results.shift();
     if (!result) throw new Error('missing command result');
-    const target = request.command.at(-1) as string;
-    if (request.command[0] === '/bin/sh') {
-      if (result.exitCode === 2) existing.add(target);
-      else if (result.exitCode === 0) existing.delete(target);
-    } else if (result.exitCode === 0) {
-      existing.add(target);
+    const [allowed, outside, git, completed] = request.command.slice(-4) as string[];
+    const markerPaths: Record<MarkerName, string> = { allowed, outside, git, completed };
+    const markers = result.markers ?? (
+      result.exitCode === 0 ? ['allowed', 'completed'] :
+        result.exitCode === 10 ? [] : ['allowed']
+    );
+    for (const marker of markers) {
+      existing.add(markerPaths[marker]);
     }
     return result;
   });
@@ -85,14 +94,11 @@ describe('Codex sandbox capability probe', () => {
       }
       const targets: string[] = [];
       const execute = vi.fn(async (_accountId: string, request: { command: string[] }) => {
-        const target = request.command.at(-1) as string;
-        targets.push(target);
-        if (path.basename(path.dirname(target)).startsWith('.aperant-codex-sandbox-probe-') &&
-          !target.startsWith(`${gitDir}${path.sep}`)) {
-          await writeFile(target, '');
-          return { exitCode: 0, stdout: '', stderr: '' };
-        }
-        return { exitCode: 1, stdout: '', stderr: 'denied' };
+        const [allowed, outside, git, completed] = request.command.slice(-4) as string[];
+        targets.push(allowed, outside, git, completed);
+        await writeFile(allowed, '');
+        await writeFile(completed, '');
+        return { exitCode: 0, stdout: '', stderr: '' };
       });
       const probe = createCodexSandboxProbe({
         getCapabilityContext: async () => capabilityContext(),
@@ -123,14 +129,11 @@ describe('Codex sandbox capability probe', () => {
     const probe = createCodexSandboxProbe({
       getCapabilityContext: async () => capabilityContext(),
       execute: async (_accountId, request) => {
-        const target = request.command.at(-1) as string;
-        targets.push(target);
-        if (path.basename(path.dirname(target)).startsWith('.aperant-codex-sandbox-probe-') &&
-          !target.includes(`${path.sep}.git${path.sep}`)) {
-          await writeFile(target, '');
-          return { exitCode: 0, stdout: '', stderr: '' };
-        }
-        return { exitCode: 1, stdout: '', stderr: 'denied' };
+        const [allowed, outside, git, completed] = request.command.slice(-4) as string[];
+        targets.push(allowed, outside, git, completed);
+        await writeFile(allowed, '');
+        await writeFile(completed, '');
+        return { exitCode: 0, stdout: '', stderr: '' };
       },
     });
 
@@ -174,12 +177,10 @@ describe('Codex sandbox capability probe', () => {
     const probe = createCodexSandboxProbe({
       getCapabilityContext: async () => capabilityContext(),
       execute: async (_accountId, request) => {
-        const target = request.command.at(-1) as string;
-        if (target.includes('.aperant-codex-sandbox-probe-')) {
-          await writeFile(target, '');
-          return { exitCode: 0, stdout: '', stderr: '' };
-        }
-        return { exitCode: 1, stdout: '', stderr: '' };
+        const [allowed, , , completed] = request.command.slice(-4) as string[];
+        await writeFile(allowed, '');
+        await writeFile(completed, '');
+        return { exitCode: 0, stdout: '', stderr: '' };
       },
     });
     try {
@@ -193,22 +194,67 @@ describe('Codex sandbox capability probe', () => {
   it('proves allowed writes while rejecting outside and Git metadata writes', async () => {
     const fixture = harness([
       { exitCode: 0, stdout: '', stderr: '' },
-      { exitCode: 1, stdout: '', stderr: 'denied' },
-      { exitCode: 1, stdout: '', stderr: 'denied' },
     ]);
 
     await fixture.probe.verify('account-a', '/worktree');
 
-    expect(fixture.execute).toHaveBeenCalledTimes(3);
+    expect(fixture.execute).toHaveBeenCalledTimes(1);
     for (const [, request] of fixture.execute.mock.calls) {
       expect(request.sandboxPolicy).toEqual(policy);
     }
-    expect(fixture.execute.mock.calls[0]?.[1].command).toEqual([
-      '/usr/bin/touch', '/worktree/.aperant-probe/allowed-marker',
+    expect(fixture.execute.mock.calls[0]?.[1].command[0]).toBe('/bin/sh');
+    expect(fixture.execute.mock.calls[0]?.[1].command.slice(-4)).toEqual([
+      '/worktree/.aperant-probe/allowed-marker',
+      '/outside/denied-marker',
+      '/worktree/.git/denied-marker',
+      '/worktree/.aperant-probe/completed-marker',
     ]);
-    expect(fixture.execute.mock.calls[1]?.[1].command[0]).toBe('/bin/sh');
-    expect(fixture.execute.mock.calls[2]?.[1].command[0]).toBe('/bin/sh');
     expect(fixture.remove).toHaveBeenCalledWith('/worktree/.aperant-probe/allowed-marker');
+  });
+
+  it('proves the complete sandbox boundary in one atomic command', async () => {
+    const existing = new Set<string>();
+    const execute = vi.fn(async (_accountId: string, request: { command: string[] }) => {
+      const [allowedMarker, , , completedMarker] = request.command.slice(-4);
+      existing.add(allowedMarker as string);
+      existing.add(completedMarker as string);
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+    const probe = createCodexSandboxProbe({
+      platform: 'darwin',
+      canonicalize: async (value) => value,
+      getCapabilityContext: async () => capabilityContext(),
+      execute,
+      makeProbeRoots: async () => ({
+        probeRoot: '/worktree/.aperant-probe',
+        outsideRoot: '/outside',
+        gitRoot: '/worktree/.git',
+        allowedMarker: '/worktree/.aperant-probe/allowed-marker',
+        outsideMarker: '/outside/denied-marker',
+        gitMarker: '/worktree/.git/denied-marker',
+      }),
+      markerExists: async (target) => existing.has(target),
+      remove: async (target) => { existing.delete(target); },
+      cleanupRoots: async () => { /* Synthetic roots need no filesystem cleanup. */ },
+    });
+
+    await probe.verify('account-a', '/worktree');
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    const command = execute.mock.calls[0]?.[1].command;
+    expect(command?.[0]).toBe('/bin/sh');
+    expect(command?.[2]).toBe([
+      'if ! "$1" "$3"; then exit 10; fi;',
+      'if "$1" "$4"; then "$2" -f -- "$4"; exit 11; fi;',
+      'if "$1" "$5"; then "$2" -f -- "$5"; exit 12; fi;',
+      'if ! "$1" "$6"; then exit 13; fi',
+    ].join(' '));
+    expect(command?.slice(-4)).toEqual([
+      '/worktree/.aperant-probe/allowed-marker',
+      '/outside/denied-marker',
+      '/worktree/.git/denied-marker',
+      '/worktree/.aperant-probe/completed-marker',
+    ]);
   });
 
   it('probes the exact writable roots used by execution', async () => {
@@ -217,10 +263,10 @@ describe('Codex sandbox capability probe', () => {
       command: string[];
       sandboxPolicy: typeof policy;
     }) => {
-      const target = request.command.at(-1) as string;
-      const allowed = target.startsWith('/worktree/output/');
-      if (request.command[0] !== '/bin/sh' && allowed) existing.add(target);
-      return { exitCode: allowed ? 0 : 1, stdout: '', stderr: '' };
+      const [allowed, , , completed] = request.command.slice(-4) as string[];
+      existing.add(allowed);
+      existing.add(completed);
+      return { exitCode: 0, stdout: '', stderr: '' };
     });
     const probe = createCodexSandboxProbe({
       platform: 'darwin',
@@ -250,74 +296,78 @@ describe('Codex sandbox capability probe', () => {
     for (const [, request] of execute.mock.calls) {
       expect(request.sandboxPolicy.writableRoots).toEqual(['/worktree/output']);
     }
-    expect(execute.mock.calls[0]?.[1].command.at(-1))
-      .toBe('/worktree/output/.aperant-probe/allowed-marker');
+    expect(execute.mock.calls[0]?.[1].command.slice(-4)).toEqual([
+      '/worktree/output/.aperant-probe/allowed-marker',
+      '/outside/denied-marker',
+      '/worktree/.git/denied-marker',
+      '/worktree/output/.aperant-probe/completed-marker',
+    ]);
   });
 
   it.each([
-    ['allowed write fails', [1, 1, 1]],
-    ['outside write succeeds', [0, 0, 1]],
-    ['Git metadata write succeeds', [0, 1, 0]],
-  ])('fails closed when %s', async (_name, exitCodes) => {
-    const fixture = harness(exitCodes.map((exitCode) => ({ exitCode, stdout: '', stderr: '' })));
+    ['allowed write fails', 10],
+    ['outside write succeeds', 11],
+    ['Git metadata write succeeds', 12],
+    ['completion checkpoint fails', 13],
+  ])('fails closed when %s', async (_name, exitCode) => {
+    const fixture = harness([{ exitCode, stdout: '', stderr: '' }]);
     await expect(fixture.probe.verify('account-a', '/worktree'))
       .rejects.toThrow('Codex sandbox enforcement could not be proven');
   });
 
-  it('removes a stale denied marker before accepting a nonzero denied attempt', async () => {
+  it('fails closed and cleans up when a forbidden marker exists', async () => {
     const fixture = harness([
-      { exitCode: 0, stdout: '', stderr: '' },
-      { exitCode: 1, stdout: '', stderr: '' },
-      { exitCode: 1, stdout: '', stderr: '' },
+      {
+        exitCode: 11,
+        stdout: '',
+        stderr: '',
+        markers: ['allowed', 'outside'],
+      },
     ]);
-    fixture.existing.add('/outside/denied-marker');
-    await expect(fixture.probe.verify('account-a', '/worktree')).resolves.toBeUndefined();
+    await expect(fixture.probe.verify('account-a', '/worktree'))
+      .rejects.toThrow('Codex sandbox enforcement could not be proven');
     expect(fixture.remove).toHaveBeenCalledWith('/outside/denied-marker');
+    expect(fixture.existing.has('/outside/denied-marker')).toBe(false);
   });
 
   it('fails closed when cleanup fails and does not cache the result', async () => {
     const fixture = harness([
       { exitCode: 0, stdout: '', stderr: '' },
-      { exitCode: 1, stdout: '', stderr: '' },
-      { exitCode: 1, stdout: '', stderr: '' },
       { exitCode: 0, stdout: '', stderr: '' },
-      { exitCode: 1, stdout: '', stderr: '' },
-      { exitCode: 1, stdout: '', stderr: '' },
     ]);
     fixture.remove.mockRejectedValueOnce(new Error('cleanup failed'));
     await expect(fixture.probe.verify('account-a', '/worktree'))
       .rejects.toThrow('Codex sandbox probe cleanup failed');
     await fixture.probe.verify('account-a', '/worktree');
-    expect(fixture.execute).toHaveBeenCalledTimes(6);
+    expect(fixture.execute).toHaveBeenCalledTimes(2);
   });
 
   it('uses a self-cleaning argv helper for denied writes that unexpectedly succeed', async () => {
     const fixture = harness([
-      { exitCode: 0, stdout: '', stderr: '' },
-      { exitCode: 0, stdout: '', stderr: '' },
-      { exitCode: 1, stdout: '', stderr: '' },
+      { exitCode: 11, stdout: '', stderr: '' },
     ]);
     await expect(fixture.probe.verify('account-a', '/worktree'))
       .rejects.toThrow('Codex sandbox enforcement could not be proven');
 
-    const outsideCommand = fixture.execute.mock.calls[1]?.[1].command;
-    expect(outsideCommand?.[0]).toBe('/bin/sh');
-    expect(outsideCommand?.at(-1)).toBe('/outside/denied-marker');
+    const command = fixture.execute.mock.calls[0]?.[1].command;
+    expect(command?.[0]).toBe('/bin/sh');
+    expect(command?.slice(-4)).toContain('/outside/denied-marker');
     expect(fixture.existing.has('/outside/denied-marker')).toBe(false);
   });
 
   it('fails with cleanup error when an unexpected denied marker cannot be removed', async () => {
     const fixture = harness([
-      { exitCode: 0, stdout: '', stderr: '' },
-      { exitCode: 2, stdout: '', stderr: '' },
-      { exitCode: 1, stdout: '', stderr: '' },
+      {
+        exitCode: 11,
+        stdout: '',
+        stderr: '',
+        markers: ['allowed', 'outside'],
+      },
     ]);
     fixture.remove.mockImplementation(async (target: string) => {
       if (target === '/outside/denied-marker') throw new Error('host cleanup failed');
       fixture.existing.delete(target);
     });
-    fixture.existing.add('/outside/denied-marker');
-
     await expect(fixture.probe.verify('account-a', '/worktree'))
       .rejects.toThrow('Codex sandbox probe cleanup failed');
     expect(fixture.remove).toHaveBeenCalledWith('/outside/denied-marker');
@@ -326,19 +376,15 @@ describe('Codex sandbox capability probe', () => {
   it('caches a pass by runtime version, platform, account, and canonical worktree', async () => {
     const fixture = harness([
       { exitCode: 0, stdout: '', stderr: '' },
-      { exitCode: 1, stdout: '', stderr: '' },
-      { exitCode: 1, stdout: '', stderr: '' },
     ]);
     await fixture.probe.verify('account-a', path.normalize('/worktree'));
     await fixture.probe.verify('account-a', path.normalize('/worktree'));
-    expect(fixture.execute).toHaveBeenCalledTimes(3);
+    expect(fixture.execute).toHaveBeenCalledTimes(1);
   });
 
   it('re-probes on binary, session, lifecycle, and explicit account invalidation', async () => {
     const result = (exitCode: number) => ({ exitCode, stdout: '', stderr: '' });
-    const fixture = harness(Array.from({ length: 5 }, () => [
-      result(0), result(1), result(1),
-    ]).flat());
+    const fixture = harness(Array.from({ length: 5 }, () => result(0)));
     const first = capabilityContext();
     await fixture.probe.verify('account-a', '/worktree');
 
@@ -351,7 +397,7 @@ describe('Codex sandbox capability probe', () => {
     fixture.probe.invalidateAccount('account-a');
     await fixture.probe.verify('account-a', '/worktree');
 
-    expect(fixture.execute).toHaveBeenCalledTimes(15);
+    expect(fixture.execute).toHaveBeenCalledTimes(5);
   });
 
   it('rejects unsupported platforms without executing a command', async () => {

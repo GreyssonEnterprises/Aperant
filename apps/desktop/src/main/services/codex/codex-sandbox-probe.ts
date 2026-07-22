@@ -213,81 +213,64 @@ export function createCodexSandboxProbe(overrides?: Partial<Dependencies>) {
       canonicalWritableRoots[0] as string,
     );
     validateProbeRoots(canonicalWorktree, canonicalWritableRoots, roots);
-    const runTouch = (target: string) => dependencies.execute(accountId, {
-      command: [dependencies.touchExecutable, target],
-      cwd: roots.probeRoot,
-      timeoutMs: PROBE_TIMEOUT_MS,
-      outputBytesCap: PROBE_OUTPUT_BYTES,
-      sandboxPolicy,
-    });
-    const runDeniedTouch = async (target: string) => {
-      let result: CodexSandboxCommandResult | undefined;
-      let executionError: unknown;
-      try {
-        result = await dependencies.execute(accountId, {
-          command: [
-            dependencies.shellExecutable,
-            '-c',
-            'if "$1" "$3"; then if "$2" -f -- "$3"; then exit 0; else exit 2; fi; else exit 1; fi',
-            'aperant-sandbox-denied-probe',
-            dependencies.touchExecutable,
-            dependencies.removeExecutable,
-            target,
-          ],
-          cwd: roots.probeRoot,
-          timeoutMs: PROBE_TIMEOUT_MS,
-          outputBytesCap: PROBE_OUTPUT_BYTES,
-          sandboxPolicy,
-        });
-      } catch (error) {
-        executionError = error;
-      }
-      try {
-        if (await dependencies.markerExists(target)) await dependencies.remove(target);
-        if (await dependencies.markerExists(target)) throw new Error('marker remains');
-      } catch {
-        throw new CodexRuntimeError(
-          'isolation-failed',
-          'Codex sandbox probe cleanup failed',
-        );
-      }
-      if (executionError) throw executionError;
-      if (!result) throw new CodexRuntimeError('isolation-failed');
-      return result;
-    };
+    const completedMarker = path.join(roots.probeRoot, 'completed-marker');
+    if (!isContained(roots.probeRoot, completedMarker)) {
+      throw new CodexRuntimeError('isolation-failed');
+    }
 
     let verified = false;
-    let allowedMarkerCreated = false;
     let probeFailure: unknown;
     try {
-      const allowed = await runTouch(roots.allowedMarker);
-      allowedMarkerCreated = await dependencies.markerExists(roots.allowedMarker);
-      const outside = await runDeniedTouch(roots.outsideMarker);
-      const outsideCreated = await dependencies.markerExists(roots.outsideMarker);
-      const git = await runDeniedTouch(roots.gitMarker);
-      const gitCreated = await dependencies.markerExists(roots.gitMarker);
-      verified = allowed.exitCode === 0 && allowedMarkerCreated &&
-        outside.exitCode === 1 && !outsideCreated && git.exitCode === 1 && !gitCreated;
+      const result = await dependencies.execute(accountId, {
+        command: [
+          dependencies.shellExecutable,
+          '-c',
+          [
+            'if ! "$1" "$3"; then exit 10; fi;',
+            'if "$1" "$4"; then "$2" -f -- "$4"; exit 11; fi;',
+            'if "$1" "$5"; then "$2" -f -- "$5"; exit 12; fi;',
+            'if ! "$1" "$6"; then exit 13; fi',
+          ].join(' '),
+          'aperant-sandbox-boundary-probe',
+          dependencies.touchExecutable,
+          dependencies.removeExecutable,
+          roots.allowedMarker,
+          roots.outsideMarker,
+          roots.gitMarker,
+          completedMarker,
+        ],
+        cwd: roots.probeRoot,
+        timeoutMs: PROBE_TIMEOUT_MS,
+        outputBytesCap: PROBE_OUTPUT_BYTES,
+        sandboxPolicy,
+      });
+      const [allowedCreated, outsideCreated, gitCreated, completed] = await Promise.all([
+        dependencies.markerExists(roots.allowedMarker),
+        dependencies.markerExists(roots.outsideMarker),
+        dependencies.markerExists(roots.gitMarker),
+        dependencies.markerExists(completedMarker),
+      ]);
+      verified = result.exitCode === 0 && allowedCreated && completed &&
+        !outsideCreated && !gitCreated;
       if (!verified) {
         throw new CodexRuntimeError(
           'isolation-failed',
           'Codex sandbox enforcement could not be proven',
         );
       }
-      try {
-        await dependencies.remove(roots.allowedMarker);
-        allowedMarkerCreated = false;
-      } catch {
-        throw new CodexRuntimeError(
-          'isolation-failed',
-          'Codex sandbox probe cleanup failed',
-        );
-      }
     } catch (error) {
       probeFailure = error;
     }
     try {
-      if (allowedMarkerCreated) await dependencies.remove(roots.allowedMarker);
+      for (const marker of [
+        roots.allowedMarker,
+        roots.outsideMarker,
+        roots.gitMarker,
+        completedMarker,
+      ]) {
+        if (await dependencies.markerExists(marker)) await dependencies.remove(marker);
+        if (await dependencies.markerExists(marker)) throw new Error('marker remains');
+      }
       await dependencies.cleanupRoots?.(roots);
     } catch {
       throw new CodexRuntimeError(
