@@ -265,6 +265,34 @@ describe('Codex app-server authentication handlers', () => {
     });
   });
 
+  it('bounds pending login correlation state', async () => {
+    const accounts = ['a', 'b', 'c'].map((id) => ({ ...account, id }));
+    const publishAuthChanged = vi.fn();
+    const manager = {
+      startLogin: vi.fn(async (accountId: string) => ({
+        type: 'chatgpt' as const,
+        loginId: `login-${accountId}`,
+        authUrl: `https://auth.openai.com/${accountId}`,
+      })),
+      readAccount: vi.fn(),
+    };
+    const handlers = createCodexAuthHandlers({
+      getManager: () => manager,
+      readAccounts: () => accounts,
+      openExternal: vi.fn(),
+      publishAuthChanged,
+      completionLimit: 2,
+    });
+    for (const id of ['a', 'b', 'c']) await handlers.login(id);
+
+    for (const id of ['a', 'b', 'c']) {
+      handlers.handleNotification({ accountId: id, loginId: `login-${id}`, success: true });
+    }
+
+    expect(publishAuthChanged).toHaveBeenCalledTimes(2);
+    expect(publishAuthChanged).not.toHaveBeenCalledWith(expect.objectContaining({ accountId: 'a' }));
+  });
+
   it('does not let a superseded failing start clear the newer attempt completion', async () => {
     const h = harness();
     let rejectA!: (error: Error) => void;

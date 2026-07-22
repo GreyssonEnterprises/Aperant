@@ -97,6 +97,16 @@ export function createCodexAuthHandlers(overrides?: Partial<Dependencies>) {
     return true;
   }
 
+  function retainPendingLogin(accountId: string, loginId: string): void {
+    pendingLogins.delete(accountId);
+    while (pendingLogins.size >= dependencies.completionLimit) {
+      const oldest = pendingLogins.keys().next().value;
+      if (!oldest) break;
+      pendingLogins.delete(oldest);
+    }
+    pendingLogins.set(accountId, loginId);
+  }
+
   function validate(accountId: unknown): accountId is string {
     return typeof accountId === 'string' && accountId.length <= 256 &&
       accountExists(dependencies.readAccounts(), accountId);
@@ -155,7 +165,7 @@ export function createCodexAuthHandlers(overrides?: Partial<Dependencies>) {
         if (startingLogins.get(accountId) !== loginToken) {
           return { success: false as const, error: 'Codex authentication was superseded' };
         }
-        pendingLogins.set(accountId, result.loginId);
+        retainPendingLogin(accountId, result.loginId);
         startingLogins.delete(accountId);
         const buffered = bufferedCompletions.get(accountId)?.get(result.loginId);
         bufferedCompletions.delete(accountId);
