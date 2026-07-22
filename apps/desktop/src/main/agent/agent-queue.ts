@@ -21,6 +21,16 @@ import type { RoadmapStreamEvent } from '../ai/runners/roadmap';
 import type { ModelShorthand, ThinkingLevel } from '../ai/config/types';
 import { resolvePromptsDir } from '../ai/prompts/prompt-loader';
 
+type QueueRunnerKind = 'ideation' | 'roadmap';
+
+interface QueueRunnerRecord {
+  kind: QueueRunnerKind;
+  controller: AbortController;
+  spawnId: number;
+  promise: Promise<void>;
+  stoppedEmitted: boolean;
+}
+
 /**
  * Queue management for ideation and roadmap generation
  */
@@ -60,31 +70,98 @@ export class AgentQueueManager {
     this.cancelPersistRoadmapProgress = cancel;
   }
 
-  /** Map of active AbortControllers for cancellation support */
-  private abortControllers: Map<string, AbortController> = new Map();
-
-  private ownsRunner(
-    key: string,
-    projectId: string,
-    controller: AbortController,
-    spawnId: number,
-  ): boolean {
-    return this.abortControllers.get(key) === controller &&
-      this.state.getProcess(projectId)?.spawnId === spawnId;
-  }
+  /** One authoritative queue runner may own a project's shared AgentState. */
+  private runners: Map<string, QueueRunnerRecord> = new Map();
 
   private releaseRunner(
-    key: string,
     projectId: string,
-    controller: AbortController,
-    spawnId: number,
+    record: QueueRunnerRecord,
   ): void {
-    if (this.abortControllers.get(key) === controller) {
-      this.abortControllers.delete(key);
+    if (this.runners.get(projectId) === record) {
+      this.runners.delete(projectId);
     }
-    if (this.state.getProcess(projectId)?.spawnId === spawnId) {
+    if (this.state.getProcess(projectId)?.spawnId === record.spawnId) {
       this.state.deleteProcess(projectId);
     }
+  }
+
+  private emitStoppedOnce(projectId: string, record: QueueRunnerRecord): void {
+    if (record.stoppedEmitted) return;
+    record.stoppedEmitted = true;
+    this.emitter.emit(`${record.kind}-stopped`, projectId);
+  }
+
+  private async stopTrackedRunner(
+    projectId: string,
+    record: QueueRunnerRecord,
+  ): Promise<boolean> {
+    record.controller.abort();
+    try {
+      await record.promise;
+    } catch (error) {
+      debugError(`[Agent Queue] ${record.kind} runner failed while stopping:`, error);
+      this.emitter.emit(
+        `${record.kind}-error`,
+        projectId,
+        `${record.kind === 'ideation' ? 'Ideation' : 'Roadmap'} could not stop safely`,
+      );
+      return false;
+    }
+    if (this.runners.get(projectId) === record ||
+      this.state.getProcess(projectId)?.spawnId === record.spawnId) {
+      this.emitter.emit(
+        `${record.kind}-error`,
+        projectId,
+        `${record.kind === 'ideation' ? 'Ideation' : 'Roadmap'} ownership was not released`,
+      );
+      return false;
+    }
+    this.emitStoppedOnce(projectId, record);
+    return true;
+  }
+
+  private async startRunner(
+    kind: QueueRunnerKind,
+    projectId: string,
+    projectPath: string,
+    execute: (controller: AbortController) => Promise<void>,
+  ): Promise<void> {
+    const existing = this.runners.get(projectId);
+    if (existing) {
+      const stopped = await this.stopTrackedRunner(projectId, existing);
+      if (!stopped) {
+        throw new Error(`${kind === 'ideation' ? 'Ideation' : 'Roadmap'} replacement stopped because the previous runner did not stop safely`);
+      }
+    }
+    if (this.runners.has(projectId)) {
+      throw new Error('Queue runner ownership was not released');
+    }
+    if (this.state.hasProcess(projectId) && !(await this.processManager.killProcess(projectId))) {
+      throw new Error(`${kind === 'ideation' ? 'Ideation' : 'Roadmap'} replacement stopped because the previous process did not stop safely`);
+    }
+
+    const controller = new AbortController();
+    const spawnId = this.state.generateSpawnId();
+    const record: QueueRunnerRecord = {
+      kind,
+      controller,
+      spawnId,
+      promise: Promise.resolve(),
+      stoppedEmitted: false,
+    };
+    this.runners.set(projectId, record);
+    this.state.addProcess(projectId, {
+      taskId: projectId,
+      process: null as unknown as import('child_process').ChildProcess,
+      startedAt: new Date(),
+      projectPath,
+      spawnId,
+      queueProcessType: kind,
+    });
+    record.promise = Promise.resolve()
+      .then(() => execute(controller))
+      .finally(() => this.releaseRunner(projectId, record));
+    return record.promise;
   }
 
   /**
@@ -180,8 +257,11 @@ export class AgentQueueManager {
       config
     });
 
-    // Use projectId as taskId for roadmap operations
-    await this.runRoadmapRunner(projectId, projectPath, refresh, enableCompetitorAnalysis, config);
+    await this.startRunner('roadmap', projectId, projectPath, (controller) => (
+      this.runRoadmapRunner(
+        projectId, projectPath, refresh, enableCompetitorAnalysis, controller, config,
+      )
+    ));
   }
 
   /**
@@ -199,8 +279,9 @@ export class AgentQueueManager {
       config
     });
 
-    // Use projectId as taskId for ideation operations
-    await this.runIdeationRunner(projectId, projectPath, config);
+    await this.startRunner('ideation', projectId, projectPath, (controller) => (
+      this.runIdeationRunner(projectId, projectPath, config, controller)
+    ));
   }
 
   /**
@@ -210,37 +291,10 @@ export class AgentQueueManager {
   private async runIdeationRunner(
     projectId: string,
     projectPath: string,
-    config: IdeationConfig
+    config: IdeationConfig,
+    abortController: AbortController,
   ): Promise<void> {
     debugLog('[Agent Queue] Running ideation via TS runner:', { projectId, projectPath });
-
-    // Cancel any existing ideation for this project
-    const existingController = this.abortControllers.get(`ideation:${projectId}`);
-    if (existingController) {
-      existingController.abort();
-      this.abortControllers.delete(`ideation:${projectId}`);
-    }
-
-    // Kill existing process for this project if any (legacy cleanup). A failed
-    // cooperative stop leaves the old process authoritative, so don't replace it.
-    if (this.state.hasProcess(projectId) && !(await this.processManager.killProcess(projectId))) {
-      throw new Error('Ideation replacement stopped because the previous process did not stop safely');
-    }
-
-    const abortController = new AbortController();
-    const runnerKey = `ideation:${projectId}`;
-    this.abortControllers.set(runnerKey, abortController);
-
-    // Mark as running in state
-    const spawnId = this.state.generateSpawnId();
-    this.state.addProcess(projectId, {
-      taskId: projectId,
-      process: null as unknown as import('child_process').ChildProcess,
-      startedAt: new Date(),
-      projectPath,
-      spawnId,
-      queueProcessType: 'ideation'
-    });
 
     // Track progress
     const completedTypes = new Set<string>();
@@ -292,14 +346,11 @@ export class AgentQueueManager {
             abortSignal: abortController.signal,
           },
           (event: IdeationStreamEvent) => {
-            if (!this.ownsRunner(runnerKey, projectId, abortController, spawnId)) return;
             if (event.type === 'text-delta') {
               this.emitter.emit('ideation-log', projectId, event.text);
             }
           }
         );
-
-        if (!this.ownsRunner(runnerKey, projectId, abortController, spawnId)) return;
 
         if (result.success) {
           completedTypes.add(ideationType);
@@ -331,7 +382,6 @@ export class AgentQueueManager {
           }
         }
       } catch (err) {
-        if (!this.ownsRunner(runnerKey, projectId, abortController, spawnId)) return;
         if (abortController.signal.aborted) {
           debugLog('[Agent Queue] Ideation type aborted:', ideationType);
           break;
@@ -341,11 +391,7 @@ export class AgentQueueManager {
       }
     }
 
-    if (!this.ownsRunner(runnerKey, projectId, abortController, spawnId)) return;
-
     if (abortController.signal.aborted) {
-      this.releaseRunner(runnerKey, projectId, abortController, spawnId);
-      this.emitter.emit('ideation-stopped', projectId);
       return;
     }
 
@@ -375,7 +421,6 @@ export class AgentQueueManager {
       this.emitter.emit('ideation-error', projectId,
         `Failed to load ideation session: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-    this.releaseRunner(runnerKey, projectId, abortController, spawnId);
   }
 
   /**
@@ -387,37 +432,10 @@ export class AgentQueueManager {
     projectPath: string,
     refresh: boolean,
     enableCompetitorAnalysis: boolean,
+    abortController: AbortController,
     config?: RoadmapConfig
   ): Promise<void> {
     debugLog('[Agent Queue] Running roadmap via TS runner:', { projectId, projectPath });
-
-    // Cancel any existing roadmap for this project
-    const existingController = this.abortControllers.get(`roadmap:${projectId}`);
-    if (existingController) {
-      existingController.abort();
-      this.abortControllers.delete(`roadmap:${projectId}`);
-    }
-
-    // Kill existing process for this project if any (legacy cleanup). A failed
-    // cooperative stop leaves the old process authoritative, so don't replace it.
-    if (this.state.hasProcess(projectId) && !(await this.processManager.killProcess(projectId))) {
-      throw new Error('Roadmap replacement stopped because the previous process did not stop safely');
-    }
-
-    const abortController = new AbortController();
-    const runnerKey = `roadmap:${projectId}`;
-    this.abortControllers.set(runnerKey, abortController);
-
-    // Mark as running in state
-    const spawnId = this.state.generateSpawnId();
-    this.state.addProcess(projectId, {
-      taskId: projectId,
-      process: null as unknown as import('child_process').ChildProcess,
-      startedAt: new Date(),
-      projectPath,
-      spawnId,
-      queueProcessType: 'roadmap'
-    });
 
     // Track progress
     let progressPhase = 'analyzing';
@@ -452,7 +470,6 @@ export class AgentQueueManager {
           abortSignal: abortController.signal,
         },
         (event: RoadmapStreamEvent) => {
-          if (!this.ownsRunner(runnerKey, projectId, abortController, spawnId)) return;
           switch (event.type) {
             case 'phase-start': {
               progressPhase = event.phase;
@@ -486,12 +503,8 @@ export class AgentQueueManager {
         }
       );
 
-      if (!this.ownsRunner(runnerKey, projectId, abortController, spawnId)) return;
-
       if (abortController.signal.aborted) {
-        this.releaseRunner(runnerKey, projectId, abortController, spawnId);
         this.clearRoadmapProgress(projectPath);
-        this.emitter.emit('roadmap-stopped', projectId);
         return;
       }
 
@@ -541,14 +554,10 @@ export class AgentQueueManager {
         this.emitter.emit('roadmap-error', projectId,
           result.error || 'Roadmap generation failed');
       }
-      this.releaseRunner(runnerKey, projectId, abortController, spawnId);
     } catch (err) {
-      if (!this.ownsRunner(runnerKey, projectId, abortController, spawnId)) return;
-      this.releaseRunner(runnerKey, projectId, abortController, spawnId);
       this.clearRoadmapProgress(projectPath);
 
       if (abortController.signal.aborted) {
-        this.emitter.emit('roadmap-stopped', projectId);
         return;
       }
 
@@ -564,13 +573,11 @@ export class AgentQueueManager {
   async stopIdeation(projectId: string): Promise<boolean> {
     debugLog('[Agent Queue] Stop ideation requested:', { projectId });
 
-    // Try TS runner abort first
-    const controller = this.abortControllers.get(`ideation:${projectId}`);
-    if (controller) {
+    const runner = this.runners.get(projectId);
+    if (runner) {
+      if (runner.kind !== 'ideation') return false;
       debugLog('[Agent Queue] Aborting ideation TS runner:', projectId);
-      controller.abort();
-      // Note: the runner's async loop will handle cleanup and emit ideation-stopped
-      return true;
+      return this.stopTrackedRunner(projectId, runner);
     }
 
     // Fallback: check for legacy process
@@ -594,7 +601,8 @@ export class AgentQueueManager {
    * Check if ideation is running for a project
    */
   isIdeationRunning(projectId: string): boolean {
-    if (this.abortControllers.has(`ideation:${projectId}`)) return true;
+    const runner = this.runners.get(projectId);
+    if (runner) return runner.kind === 'ideation';
     const processInfo = this.state.getProcess(projectId);
     return processInfo?.queueProcessType === 'ideation';
   }
@@ -605,13 +613,11 @@ export class AgentQueueManager {
   async stopRoadmap(projectId: string): Promise<boolean> {
     debugLog('[Agent Queue] Stop roadmap requested:', { projectId });
 
-    // Try TS runner abort first
-    const controller = this.abortControllers.get(`roadmap:${projectId}`);
-    if (controller) {
+    const runner = this.runners.get(projectId);
+    if (runner) {
+      if (runner.kind !== 'roadmap') return false;
       debugLog('[Agent Queue] Aborting roadmap TS runner:', projectId);
-      controller.abort();
-      // Note: the runner's async method will handle cleanup and emit roadmap-stopped
-      return true;
+      return this.stopTrackedRunner(projectId, runner);
     }
 
     // Fallback: check for legacy process
@@ -635,7 +641,8 @@ export class AgentQueueManager {
    * Check if roadmap is running for a project
    */
   isRoadmapRunning(projectId: string): boolean {
-    if (this.abortControllers.has(`roadmap:${projectId}`)) return true;
+    const runner = this.runners.get(projectId);
+    if (runner) return runner.kind === 'roadmap';
     const processInfo = this.state.getProcess(projectId);
     return processInfo?.queueProcessType === 'roadmap';
   }

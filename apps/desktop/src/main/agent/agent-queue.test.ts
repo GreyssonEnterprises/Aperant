@@ -50,7 +50,11 @@ function harness(queueProcessType: 'ideation' | 'roadmap') {
 }
 
 describe('AgentQueueManager awaited process replacement and stop', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(runIdeation).mockReset().mockResolvedValue({ success: true } as never);
+    vi.mocked(runRoadmapGeneration).mockReset().mockResolvedValue({ success: true } as never);
+  });
 
   it('awaits ideation replacement kill before starting a new runner', async () => {
     const h = harness('ideation');
@@ -126,13 +130,16 @@ describe('AgentQueueManager awaited process replacement and stop', () => {
     const newRun = queue.startIdeationGeneration(
       'project-1', '/project', { enabledTypes: ['feature'] } as never,
     );
-    await vi.waitFor(() => expect(runIdeation).toHaveBeenCalledTimes(2));
+    await Promise.resolve();
+    expect(runIdeation).toHaveBeenCalledOnce();
     first.resolve({ success: true });
     await oldRun;
+    await vi.waitFor(() => expect(runIdeation).toHaveBeenCalledTimes(2));
 
     expect(queue.isIdeationRunning('project-1')).toBe(true);
-    await expect(queue.stopIdeation('project-1')).resolves.toBe(true);
+    const stop = queue.stopIdeation('project-1');
     second.resolve({ success: true });
+    await expect(stop).resolves.toBe(true);
     await newRun;
     expect(queue.isIdeationRunning('project-1')).toBe(false);
   });
@@ -159,14 +166,151 @@ describe('AgentQueueManager awaited process replacement and stop', () => {
     const oldRun = queue.startRoadmapGeneration('project-1', '/project');
     await vi.waitFor(() => expect(runRoadmapGeneration).toHaveBeenCalledTimes(1));
     const newRun = queue.startRoadmapGeneration('project-1', '/project');
-    await vi.waitFor(() => expect(runRoadmapGeneration).toHaveBeenCalledTimes(2));
+    await Promise.resolve();
+    expect(runRoadmapGeneration).toHaveBeenCalledOnce();
     first.resolve({ success: true });
     await oldRun;
+    await vi.waitFor(() => expect(runRoadmapGeneration).toHaveBeenCalledTimes(2));
 
     expect(queue.isRoadmapRunning('project-1')).toBe(true);
-    await expect(queue.stopRoadmap('project-1')).resolves.toBe(true);
+    const stop = queue.stopRoadmap('project-1');
     second.resolve({ success: true });
+    await expect(stop).resolves.toBe(true);
     await newRun;
     expect(queue.isRoadmapRunning('project-1')).toBe(false);
+  });
+
+  it('awaits an in-flight ideation runner before installing a roadmap owner', async () => {
+    const state = new AgentState();
+    const emitter = new EventEmitter();
+    const ideation = deferredResult();
+    const roadmap = deferredResult();
+    vi.mocked(runIdeation).mockReturnValueOnce(ideation.promise as never);
+    vi.mocked(runRoadmapGeneration).mockReturnValueOnce(roadmap.promise as never);
+    const killProcess = vi.fn().mockResolvedValue(true);
+    const queue = new AgentQueueManager(
+      state,
+      new AgentEvents(),
+      { killProcess } as unknown as AgentProcessManager,
+      emitter,
+    );
+
+    const oldRun = queue.startIdeationGeneration(
+      'project-1', '/project', { enabledTypes: ['feature'] } as never,
+    );
+    await vi.waitFor(() => expect(runIdeation).toHaveBeenCalledOnce());
+    const replacement = queue.startRoadmapGeneration('project-1', '/project');
+    await Promise.resolve();
+    expect(runRoadmapGeneration).not.toHaveBeenCalled();
+    expect((vi.mocked(runIdeation).mock.calls[0]?.[0] as { abortSignal: AbortSignal })
+      .abortSignal.aborted).toBe(true);
+    expect(killProcess).not.toHaveBeenCalled();
+
+    ideation.resolve({ success: true });
+    await oldRun;
+    await vi.waitFor(() => expect(runRoadmapGeneration).toHaveBeenCalledOnce());
+    expect(state.getProcess('project-1')?.queueProcessType).toBe('roadmap');
+
+    const stop = queue.stopRoadmap('project-1');
+    roadmap.resolve({ success: true });
+    await expect(stop).resolves.toBe(true);
+    await replacement;
+  });
+
+  it('awaits an in-flight roadmap runner before installing an ideation owner', async () => {
+    const state = new AgentState();
+    const emitter = new EventEmitter();
+    const roadmap = deferredResult();
+    const ideation = deferredResult();
+    vi.mocked(runRoadmapGeneration).mockReturnValueOnce(roadmap.promise as never);
+    vi.mocked(runIdeation).mockReturnValueOnce(ideation.promise as never);
+    const killProcess = vi.fn().mockResolvedValue(true);
+    const queue = new AgentQueueManager(
+      state,
+      new AgentEvents(),
+      { killProcess } as unknown as AgentProcessManager,
+      emitter,
+    );
+
+    const oldRun = queue.startRoadmapGeneration('project-1', '/project');
+    await vi.waitFor(() => expect(runRoadmapGeneration).toHaveBeenCalledOnce());
+    const replacement = queue.startIdeationGeneration(
+      'project-1', '/project', { enabledTypes: ['feature'] } as never,
+    );
+    await Promise.resolve();
+    expect(runIdeation).not.toHaveBeenCalled();
+    expect((vi.mocked(runRoadmapGeneration).mock.calls[0]?.[0] as { abortSignal: AbortSignal })
+      .abortSignal.aborted).toBe(true);
+    expect(killProcess).not.toHaveBeenCalled();
+
+    roadmap.resolve({ success: true });
+    await oldRun;
+    await vi.waitFor(() => expect(runIdeation).toHaveBeenCalledOnce());
+    expect(state.getProcess('project-1')?.queueProcessType).toBe('ideation');
+
+    const stop = queue.stopIdeation('project-1');
+    ideation.resolve({ success: true });
+    await expect(stop).resolves.toBe(true);
+    await replacement;
+  });
+
+  it('does not resolve stop or emit STOPPED until the tracked runner settles', async () => {
+    const state = new AgentState();
+    const emitter = new EventEmitter();
+    const ideation = deferredResult();
+    vi.mocked(runIdeation).mockReturnValueOnce(ideation.promise as never);
+    const queue = new AgentQueueManager(
+      state,
+      new AgentEvents(),
+      { killProcess: vi.fn().mockResolvedValue(true) } as unknown as AgentProcessManager,
+      emitter,
+    );
+    const stopped = vi.fn();
+    emitter.on('ideation-stopped', stopped);
+    const running = queue.startIdeationGeneration(
+      'project-1', '/project', { enabledTypes: ['feature'] } as never,
+    );
+    await vi.waitFor(() => expect(runIdeation).toHaveBeenCalledOnce());
+
+    let stopSettled = false;
+    const stop = queue.stopIdeation('project-1').then((result) => {
+      stopSettled = true;
+      return result;
+    });
+    await Promise.resolve();
+    expect(stopSettled).toBe(false);
+    expect(stopped).not.toHaveBeenCalled();
+
+    ideation.resolve({ success: true });
+    await running;
+    await expect(stop).resolves.toBe(true);
+    expect(stopped).toHaveBeenCalledOnce();
+  });
+
+  it('returns failure and never emits STOPPED when tracked runner cleanup rejects', async () => {
+    const state = new AgentState();
+    const emitter = new EventEmitter();
+    const queue = new AgentQueueManager(
+      state,
+      new AgentEvents(),
+      { killProcess: vi.fn().mockResolvedValue(true) } as unknown as AgentProcessManager,
+      emitter,
+    );
+    const stopped = vi.fn();
+    const failed = vi.fn();
+    emitter.on('ideation-stopped', stopped);
+    emitter.on('ideation-error', failed);
+    const config = {} as Record<string, unknown>;
+    Object.defineProperty(config, 'enabledTypes', {
+      get: () => { throw new Error('runner cleanup failed'); },
+    });
+
+    const running = queue.startIdeationGeneration('project-1', '/project', config as never);
+    const stop = queue.stopIdeation('project-1');
+
+    await expect(stop).resolves.toBe(false);
+    await expect(running).rejects.toThrow('runner cleanup failed');
+    expect(stopped).not.toHaveBeenCalled();
+    expect(failed).toHaveBeenCalledWith('project-1', 'Ideation could not stop safely');
   });
 });
