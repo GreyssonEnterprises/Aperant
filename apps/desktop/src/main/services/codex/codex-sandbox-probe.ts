@@ -37,7 +37,7 @@ interface Dependencies {
   canonicalize(value: string): Promise<string>;
   getCapabilityContext(accountId: string): Promise<CodexSandboxCapabilityContext>;
   execute(accountId: string, request: CodexSandboxCommand): Promise<CodexSandboxCommandResult>;
-  makeProbeRoots(worktree: string): Promise<ProbeRoots>;
+  makeProbeRoots(worktree: string, writableRoot: string): Promise<ProbeRoots>;
   markerExists(target: string): Promise<boolean>;
   remove(target: string): Promise<void>;
   cleanupRoots?(roots: ProbeRoots): Promise<void>;
@@ -74,7 +74,7 @@ async function resolveGitRoot(worktree: string): Promise<string> {
   throw new CodexRuntimeError('isolation-failed');
 }
 
-async function makeProbeRoots(worktree: string): Promise<ProbeRoots> {
+async function makeProbeRoots(worktree: string, writableRoot: string): Promise<ProbeRoots> {
   const gitRoot = await resolveGitRoot(worktree);
   try {
     for (const entry of await readdir(gitRoot)) {
@@ -85,7 +85,7 @@ async function makeProbeRoots(worktree: string): Promise<ProbeRoots> {
   } catch {
     throw new CodexRuntimeError('isolation-failed');
   }
-  const probeRoot = await mkdtemp(path.join(worktree, '.aperant-codex-sandbox-probe-'));
+  const probeRoot = await mkdtemp(path.join(writableRoot, '.aperant-codex-sandbox-probe-'));
   let outsideRoot: string;
   try {
     outsideRoot = await mkdtemp(path.join(
@@ -124,8 +124,17 @@ function isContained(root: string, candidate: string): boolean {
     !path.isAbsolute(relative);
 }
 
-function validateProbeRoots(worktree: string, roots: ProbeRoots): void {
-  if (!isContained(worktree, roots.probeRoot) ||
+function isContainedOrEqual(root: string, candidate: string): boolean {
+  return root === candidate || isContained(root, candidate);
+}
+
+function validateProbeRoots(
+  worktree: string,
+  writableRoots: readonly string[],
+  roots: ProbeRoots,
+): void {
+  if (!writableRoots.some((root) => isContained(root, roots.probeRoot)) ||
+    writableRoots.some((root) => !isContainedOrEqual(worktree, root)) ||
     !isContained(roots.probeRoot, roots.allowedMarker) ||
     path.dirname(roots.outsideRoot) !== path.dirname(worktree) ||
     roots.outsideRoot === worktree || isContained(worktree, roots.outsideRoot) ||
@@ -156,7 +165,11 @@ export function createCodexSandboxProbe(overrides?: Partial<Dependencies>) {
   };
   const passed = new Map<string, string>();
 
-  async function verify(accountId: string, worktree: string): Promise<void> {
+  async function verify(
+    accountId: string,
+    worktree: string,
+    writableRoots: readonly string[] = [worktree],
+  ): Promise<void> {
     if (dependencies.platform !== 'darwin' && dependencies.platform !== 'linux') {
       throw new CodexRuntimeError(
         'platform-unsupported',
@@ -164,7 +177,18 @@ export function createCodexSandboxProbe(overrides?: Partial<Dependencies>) {
       );
     }
     const canonicalWorktree = await dependencies.canonicalize(worktree);
-    const sandboxPolicy = buildCodexWorkspaceWritePolicy([canonicalWorktree]);
+    if (writableRoots.length < 1 || writableRoots.length > 8) {
+      throw new CodexRuntimeError('isolation-failed');
+    }
+    const canonicalWritableRoots = [...new Set(await Promise.all(
+      writableRoots.map((root) => dependencies.canonicalize(root)),
+    ))];
+    if (canonicalWritableRoots.some(
+      (root) => !isContainedOrEqual(canonicalWorktree, root),
+    )) {
+      throw new CodexRuntimeError('isolation-failed');
+    }
+    const sandboxPolicy = buildCodexWorkspaceWritePolicy(canonicalWritableRoots);
     const capability = await dependencies.getCapabilityContext(accountId);
     if (!capability.executablePath || !capability.executableIdentity ||
       !capability.runtimeVersion || !capability.sessionEpoch ||
@@ -184,8 +208,11 @@ export function createCodexSandboxProbe(overrides?: Partial<Dependencies>) {
       hashCodexWorkspaceWritePolicy(sandboxPolicy),
     ]);
     if (passed.has(cacheKey)) return;
-    const roots = await dependencies.makeProbeRoots(canonicalWorktree);
-    validateProbeRoots(canonicalWorktree, roots);
+    const roots = await dependencies.makeProbeRoots(
+      canonicalWorktree,
+      canonicalWritableRoots[0] as string,
+    );
+    validateProbeRoots(canonicalWorktree, canonicalWritableRoots, roots);
     const runTouch = (target: string) => dependencies.execute(accountId, {
       command: [dependencies.touchExecutable, target],
       cwd: roots.probeRoot,

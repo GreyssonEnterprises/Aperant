@@ -106,7 +106,11 @@ describe('Codex execution backend', () => {
     });
 
     await expect(backend.run(h.config, h.emit)).rejects.toThrow('unproven');
-    expect(sandboxProbe.verify).toHaveBeenCalledWith('account-1', '/worktree');
+    expect(sandboxProbe.verify).toHaveBeenCalledWith(
+      'account-1',
+      '/worktree',
+      ['/worktree'],
+    );
     expect(h.manager.verifyExecutionModel).not.toHaveBeenCalled();
     expect(h.manager.startThread).not.toHaveBeenCalled();
     expect(h.manager.startTurn).not.toHaveBeenCalled();

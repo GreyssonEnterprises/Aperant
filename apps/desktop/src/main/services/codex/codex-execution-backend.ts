@@ -309,7 +309,11 @@ export function createCodexExecutionBackend(dependencies: Dependencies) {
         throw new Error('Codex writable roots must be inside the task worktree');
       }
       if (checkpointCancellation(execution)) return;
-      await dependencies.sandboxProbe.verify(config.accountId, worktreePath);
+      await dependencies.sandboxProbe.verify(
+        config.accountId,
+        worktreePath,
+        allowedWritePaths,
+      );
       if (checkpointCancellation(execution)) return;
       const saved = await dependencies.store.read(specDir, config.phase);
       if (checkpointCancellation(execution)) return;

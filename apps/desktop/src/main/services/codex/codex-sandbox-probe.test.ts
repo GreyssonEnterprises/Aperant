@@ -211,6 +211,49 @@ describe('Codex sandbox capability probe', () => {
     expect(fixture.remove).toHaveBeenCalledWith('/worktree/.aperant-probe/allowed-marker');
   });
 
+  it('probes the exact writable roots used by execution', async () => {
+    const existing = new Set<string>();
+    const execute = vi.fn(async (_accountId: string, request: {
+      command: string[];
+      sandboxPolicy: typeof policy;
+    }) => {
+      const target = request.command.at(-1) as string;
+      const allowed = target.startsWith('/worktree/output/');
+      if (request.command[0] !== '/bin/sh' && allowed) existing.add(target);
+      return { exitCode: allowed ? 0 : 1, stdout: '', stderr: '' };
+    });
+    const probe = createCodexSandboxProbe({
+      platform: 'darwin',
+      canonicalize: async (value) => value,
+      getCapabilityContext: async () => capabilityContext(),
+      execute,
+      makeProbeRoots: async () => ({
+        probeRoot: '/worktree/output/.aperant-probe',
+        outsideRoot: '/outside',
+        gitRoot: '/worktree/.git',
+        allowedMarker: '/worktree/output/.aperant-probe/allowed-marker',
+        outsideMarker: '/outside/denied-marker',
+        gitMarker: '/worktree/.git/denied-marker',
+      }),
+      markerExists: async (target) => existing.has(target),
+      remove: async (target) => { existing.delete(target); },
+      cleanupRoots: async () => { /* Synthetic roots need no filesystem cleanup. */ },
+      touchExecutable: '/usr/bin/touch',
+    });
+
+    await (probe.verify as (
+      accountId: string,
+      worktree: string,
+      writableRoots: string[],
+    ) => Promise<void>)('account-a', '/worktree', ['/worktree/output']);
+
+    for (const [, request] of execute.mock.calls) {
+      expect(request.sandboxPolicy.writableRoots).toEqual(['/worktree/output']);
+    }
+    expect(execute.mock.calls[0]?.[1].command.at(-1))
+      .toBe('/worktree/output/.aperant-probe/allowed-marker');
+  });
+
   it.each([
     ['allowed write fails', [1, 1, 1]],
     ['outside write succeeds', [0, 0, 1]],
@@ -351,6 +394,37 @@ describe('Codex sandbox capability probe', () => {
       });
       try {
         await expect(probe.verify('smoke-account', worktree)).resolves.toBeUndefined();
+      } finally {
+        await manager.shutdown();
+        await rm(root, { recursive: true });
+      }
+    },
+    30_000,
+  );
+
+  it.runIf(!!process.env.APERANT_CODEX_SANDBOX_WORKTREE)(
+    'proves the installed native Codex sandbox in a supplied worktree',
+    async () => {
+      const [{ createCodexAppServerManager }] = await Promise.all([
+        import('./codex-app-server-manager'),
+      ]);
+      const root = await mkdtemp(path.join(os.tmpdir(), 'aperant-codex-probe-real-'));
+      const manager = createCodexAppServerManager({
+        codexHomeRoot: path.join(root, 'accounts'),
+        clientVersion: 'sandbox-probe-real-worktree',
+      });
+      const probe = createCodexSandboxProbe({
+        getCapabilityContext: (accountId) => manager.getSandboxCapabilityContext(accountId),
+        execute: (accountId, request) => manager.executeSandboxCommand(accountId, request),
+      });
+      try {
+        const worktree = process.env.APERANT_CODEX_SANDBOX_WORKTREE as string;
+        const writableRoot = process.env.APERANT_CODEX_SANDBOX_WRITABLE_ROOT;
+        await expect(probe.verify(
+          'smoke-account',
+          worktree,
+          writableRoot ? [writableRoot] : [worktree],
+        )).resolves.toBeUndefined();
       } finally {
         await manager.shutdown();
         await rm(root, { recursive: true });
