@@ -7,9 +7,12 @@ import {
 } from './codex-event-translator';
 import type { CodexSandboxProbe } from './codex-sandbox-probe';
 import {
+  buildCodexReadOnlyPolicy,
   buildCodexWorkspaceWritePolicy,
-  type CodexWorkspaceWritePolicy,
+  type CodexSandboxPolicy,
 } from './codex-sandbox-policy';
+
+export type CodexSandboxMode = 'workspace-write' | 'read-only';
 
 export interface CodexExecutionThreadOptions {
   cwd: string;
@@ -17,7 +20,7 @@ export interface CodexExecutionThreadOptions {
   model: string;
   developerInstructions: string;
   approvalPolicy: 'never';
-  sandbox: 'workspace-write';
+  sandbox: CodexSandboxMode;
   networkAccess: false;
 }
 
@@ -30,7 +33,7 @@ export interface CodexExecutionTurnOptions {
   reasoningEffort?: string;
   outputSchema?: unknown;
   approvalPolicy: 'never';
-  sandboxPolicy: CodexWorkspaceWritePolicy;
+  sandboxPolicy: CodexSandboxPolicy;
 }
 
 export interface CodexExecutionManager {
@@ -90,6 +93,7 @@ export interface CodexExecutionConfig {
   systemPrompt: string;
   input: string;
   worktreePath: string;
+  sandboxMode?: CodexSandboxMode;
   allowedWritePaths: readonly string[];
   specDir: string;
   phase: string;
@@ -290,10 +294,14 @@ export function createCodexExecutionBackend(dependencies: Dependencies) {
       let worktreePath: string;
       let specDir: string;
       let allowedWritePaths: string[];
+      const sandboxMode = config.sandboxMode ?? 'workspace-write';
       try {
         worktreePath = await canonicalizePath(config.worktreePath);
         specDir = await canonicalizePath(config.specDir);
-        if (config.allowedWritePaths.length < 1 || config.allowedWritePaths.length > 8) {
+        const invalidWritePathCount = sandboxMode === 'read-only'
+          ? config.allowedWritePaths.length !== 0
+          : config.allowedWritePaths.length < 1 || config.allowedWritePaths.length > 8;
+        if (invalidWritePathCount) {
           throw new Error('invalid writable root count');
         }
         allowedWritePaths = [...new Set(await Promise.all(
@@ -309,11 +317,13 @@ export function createCodexExecutionBackend(dependencies: Dependencies) {
         throw new Error('Codex writable roots must be inside the task worktree');
       }
       if (checkpointCancellation(execution)) return;
-      await dependencies.sandboxProbe.verify(
-        config.accountId,
-        worktreePath,
-        allowedWritePaths,
-      );
+      if (sandboxMode === 'workspace-write') {
+        await dependencies.sandboxProbe.verify(
+          config.accountId,
+          worktreePath,
+          allowedWritePaths,
+        );
+      }
       if (checkpointCancellation(execution)) return;
       const saved = await dependencies.store.read(specDir, config.phase);
       if (checkpointCancellation(execution)) return;
@@ -331,7 +341,7 @@ export function createCodexExecutionBackend(dependencies: Dependencies) {
         model: config.modelId,
         developerInstructions: `${config.systemPrompt}\n\n${CODEX_HOST_OWNERSHIP_INSTRUCTIONS}`,
         approvalPolicy: 'never',
-        sandbox: 'workspace-write',
+        sandbox: sandboxMode,
         networkAccess: false,
       };
       let thread: { threadId: string; runtimeVersion: string };
@@ -394,7 +404,9 @@ export function createCodexExecutionBackend(dependencies: Dependencies) {
         ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}),
         ...(config.outputSchema ? { outputSchema: config.outputSchema } : {}),
         approvalPolicy: 'never',
-        sandboxPolicy: buildCodexWorkspaceWritePolicy(allowedWritePaths),
+        sandboxPolicy: sandboxMode === 'read-only'
+          ? buildCodexReadOnlyPolicy()
+          : buildCodexWorkspaceWritePolicy(allowedWritePaths),
       });
       execution.turnId = turn.turnId;
       for (const [method, params] of pendingEvents) {

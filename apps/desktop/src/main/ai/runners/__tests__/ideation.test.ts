@@ -19,12 +19,17 @@ vi.mock('../../client/factory', () => ({
 
 const mockCodexRun = vi.fn();
 const mockCodexCancel = vi.fn();
+const mockWriteJsonWithRetry = vi.fn();
 
 vi.mock('../../../services/codex/codex-execution-runtime', () => ({
   createMainCodexExecutionBackend: () => ({
     run: (...args: unknown[]) => mockCodexRun(...args),
     cancel: (...args: unknown[]) => mockCodexCancel(...args),
   }),
+}));
+
+vi.mock('../../../utils/atomic-file', () => ({
+  writeJsonWithRetry: (...args: unknown[]) => mockWriteJsonWithRetry(...args),
 }));
 
 // Mock filesystem: prompt files exist by default
@@ -183,6 +188,31 @@ describe('runIdeation', () => {
         reasoningConfig: { type: 'reasoning_effort', level: 'xhigh' },
       },
     });
+    const structuredOutput = {
+      code_improvements: [{
+        id: 'ci-001',
+        type: 'code_improvements',
+        title: 'Typed errors',
+        description: 'Preserve structured backend errors.',
+        rationale: 'The existing event model already supports them.',
+        builds_upon: ['Existing event model'],
+        estimated_effort: 'small',
+        affected_files: ['src/errors.ts'],
+        existing_patterns: ['Typed event payloads'],
+        implementation_approach: 'Extend the existing event union.',
+        status: 'draft',
+        created_at: '2026-07-22T00:00:00.000Z',
+      }],
+    };
+    mockCodexRun.mockResolvedValue({
+      outcome: 'completed',
+      structuredOutput,
+      stepsExecuted: 1,
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      messages: [],
+      durationMs: 1,
+      toolCallCount: 0,
+    });
 
     const result = await runIdeation(baseConfig({
       modelShorthand: 'gpt-5.6-sol',
@@ -197,11 +227,75 @@ describe('runIdeation', () => {
         modelId: 'gpt-5.6-sol',
         reasoningEffort: 'xhigh',
         worktreePath: '/project',
-        allowedWritePaths: ['/project/.auto-claude/ideation'],
+        sandboxMode: 'read-only',
+        allowedWritePaths: [],
         specDir: '/project/.auto-claude/ideation',
+        outputSchema: expect.objectContaining({ type: 'object' }),
       }),
       expect.any(Function),
     );
+    const codexConfig = mockCodexRun.mock.calls[0][0] as {
+      outputSchema: { properties: Record<string, { items: { additionalProperties: boolean } }> };
+    };
+    expect(
+      codexConfig.outputSchema.properties.code_improvements.items.additionalProperties,
+    ).toBe(false);
+    expect(mockWriteJsonWithRetry).toHaveBeenCalledWith(
+      '/project/.auto-claude/ideation/code_improvements_ideas.json',
+      structuredOutput,
+    );
+  });
+
+  it('rejects invalid structured output from Codex without writing a category file', async () => {
+    mockCreateSimpleClient.mockResolvedValue({
+      ...makeMockClient(),
+      resolvedModelId: 'gpt-5.6-sol',
+      queueAuth: {
+        accountId: 'openai-subscription',
+        executionBackend: 'codex-app-server',
+        reasoningConfig: { type: 'reasoning_effort', level: 'high' },
+      },
+    });
+    mockCodexRun.mockResolvedValue({
+      outcome: 'completed',
+      structuredOutput: { code_improvements: [{ title: 'Missing required fields' }] },
+    });
+
+    const result = await runIdeation(baseConfig({ modelShorthand: 'gpt-5.6-sol' }));
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('valid structured ideation output');
+    expect(mockWriteJsonWithRetry).not.toHaveBeenCalled();
+  });
+
+  it('rejects schema-incompatible extra fields from Codex', async () => {
+    mockCreateSimpleClient.mockResolvedValue({
+      ...makeMockClient(),
+      resolvedModelId: 'gpt-5.6-sol',
+      queueAuth: {
+        accountId: 'openai-subscription',
+        executionBackend: 'codex-app-server',
+        reasoningConfig: { type: 'reasoning_effort', level: 'high' },
+      },
+    });
+    mockCodexRun.mockResolvedValue({
+      outcome: 'completed',
+      structuredOutput: {
+        code_improvements: [{
+          id: 'ci-001', type: 'code_improvements', title: 'Title',
+          description: 'Description', rationale: 'Rationale',
+          builds_upon: [], estimated_effort: 'small', affected_files: [],
+          existing_patterns: [], implementation_approach: 'Approach',
+          status: 'draft', created_at: '2026-07-22T00:00:00.000Z',
+          unexpected: 'must be rejected',
+        }],
+      },
+    });
+
+    const result = await runIdeation(baseConfig({ modelShorthand: 'gpt-5.6-sol' }));
+
+    expect(result.success).toBe(false);
+    expect(mockWriteJsonWithRetry).not.toHaveBeenCalled();
   });
 
   it('passes tools from client to streamText', async () => {

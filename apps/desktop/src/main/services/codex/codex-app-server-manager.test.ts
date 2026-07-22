@@ -497,6 +497,26 @@ describe('per-account Codex app-server manager', () => {
           excludeTmpdirEnvVar: true, excludeSlashTmp: true,
         },
       }));
+
+    await manager.startThread('account-a', {
+      ...options,
+      sandbox: 'read-only',
+      runtimeWorkspaceRoots: [],
+    });
+    await manager.startTurn('account-a', {
+      threadId: 'thread-new', input: 'Return JSON', cwd: '/worktree',
+      model: 'gpt-5.3-codex', approvalPolicy: 'never',
+      sandboxPolicy: { type: 'readOnly', networkAccess: false },
+      runtimeWorkspaceRoots: [],
+    });
+    const threadRequests = process?.requests.filter((request) => request.method === 'thread/start');
+    const turnRequests = process?.requests.filter((request) => request.method === 'turn/start');
+    expect(threadRequests?.at(-1)?.params).toEqual(expect.objectContaining({
+      sandbox: 'read-only', runtimeWorkspaceRoots: [], config: {},
+    }));
+    expect(turnRequests?.at(-1)?.params).toEqual(expect.objectContaining({
+      runtimeWorkspaceRoots: [], sandboxPolicy: { type: 'readOnly', networkAccess: false },
+    }));
     unsubscribe();
     await manager.retireAccount('account-a');
     expect(terminate).toHaveBeenCalledWith(process);

@@ -36,11 +36,12 @@ function createHarness(
     read: vi.fn().mockResolvedValue(metadata),
     write: vi.fn().mockResolvedValue(undefined),
   };
+  const sandboxProbe = { verify: vi.fn().mockResolvedValue(undefined) };
   const events: unknown[] = [];
   const backend = createCodexExecutionBackend({
     manager,
     store,
-    sandboxProbe: { verify: vi.fn().mockResolvedValue(undefined) },
+    sandboxProbe,
     cancellationGraceMs: 5,
     canonicalizePath,
   });
@@ -59,6 +60,7 @@ function createHarness(
   return {
     manager,
     store,
+    sandboxProbe,
     backend,
     config,
     events,
@@ -114,6 +116,34 @@ describe('Codex execution backend', () => {
     expect(h.manager.verifyExecutionModel).not.toHaveBeenCalled();
     expect(h.manager.startThread).not.toHaveBeenCalled();
     expect(h.manager.startTurn).not.toHaveBeenCalled();
+  });
+
+  it('runs read-only turns without the packaged-app write probe', async () => {
+    const h = createHarness();
+    const run = h.backend.run({
+      ...h.config,
+      sandboxMode: 'read-only',
+      allowedWritePaths: [],
+      phase: 'ideation-read-only-code-improvements',
+      outputSchema: { type: 'object' },
+    }, h.emit);
+    await vi.waitFor(() => expect(h.manager.startTurn).toHaveBeenCalled());
+
+    expect(h.sandboxProbe.verify).not.toHaveBeenCalled();
+    expect(h.manager.startThread).toHaveBeenCalledWith('account-1', expect.objectContaining({
+      sandbox: 'read-only',
+      runtimeWorkspaceRoots: [],
+    }));
+    expect(h.manager.startTurn).toHaveBeenCalledWith('account-1', expect.objectContaining({
+      sandboxPolicy: { type: 'readOnly', networkAccess: false },
+      runtimeWorkspaceRoots: [],
+      outputSchema: { type: 'object' },
+    }));
+
+    h.notify('turn/completed', {
+      threadId: 'thread-new', turn: { id: 'turn-1', status: 'completed', items: [] },
+    });
+    await expect(run).resolves.toMatchObject({ outcome: 'completed' });
   });
 
   it('fences cancellation during startup before creating a thread', async () => {

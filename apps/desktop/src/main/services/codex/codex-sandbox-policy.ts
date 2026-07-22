@@ -6,6 +6,17 @@ export interface CodexWorkspaceWritePolicy {
   excludeSlashTmp: true;
 }
 
+export interface CodexReadOnlyPolicy {
+  type: 'readOnly';
+  networkAccess: false;
+}
+
+export type CodexSandboxPolicy = CodexWorkspaceWritePolicy | CodexReadOnlyPolicy;
+
+export function buildCodexReadOnlyPolicy(): CodexReadOnlyPolicy {
+  return { type: 'readOnly', networkAccess: false };
+}
+
 export function buildCodexWorkspaceWritePolicy(
   writableRoots: readonly string[],
 ): CodexWorkspaceWritePolicy {

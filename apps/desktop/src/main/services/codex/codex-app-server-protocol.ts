@@ -2,7 +2,10 @@
  * Pinned stable Codex app-server protocol subset for codex-cli 0.144.x.
  * Unknown fields are intentionally tolerated for forward compatibility.
  */
-import type { CodexWorkspaceWritePolicy } from './codex-sandbox-policy';
+import type {
+  CodexSandboxPolicy,
+  CodexWorkspaceWritePolicy,
+} from './codex-sandbox-policy';
 
 export interface CodexInitializeParams {
   clientInfo: { name: string; title?: string; version: string };
@@ -71,14 +74,18 @@ export interface CodexModelListResponse {
 
 export type CodexTurnStatus = 'completed' | 'interrupted' | 'failed' | 'inProgress';
 
+export type CodexThreadConfig =
+  | { sandbox_workspace_write: { network_access: false } }
+  | Record<string, never>;
+
 export interface CodexThreadStartParams {
   cwd: string;
   runtimeWorkspaceRoots: string[];
   model: string;
   developerInstructions: string;
   approvalPolicy: 'never';
-  sandbox: 'workspace-write';
-  config: { sandbox_workspace_write: { network_access: false } };
+  sandbox: 'workspace-write' | 'read-only';
+  config: CodexThreadConfig;
 }
 
 export interface CodexThreadResumeParams {
@@ -88,8 +95,8 @@ export interface CodexThreadResumeParams {
   model: string;
   developerInstructions: string;
   approvalPolicy: 'never';
-  sandbox: 'workspace-write';
-  config: { sandbox_workspace_write: { network_access: false } };
+  sandbox: 'workspace-write' | 'read-only';
+  config: CodexThreadConfig;
 }
 
 export interface CodexThreadResponse {
@@ -105,7 +112,7 @@ export interface CodexTurnStartParams {
   effort?: string;
   outputSchema?: unknown;
   approvalPolicy: 'never';
-  sandboxPolicy: CodexWorkspaceWritePolicy;
+  sandboxPolicy: CodexSandboxPolicy;
 }
 
 export interface CodexTurnStartResponse {

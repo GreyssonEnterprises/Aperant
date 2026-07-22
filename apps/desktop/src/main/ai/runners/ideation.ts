@@ -20,6 +20,7 @@ import type { ToolContext } from '../tools/types';
 import type { ModelShorthand, ThinkingLevel } from '../config/types';
 import type { SecurityProfile } from '../security/bash-validator';
 import { createMainCodexExecutionBackend } from '../../services/codex/codex-execution-runtime';
+import { writeJsonWithRetry } from '../../utils/atomic-file';
 
 // =============================================================================
 // Constants
@@ -99,6 +100,146 @@ export type IdeationStreamEvent =
   | { type: 'text-delta'; text: string }
   | { type: 'tool-use'; name: string }
   | { type: 'error'; error: string };
+
+type IdeaPropertySchema =
+  | { type: 'string'; const?: string }
+  | { type: 'boolean' }
+  | { type: 'array'; items: { type: 'string' } };
+
+function buildIdeaProperties(ideationType: IdeationType): Record<string, IdeaPropertySchema> {
+  const string = { type: 'string' } as const;
+  const stringArray = { type: 'array', items: string } as const;
+  const common = {
+    id: string,
+    type: { type: 'string', const: ideationType } as const,
+    title: string,
+    description: string,
+    rationale: string,
+  };
+  switch (ideationType) {
+    case 'code_improvements':
+      return {
+        ...common,
+        builds_upon: stringArray,
+        estimated_effort: string,
+        affected_files: stringArray,
+        existing_patterns: stringArray,
+        implementation_approach: string,
+        status: string,
+        created_at: string,
+      };
+    case 'ui_ux_improvements':
+      return {
+        ...common,
+        category: string,
+        affected_components: stringArray,
+        screenshots: stringArray,
+        current_state: string,
+        proposed_change: string,
+        user_benefit: string,
+        status: string,
+        created_at: string,
+      };
+    case 'documentation_gaps':
+      return {
+        ...common,
+        category: string,
+        targetAudience: string,
+        affectedAreas: stringArray,
+        currentDocumentation: string,
+        proposedContent: string,
+        priority: string,
+        estimatedEffort: string,
+      };
+    case 'security_hardening':
+      return {
+        ...common,
+        category: string,
+        severity: string,
+        affectedFiles: stringArray,
+        vulnerability: string,
+        currentRisk: string,
+        remediation: string,
+        references: stringArray,
+        compliance: stringArray,
+      };
+    case 'performance_optimizations':
+      return {
+        ...common,
+        category: string,
+        impact: string,
+        affectedAreas: stringArray,
+        currentMetric: string,
+        expectedImprovement: string,
+        implementation: string,
+        tradeoffs: string,
+        estimatedEffort: string,
+      };
+    case 'code_quality':
+      return {
+        ...common,
+        category: string,
+        severity: string,
+        affectedFiles: stringArray,
+        currentState: string,
+        proposedChange: string,
+        codeExample: string,
+        bestPractice: string,
+        estimatedEffort: string,
+        breakingChange: { type: 'boolean' },
+        prerequisites: stringArray,
+      };
+  }
+}
+
+function matchesIdeaProperty(value: unknown, schema: IdeaPropertySchema): boolean {
+  if (schema.type === 'string') {
+    return typeof value === 'string' && value.trim().length > 0 &&
+      (schema.const === undefined || value === schema.const);
+  }
+  if (schema.type === 'boolean') return typeof value === 'boolean';
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function buildIdeationOutputSchema(ideationType: IdeationType, maxIdeas: number) {
+  const ideaProperties = buildIdeaProperties(ideationType);
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: [ideationType],
+    properties: {
+      [ideationType]: {
+        type: 'array',
+        maxItems: maxIdeas,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: Object.keys(ideaProperties),
+          properties: ideaProperties,
+        },
+      },
+    },
+  } as const;
+}
+
+function isValidIdeationOutput(
+  value: Record<string, unknown> | undefined,
+  ideationType: IdeationType,
+  maxIdeas: number,
+): value is Record<IdeationType, Array<Record<string, unknown>>> {
+  if (!value || Object.keys(value).length !== 1) return false;
+  const ideas = value[ideationType];
+  if (!Array.isArray(ideas) || ideas.length > maxIdeas) return false;
+  const properties = buildIdeaProperties(ideationType);
+  const expectedKeys = Object.keys(properties);
+  return ideas.every((idea) => {
+    if (!idea || typeof idea !== 'object' || Array.isArray(idea)) return false;
+    const record = idea as Record<string, unknown>;
+    const keys = Object.keys(record);
+    return keys.length === expectedKeys.length && keys.every((key) => key in properties) &&
+      expectedKeys.every((key) => matchesIdeaProperty(record[key], properties[key]));
+  });
+}
 
 // =============================================================================
 // Ideation Runner
@@ -194,17 +335,27 @@ export async function runIdeation(
       const cancel = () => { void backend.cancel(); };
       abortSignal?.addEventListener('abort', cancel, { once: true });
       try {
+        const outputSchema = buildIdeationOutputSchema(ideationType, maxIdeasPerType);
+        const codexSystemPrompt = `${prompt}\n\n## HOST EXECUTION CONTRACT\n` +
+          'This Codex run is read-only. Do not create, edit, or delete files, even when earlier ' +
+          'instructions say the output file is mandatory. Aperant will persist the final response. ' +
+          'Return only the JSON object required by the supplied output schema.';
+        const codexPrompt = `Analyze the project at ${projectDir} and generate up to ` +
+          `${maxIdeasPerType} ${ideationType.replace(/_/g, ' ')} ideas. Explore the codebase using ` +
+          `read-only operations, then return only JSON with "${ideationType}" as the top-level key.`;
         const result = await backend.run({
           taskId: `ideation-${ideationType}`,
           accountId: client.queueAuth.accountId,
           modelId: client.resolvedModelId,
           reasoningEffort: client.queueAuth.reasoningConfig.level ?? thinkingLevel,
-          systemPrompt: prompt,
-          input: userPrompt,
+          systemPrompt: codexSystemPrompt,
+          input: codexPrompt,
           worktreePath: projectDir,
-          allowedWritePaths: [outputDir],
+          sandboxMode: 'read-only',
+          allowedWritePaths: [],
           specDir: outputDir,
-          phase: `ideation-${ideationType.replace(/_/g, '-')}`,
+          phase: `ideation-read-only-${ideationType.replace(/_/g, '-')}`,
+          outputSchema,
         }, (event) => {
           if (event.type !== 'stream-event') return;
           if (event.data.type === 'text-delta') {
@@ -223,6 +374,14 @@ export async function runIdeation(
             error: result.error?.message ?? `Codex ideation ended with ${result.outcome}`,
           };
         }
+        if (!isValidIdeationOutput(result.structuredOutput, ideationType, maxIdeasPerType)) {
+          return {
+            success: false,
+            text: responseText,
+            error: 'Codex did not return valid structured ideation output',
+          };
+        }
+        await writeJsonWithRetry(outputFile, result.structuredOutput);
         return { success: true, text: responseText };
       } finally {
         abortSignal?.removeEventListener('abort', cancel);

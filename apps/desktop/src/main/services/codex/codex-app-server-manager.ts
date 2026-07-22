@@ -21,6 +21,7 @@ import {
   type CodexCommandExecParams,
   type CodexCommandExecResponse,
   type CodexModel,
+  type CodexThreadConfig,
 } from './codex-app-server-protocol';
 import type {
   CodexAccountLifecycleEvent,
@@ -504,6 +505,9 @@ export function createCodexAppServerManager(
   }
 
   function threadParams(options: CodexExecutionThreadOptions) {
+    const config: CodexThreadConfig = options.sandbox === 'workspace-write'
+      ? { sandbox_workspace_write: { network_access: options.networkAccess } }
+      : {};
     return {
       cwd: options.cwd,
       runtimeWorkspaceRoots: options.runtimeWorkspaceRoots,
@@ -511,7 +515,7 @@ export function createCodexAppServerManager(
       developerInstructions: options.developerInstructions,
       approvalPolicy: options.approvalPolicy,
       sandbox: options.sandbox,
-      config: { sandbox_workspace_write: { network_access: options.networkAccess } },
+      config,
     } as const;
   }
 
