@@ -197,8 +197,11 @@ export class AgentQueueManager {
       this.abortControllers.delete(`ideation:${projectId}`);
     }
 
-    // Kill existing process for this project if any (legacy cleanup)
-    this.processManager.killProcess(projectId);
+    // Kill existing process for this project if any (legacy cleanup). A failed
+    // cooperative stop leaves the old process authoritative, so don't replace it.
+    if (this.state.hasProcess(projectId) && !(await this.processManager.killProcess(projectId))) {
+      throw new Error('Ideation replacement stopped because the previous process did not stop safely');
+    }
 
     const abortController = new AbortController();
     this.abortControllers.set(`ideation:${projectId}`, abortController);
@@ -366,8 +369,11 @@ export class AgentQueueManager {
       this.abortControllers.delete(`roadmap:${projectId}`);
     }
 
-    // Kill existing process for this project if any (legacy cleanup)
-    this.processManager.killProcess(projectId);
+    // Kill existing process for this project if any (legacy cleanup). A failed
+    // cooperative stop leaves the old process authoritative, so don't replace it.
+    if (this.state.hasProcess(projectId) && !(await this.processManager.killProcess(projectId))) {
+      throw new Error('Roadmap replacement stopped because the previous process did not stop safely');
+    }
 
     const abortController = new AbortController();
     this.abortControllers.set(`roadmap:${projectId}`, abortController);
@@ -524,7 +530,7 @@ export class AgentQueueManager {
   /**
    * Stop ideation generation for a project
    */
-  stopIdeation(projectId: string): boolean {
+  async stopIdeation(projectId: string): Promise<boolean> {
     debugLog('[Agent Queue] Stop ideation requested:', { projectId });
 
     // Try TS runner abort first
@@ -542,7 +548,10 @@ export class AgentQueueManager {
     const isIdeation = processInfo?.queueProcessType === 'ideation';
     if (isIdeation) {
       debugLog('[Agent Queue] Killing legacy ideation process:', projectId);
-      this.processManager.killProcess(projectId);
+      const wasStopped = await this.processManager.killProcess(projectId);
+      if (!wasStopped) {
+        return false;
+      }
       this.emitter.emit('ideation-stopped', projectId);
       return true;
     }
@@ -563,7 +572,7 @@ export class AgentQueueManager {
   /**
    * Stop roadmap generation for a project
    */
-  stopRoadmap(projectId: string): boolean {
+  async stopRoadmap(projectId: string): Promise<boolean> {
     debugLog('[Agent Queue] Stop roadmap requested:', { projectId });
 
     // Try TS runner abort first
@@ -581,7 +590,10 @@ export class AgentQueueManager {
     const isRoadmap = processInfo?.queueProcessType === 'roadmap';
     if (isRoadmap) {
       debugLog('[Agent Queue] Killing legacy roadmap process:', projectId);
-      this.processManager.killProcess(projectId);
+      const wasStopped = await this.processManager.killProcess(projectId);
+      if (!wasStopped) {
+        return false;
+      }
       this.emitter.emit('roadmap-stopped', projectId);
       return true;
     }

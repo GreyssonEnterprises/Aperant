@@ -6,12 +6,13 @@ import { describe, expect, it } from 'vitest';
 import { createCodexSessionMetadataStore } from './codex-session-metadata-store';
 
 describe('Codex session metadata store', () => {
-  it('preserves task metadata while writing optional per-phase sessions atomically', async () => {
+  it('writes per-phase sessions separately without modifying task metadata', async () => {
     const specDir = await mkdtemp(path.join(tmpdir(), 'aperant-codex-session-'));
-    await writeFile(path.join(specDir, 'task_metadata.json'), JSON.stringify({
+    const taskMetadata = `${JSON.stringify({
       baseBranch: 'develop',
       phaseModels: { coding: 'gpt-5.3-codex' },
-    }));
+    }, null, 4)}\n`;
+    await writeFile(path.join(specDir, 'task_metadata.json'), taskMetadata);
     const store = createCodexSessionMetadataStore();
     const metadata = {
       schemaVersion: 1 as const,
@@ -23,26 +24,27 @@ describe('Codex session metadata store', () => {
     await store.write(specDir, 'coding', metadata);
 
     expect(await store.read(specDir, 'coding')).toEqual(metadata);
-    expect(JSON.parse(await readFile(path.join(specDir, 'task_metadata.json'), 'utf8'))).toEqual({
-      baseBranch: 'develop',
-      phaseModels: { coding: 'gpt-5.3-codex' },
-      codexSessions: { coding: metadata },
+    expect(await readFile(path.join(specDir, 'task_metadata.json'), 'utf8')).toBe(taskMetadata);
+    expect(JSON.parse(await readFile(path.join(specDir, 'codex_sessions.json'), 'utf8'))).toEqual({
+      schemaVersion: 1,
+      sessions: { coding: metadata },
     });
   });
 
   it('rejects malformed persisted session metadata', async () => {
     const specDir = await mkdtemp(path.join(tmpdir(), 'aperant-codex-session-'));
-    await writeFile(path.join(specDir, 'task_metadata.json'), JSON.stringify({
-      codexSessions: { coding: { threadId: 'thread-1' } },
+    await writeFile(path.join(specDir, 'codex_sessions.json'), JSON.stringify({
+      schemaVersion: 1,
+      sessions: { coding: { threadId: 'thread-1' } },
     }));
     const store = createCodexSessionMetadataStore();
     await expect(store.read(specDir, 'coding')).rejects.toThrow('Invalid Codex session metadata');
   });
 
-  it('does not overwrite malformed task metadata', async () => {
+  it('does not overwrite malformed Codex session metadata', async () => {
     const specDir = await mkdtemp(path.join(tmpdir(), 'aperant-codex-session-'));
-    const file = path.join(specDir, 'task_metadata.json');
-    const original = '{"codexSessions":"not-an-object","important":"preserve-me"}\n';
+    const file = path.join(specDir, 'codex_sessions.json');
+    const original = '{"schemaVersion":1,"sessions":"not-an-object"}\n';
     await writeFile(file, original);
     const store = createCodexSessionMetadataStore();
 
@@ -75,5 +77,25 @@ describe('Codex session metadata store', () => {
     await expect(store.read(specDir, 'coding')).resolves.toMatchObject({
       threadId: 'thread-code', schemaVersion: 1,
     });
+  });
+
+  it('leaves concurrent external task metadata edits untouched', async () => {
+    const specDir = await mkdtemp(path.join(tmpdir(), 'aperant-codex-session-'));
+    const taskFile = path.join(specDir, 'task_metadata.json');
+    const externalEdit = '{"status":"externally-updated","revision":42}\n';
+    await writeFile(taskFile, '{"status":"initial"}\n');
+    const store = createCodexSessionMetadataStore();
+
+    await Promise.all([
+      store.write(specDir, 'coding', {
+        schemaVersion: 1,
+        threadId: 'thread-1', accountId: 'account-1', worktreePath: '/worktree',
+        modelId: 'gpt-5.3-codex', codexVersion: '0.144.6',
+        updatedAt: '2026-07-21T00:00:00.000Z',
+      }),
+      writeFile(taskFile, externalEdit),
+    ]);
+
+    expect(await readFile(taskFile, 'utf8')).toBe(externalEdit);
   });
 });

@@ -208,6 +208,7 @@ function buildToolContext(session: SerializableSessionConfig, securityProfile: S
     cwd: session.toolContext.cwd,
     projectDir: session.toolContext.projectDir,
     specDir: session.toolContext.specDir,
+    allowedWritePaths: session.toolContext.allowedWritePaths,
     securityProfile,
     abortSignal: abortController.signal,
   };

@@ -27,13 +27,13 @@ function getIdeationFeatureSettings(): { model?: string; thinkingLevel?: string 
 /**
  * Start ideation generation for a project
  */
-export function startIdeationGeneration(
+export async function startIdeationGeneration(
   _event: IpcMainEvent,
   projectId: string,
   config: IdeationConfig,
   agentManager: AgentManager,
   mainWindow: BrowserWindow | null
-): void {
+): Promise<void> {
   // Get feature settings and merge with config
   const featureSettings = getIdeationFeatureSettings();
   const configWithSettings: IdeationConfig = {
@@ -67,7 +67,7 @@ export function startIdeationGeneration(
   });
 
   // Start ideation generation via agent manager
-  agentManager.startIdeationGeneration(projectId, project.path, configWithSettings, false);
+  await agentManager.startIdeationGeneration(projectId, project.path, configWithSettings, false);
 
   // Send initial progress
   safeSendToRenderer(getMainWindow, IPC_CHANNELS.IDEATION_PROGRESS, projectId, {
@@ -80,13 +80,13 @@ export function startIdeationGeneration(
 /**
  * Refresh ideation session (regenerate with new ideas)
  */
-export function refreshIdeationSession(
+export async function refreshIdeationSession(
   _event: IpcMainEvent,
   projectId: string,
   config: IdeationConfig,
   agentManager: AgentManager,
   mainWindow: BrowserWindow | null
-): void {
+): Promise<void> {
   // Get feature settings and merge with config
   const featureSettings = getIdeationFeatureSettings();
   const configWithSettings: IdeationConfig = {
@@ -110,7 +110,7 @@ export function refreshIdeationSession(
   }
 
   // Start ideation regeneration with refresh flag
-  agentManager.startIdeationGeneration(projectId, project.path, configWithSettings, true);
+  await agentManager.startIdeationGeneration(projectId, project.path, configWithSettings, true);
 
   // Send initial progress
   safeSendToRenderer(getMainWindow, IPC_CHANNELS.IDEATION_PROGRESS, projectId, {
@@ -131,7 +131,7 @@ export async function stopIdeationGeneration(
 ): Promise<IPCResult> {
   debugLog("[Ideation Handler] Stop generation request:", { projectId });
 
-  const wasStopped = agentManager.stopIdeation(projectId);
+  const wasStopped = await agentManager.stopIdeation(projectId);
 
   debugLog("[Ideation Handler] Stop result:", { projectId, wasStopped });
 

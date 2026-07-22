@@ -812,6 +812,33 @@ describe('AgentProcessManager - API Profile Env Injection (Story 2.3)', () => {
 });
 
 describe('AgentProcessManager - Codex cancellation finalization', () => {
+  it('deletes task state only after verified cancellation settles', async () => {
+    const state = new AgentState();
+    const events = new AgentEvents();
+    const emitter = new EventEmitter();
+    const manager = new AgentProcessManager(state, events, emitter);
+    let settle!: (value: import('../ai/session/types').SessionResult) => void;
+    state.addProcess('task-codex', {
+      taskId: 'task-codex', process: null, worker: null,
+      workerBridge: {
+        terminate: vi.fn(() => new Promise<import('../ai/session/types').SessionResult>(
+          (resolve) => { settle = resolve; },
+        )),
+      },
+      startedAt: new Date(), spawnId: 1,
+    });
+
+    const killing = manager.killProcess('task-codex');
+    expect(state.hasProcess('task-codex')).toBe(true);
+    settle({
+      outcome: 'cancelled', stepsExecuted: 0, messages: [], durationMs: 1, toolCallCount: 0,
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    });
+
+    await expect(killing).resolves.toBe(true);
+    expect(state.hasProcess('task-codex')).toBe(false);
+  });
+
   it('keeps task state until cancellation settles and propagates retryable failure', async () => {
     const state = new AgentState();
     const events = new AgentEvents();
@@ -837,7 +864,7 @@ describe('AgentProcessManager - Codex cancellation finalization', () => {
     });
 
     await expect(killing).resolves.toBe(false);
-    expect(state.hasProcess('task-codex')).toBe(false);
+    expect(state.hasProcess('task-codex')).toBe(true);
     expect(error).toHaveBeenCalledWith(
       'task-codex', 'Could not stop safely', undefined,
     );

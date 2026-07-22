@@ -216,6 +216,10 @@ describe('WorkerBridge Spawn Integration', () => {
       expect(config.taskId).toBe('task-1');
       expect(config.processType).toBe('spec-creation');
       expect(config.session.agentType).toBe('spec_orchestrator');
+      expect(config.session.toolContext.cwd).toBe('/project');
+      expect(config.session.toolContext.allowedWritePaths).toEqual([
+        '/project/.auto-claude/specs/task-1',
+      ]);
     }, 15000);
 
     it('should create a WorkerBridge for task execution', async () => {
@@ -233,6 +237,7 @@ describe('WorkerBridge Spawn Integration', () => {
       expect(config.taskId).toBe('task-1');
       expect(config.processType).toBe('task-execution');
       expect(config.session.agentType).toBe('build_orchestrator');
+      expect(config.session.toolContext.allowedWritePaths).toEqual(['/project']);
     }, 15000);
 
     it('should not spawn a Codex task when worktree creation fails', async () => {
@@ -302,6 +307,7 @@ describe('WorkerBridge Spawn Integration', () => {
       expect(config.taskId).toBe('task-1');
       expect(config.processType).toBe('qa-process');
       expect(config.session.agentType).toBe('qa_reviewer');
+      expect(config.session.toolContext.allowedWritePaths).toEqual(['/project']);
     }, 15000);
 
     it('should accept parallel options without affecting process type', async () => {

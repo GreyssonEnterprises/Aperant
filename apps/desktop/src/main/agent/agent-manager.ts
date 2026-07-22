@@ -413,6 +413,7 @@ export class AgentManager extends EventEmitter {
         cwd: projectPath,
         projectDir: projectPath,
         specDir: resolvedSpecDir,
+        allowedWritePaths: [resolvedSpecDir],
         securityProfile: this.serializeSecurityProfile(projectPath),
       },
     };
@@ -551,6 +552,7 @@ export class AgentManager extends EventEmitter {
         cwd: effectiveCwd,
         projectDir: effectiveProjectDir,
         specDir: worktreeSpecDir,
+        allowedWritePaths: [effectiveCwd],
         securityProfile: this.serializeSecurityProfile(effectiveProjectDir),
       },
     };
@@ -666,6 +668,7 @@ export class AgentManager extends EventEmitter {
         cwd: effectiveCwd,
         projectDir: effectiveProjectDir,
         specDir: effectiveSpecDir,
+        allowedWritePaths: [effectiveCwd],
         securityProfile: this.serializeSecurityProfile(effectiveProjectDir),
       },
     };
@@ -695,8 +698,8 @@ export class AgentManager extends EventEmitter {
     enableCompetitorAnalysis: boolean = false,
     refreshCompetitorAnalysis: boolean = false,
     config?: RoadmapConfig
-  ): void {
-    this.queueManager.startRoadmapGeneration(projectId, projectPath, refresh, enableCompetitorAnalysis, refreshCompetitorAnalysis, config);
+  ): Promise<void> {
+    return this.queueManager.startRoadmapGeneration(projectId, projectPath, refresh, enableCompetitorAnalysis, refreshCompetitorAnalysis, config);
   }
 
   /**
@@ -707,8 +710,8 @@ export class AgentManager extends EventEmitter {
     projectPath: string,
     config: IdeationConfig,
     refresh: boolean = false
-  ): void {
-    this.queueManager.startIdeationGeneration(projectId, projectPath, config, refresh);
+  ): Promise<void> {
+    return this.queueManager.startIdeationGeneration(projectId, projectPath, config, refresh);
   }
 
   /**
@@ -721,7 +724,7 @@ export class AgentManager extends EventEmitter {
   /**
    * Stop ideation generation for a project
    */
-  stopIdeation(projectId: string): boolean {
+  stopIdeation(projectId: string): Promise<boolean> {
     return this.queueManager.stopIdeation(projectId);
   }
 
@@ -735,7 +738,7 @@ export class AgentManager extends EventEmitter {
   /**
    * Stop roadmap generation for a project
    */
-  stopRoadmap(projectId: string): boolean {
+  stopRoadmap(projectId: string): Promise<boolean> {
     return this.queueManager.stopRoadmap(projectId);
   }
 

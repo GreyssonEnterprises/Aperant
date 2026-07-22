@@ -153,6 +153,7 @@ describe('WorkerBridge', () => {
       config.session.accountId = 'account-codex';
       config.session.apiKey = 'must-never-cross';
       config.session.modelId = 'gpt-5.3-codex';
+      config.session.toolContext.allowedWritePaths = ['/project'];
       const exit = vi.fn();
       bridge.on('exit', exit);
 
@@ -176,6 +177,7 @@ describe('WorkerBridge', () => {
       }), expect.any(Function));
       expect(mockCodexRun).toHaveBeenCalledWith(expect.objectContaining({
         accountId: 'account-codex', modelId: 'gpt-5.3-codex', worktreePath: '/project',
+        allowedWritePaths: ['/project'],
       }), expect.any(Function));
       finish(createSessionResult());
       await vi.waitFor(() => expect(worker.postMessage).toHaveBeenCalledWith({
@@ -195,6 +197,7 @@ describe('WorkerBridge', () => {
       config.session.modelId = 'gpt-5.3-codex';
       config.session.specDir = '/authorized/worktree/specs/task-123';
       config.session.toolContext.cwd = '/authorized/worktree';
+      config.session.toolContext.allowedWritePaths = ['/authorized/worktree/specs/task-123'];
       bridge.spawn(config);
 
       getWorker().emit('message', {
@@ -213,6 +216,7 @@ describe('WorkerBridge', () => {
         accountId: 'authorized-account',
         modelId: 'gpt-5.3-codex',
         worktreePath: '/authorized/worktree',
+        allowedWritePaths: ['/authorized/worktree/specs/task-123'],
         specDir: '/authorized/worktree/specs/task-123',
       }), expect.any(Function));
       expect(mockCodexRun).toHaveBeenCalledWith(expect.not.objectContaining({
@@ -234,6 +238,7 @@ describe('WorkerBridge', () => {
         data: {
           phase: 'coding', systemPrompt: 'test', input: 'hello',
           accountId: 'attacker-account', worktreePath: '/private',
+          allowedWritePaths: ['/private'],
         },
       } as unknown as WorkerMessage);
 
@@ -426,12 +431,16 @@ describe('WorkerBridge', () => {
   // ---------------------------------------------------------------------------
 
   describe('crash handling', () => {
-    it('cancels an active Codex backend before cleaning up a worker crash', async () => {
+    it('cancels Codex before emitting exactly one terminal exit for a safe worker crash', async () => {
       mockCodexRun.mockReturnValue(new Promise(() => undefined));
+      mockCodexCancel.mockResolvedValueOnce(createSessionResult({ outcome: 'cancelled' }));
       const config = createConfig();
       config.session.executionBackend = 'codex-app-server';
       config.session.accountId = 'account-codex';
-      bridge.on('error', vi.fn());
+      const error = vi.fn();
+      const exit = vi.fn();
+      bridge.on('error', error);
+      bridge.on('exit', exit);
       bridge.spawn(config);
       const worker = getWorker();
       worker.emit('message', {
@@ -442,12 +451,54 @@ describe('WorkerBridge', () => {
       worker.emit('error', new Error('Worker crashed'));
 
       await vi.waitFor(() => expect(mockCodexCancel).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(exit).toHaveBeenCalledOnce());
+      expect(exit).toHaveBeenCalledWith('task-123', 1, 'task-execution', 'proj-456');
+      expect(error).toHaveBeenCalledWith('task-123', 'Worker crashed', 'proj-456');
+      worker.emit('exit', 1);
+      expect(exit).toHaveBeenCalledOnce();
       await vi.waitFor(() => expect(bridge.isActive).toBe(false));
+    });
+
+    it('retains retryable Codex quarantine and suppresses replacement after an unsafe crash', async () => {
+      mockCodexRun.mockReturnValue(new Promise(() => undefined));
+      const unsafe = createSessionResult({
+        outcome: 'error',
+        error: {
+          code: 'termination-failed', message: 'Codex session could not be stopped safely',
+          retryable: true,
+        },
+      });
+      mockCodexCancel.mockResolvedValueOnce(unsafe);
+      const config = createConfig();
+      config.session.executionBackend = 'codex-app-server';
+      config.session.accountId = 'account-codex';
+      const error = vi.fn();
+      const exit = vi.fn();
+      bridge.on('error', error);
+      bridge.on('exit', exit);
+      bridge.spawn(config);
+      const worker = getWorker();
+      worker.emit('message', {
+        type: 'codex-execute', requestId: 'request-1',
+        data: { phase: 'coding', systemPrompt: 'test', input: 'hello' },
+      } satisfies WorkerMessage);
+
+      worker.emit('error', new Error('Worker crashed'));
+
+      await vi.waitFor(() => expect(error).toHaveBeenCalledWith(
+        'task-123', 'Codex session could not be stopped safely', 'proj-456',
+      ));
+      expect(exit).not.toHaveBeenCalled();
+      expect(bridge.isActive).toBe(true);
+      await expect(bridge.terminate()).resolves.toEqual(unsafe);
+      expect(() => bridge.spawn(config)).toThrow('quarantined');
     });
 
     it('emits error and cleans up on worker error event', async () => {
       const errorHandler = vi.fn();
+      const exitHandler = vi.fn();
       bridge.on('error', errorHandler);
+      bridge.on('exit', exitHandler);
       bridge.spawn(createConfig());
 
       getWorker().emit('error', new Error('Worker crashed'));
@@ -455,6 +506,7 @@ describe('WorkerBridge', () => {
       await vi.waitFor(() => expect(errorHandler).toHaveBeenCalledWith(
         'task-123', 'Worker crashed', 'proj-456',
       ));
+      expect(exitHandler).toHaveBeenCalledOnce();
       expect(bridge.isActive).toBe(false);
     });
 

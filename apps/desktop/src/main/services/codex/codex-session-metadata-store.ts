@@ -6,8 +6,9 @@ import type {
   CodexSessionMetadataStore,
 } from './codex-execution-backend';
 
-type TaskMetadata = Record<string, unknown> & {
-  codexSessions?: Record<string, unknown>;
+type CodexSessionsFile = {
+  schemaVersion: 1;
+  sessions: Record<string, CodexSessionMetadata>;
 };
 
 const writes = new Map<string, Promise<void>>();
@@ -33,12 +34,14 @@ function isMetadata(value: unknown): value is CodexSessionMetadata {
   ) && typeof metadata.modelId === 'string' && metadata.modelId.trim().length > 0;
 }
 
-async function readTaskMetadata(file: string): Promise<TaskMetadata> {
+async function readCodexSessions(file: string): Promise<CodexSessionsFile> {
   let contents: string;
   try {
     contents = await readFile(file, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { schemaVersion: 1, sessions: {} };
+    }
     throw invalidMetadata();
   }
   let parsed: unknown;
@@ -47,39 +50,36 @@ async function readTaskMetadata(file: string): Promise<TaskMetadata> {
   } catch {
     throw invalidMetadata();
   }
-  if (!isRecord(parsed) || Object.keys(parsed).some((key) => FORBIDDEN_KEYS.has(key))) {
+  if (!isRecord(parsed) || parsed.schemaVersion !== 1 ||
+    Object.keys(parsed).some((key) => FORBIDDEN_KEYS.has(key)) ||
+    !isRecord(parsed.sessions) ||
+    Object.keys(parsed.sessions).some((key) => FORBIDDEN_KEYS.has(key) || !PHASE_PATTERN.test(key)) ||
+    Object.values(parsed.sessions).some((session) => !isMetadata(session))) {
     throw invalidMetadata();
   }
-  if (parsed.codexSessions !== undefined) {
-    if (!isRecord(parsed.codexSessions) ||
-      Object.keys(parsed.codexSessions).some((key) => FORBIDDEN_KEYS.has(key)) ||
-      Object.values(parsed.codexSessions).some((session) => !isMetadata(session))) {
-      throw invalidMetadata();
-    }
-  }
-  return parsed as TaskMetadata;
+  return parsed as CodexSessionsFile;
 }
 
 export function createCodexSessionMetadataStore(): CodexSessionMetadataStore {
   return {
     async read(specDir, phase) {
       if (!PHASE_PATTERN.test(phase)) throw invalidMetadata();
-      const metadata = await readTaskMetadata(path.join(specDir, 'task_metadata.json'));
-      const session = metadata.codexSessions?.[phase];
+      const metadata = await readCodexSessions(path.join(specDir, 'codex_sessions.json'));
+      const session = metadata.sessions[phase];
       return session === undefined ? undefined : { ...session } as CodexSessionMetadata;
     },
     async write(specDir, phase, session) {
       if (!PHASE_PATTERN.test(phase) || !isMetadata(session)) throw invalidMetadata();
-      const file = path.join(specDir, 'task_metadata.json');
+      const file = path.join(specDir, 'codex_sessions.json');
       const previous = writes.get(file) ?? Promise.resolve();
       const operation = previous.catch(() => undefined).then(async () => {
         await mkdir(specDir, { recursive: true });
-        const metadata = await readTaskMetadata(file);
-        metadata.codexSessions = {
-          ...(metadata.codexSessions ?? {}),
+        const metadata = await readCodexSessions(file);
+        metadata.sessions = {
+          ...metadata.sessions,
           [phase]: session,
         };
-        const temporary = path.join(specDir, `.task_metadata.${randomUUID()}.tmp`);
+        const temporary = path.join(specDir, `.codex_sessions.${randomUUID()}.tmp`);
         try {
           await writeFile(temporary, `${JSON.stringify(metadata, null, 2)}\n`, {
             encoding: 'utf8',

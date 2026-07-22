@@ -25,6 +25,7 @@ import { getIsolatedGitEnv, detectWorktreeBranch } from '../../utils/git-isolati
 import { cancelFallbackTimer } from '../agent-events-handlers';
 import { readSettingsFile } from '../../settings-utils';
 import type { ProviderAccount } from '../../../shared/types/provider-account';
+import { runVerifiedTaskStop } from './task-stop';
 
 /**
  * Check if any provider account is configured (API key or OAuth).
@@ -365,29 +366,29 @@ export function registerTaskExecutionHandlers(
    * Stop a task
    */
   ipcMain.on(IPC_CHANNELS.TASK_STOP, async (_, taskId: string) => {
-    const stopped = await agentManager.killTask(taskId);
-    if (!stopped) return;
-    fileWatcher.unwatch(taskId).catch((err) => {
-      console.error('[TASK_STOP] Failed to unwatch:', err);
+    await runVerifiedTaskStop(taskId, (id) => agentManager.killTask(id), async () => {
+      fileWatcher.unwatch(taskId).catch((err) => {
+        console.error('[TASK_STOP] Failed to unwatch:', err);
+      });
+
+      // Find task and project to emit USER_STOPPED with plan context
+      const { task, project } = findTaskAndProject(taskId);
+
+      if (!task || !project) return;
+
+      // Use shared utility to determine if a valid implementation plan exists
+      const hasPlan = hasPlanWithSubtasks(project, task);
+
+      taskStateManager.handleUiEvent(
+        taskId,
+        { type: 'USER_STOPPED', hasPlan },
+        task,
+        project
+      );
+
+      // Clear stale tracking state so a subsequent restart works correctly
+      taskStateManager.prepareForRestart(taskId);
     });
-
-    // Find task and project to emit USER_STOPPED with plan context
-    const { task, project } = findTaskAndProject(taskId);
-
-    if (!task || !project) return;
-
-    // Use shared utility to determine if a valid implementation plan exists
-    const hasPlan = hasPlanWithSubtasks(project, task);
-
-    taskStateManager.handleUiEvent(
-      taskId,
-      { type: 'USER_STOPPED', hasPlan },
-      task,
-      project
-    );
-
-    // Clear stale tracking state so a subsequent restart works correctly
-    taskStateManager.prepareForRestart(taskId);
   });
 
   /**

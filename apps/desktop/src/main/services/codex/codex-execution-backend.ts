@@ -62,10 +62,11 @@ export interface CodexExecutionManager {
   retireAccount(accountId: string): Promise<void>;
 }
 
-export interface CodexAccountLifecycleEvent {
-  type: 'process-death' | 'retiring';
-  retryable: true;
-}
+export type CodexAccountLifecycleEvent =
+  | { type: 'process-death'; retryable: true }
+  | { type: 'retiring' }
+  | { type: 'retired' }
+  | { type: 'termination-failed'; retryable: true };
 
 export interface CodexSessionMetadata {
   schemaVersion: 1;
@@ -90,6 +91,7 @@ export interface CodexExecutionConfig {
   systemPrompt: string;
   input: string;
   worktreePath: string;
+  allowedWritePaths: readonly string[];
   specDir: string;
   phase: string;
   outputSchema?: unknown;
@@ -114,6 +116,7 @@ interface Dependencies {
 const FORBIDDEN_OUTPUT_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const MAX_OUTPUT_DEPTH = 12;
 const MAX_OUTPUT_NODES = 512;
+const MAX_TOOL_LIFECYCLE_KEYS = 1024;
 
 function isSafeStructuredOutput(value: unknown, depth = 0, nodes = { count: 0 }): boolean {
   nodes.count += 1;
@@ -143,6 +146,10 @@ function isContained(root: string, candidate: string): boolean {
     !path.isAbsolute(relative);
 }
 
+function isContainedOrEqual(root: string, candidate: string): boolean {
+  return root === candidate || isContained(root, candidate);
+}
+
 function validAccountId(value: string): boolean {
   return value === value.trim() && /^[A-Za-z0-9._:@-]{1,256}$/.test(value);
 }
@@ -170,6 +177,7 @@ export function createCodexExecutionBackend(dependencies: Dependencies) {
     latestUsage: TokenUsage;
     startedAt: number;
     toolCallCount: number;
+    seenToolLifecycle: Set<string>;
     latestCompletedMessage?: string;
   }
   let active: ActiveExecution | undefined;
@@ -245,6 +253,15 @@ export function createCodexExecutionBackend(dependencies: Dependencies) {
     })) {
       if (execution.settled || execution.terminalSeen) break;
       if (event.type === 'stream-event') {
+        if (event.data.type === 'tool-call' || event.data.type === 'tool-result') {
+          const lifecycleKey = `${event.data.type}:${event.data.toolName}:${event.data.toolCallId}`;
+          if (execution.seenToolLifecycle.has(lifecycleKey)) continue;
+          if (execution.seenToolLifecycle.size >= MAX_TOOL_LIFECYCLE_KEYS) {
+            const oldest = execution.seenToolLifecycle.values().next().value;
+            if (oldest !== undefined) execution.seenToolLifecycle.delete(oldest);
+          }
+          execution.seenToolLifecycle.add(lifecycleKey);
+        }
         if (event.data.type === 'usage-update') execution.latestUsage = event.data.usage;
         if (event.data.type === 'tool-call') execution.toolCallCount += 1;
       }
@@ -272,14 +289,24 @@ export function createCodexExecutionBackend(dependencies: Dependencies) {
       const canonicalizePath = dependencies.canonicalizePath ?? realpath;
       let worktreePath: string;
       let specDir: string;
+      let allowedWritePaths: string[];
       try {
         worktreePath = await canonicalizePath(config.worktreePath);
         specDir = await canonicalizePath(config.specDir);
+        if (config.allowedWritePaths.length < 1 || config.allowedWritePaths.length > 8) {
+          throw new Error('invalid writable root count');
+        }
+        allowedWritePaths = [...new Set(await Promise.all(
+          config.allowedWritePaths.map((writePath) => canonicalizePath(writePath)),
+        ))];
       } catch {
         throw new Error('Codex execution paths could not be canonicalized');
       }
       if (!isContained(worktreePath, specDir)) {
         throw new Error('Codex spec directory must be inside the task worktree');
+      }
+      if (allowedWritePaths.some((writePath) => !isContainedOrEqual(worktreePath, writePath))) {
+        throw new Error('Codex writable roots must be inside the task worktree');
       }
       if (checkpointCancellation(execution)) return;
       const saved = await dependencies.store.read(specDir, config.phase);
@@ -294,7 +321,7 @@ export function createCodexExecutionBackend(dependencies: Dependencies) {
       if (checkpointCancellation(execution)) return;
       const threadOptions: CodexExecutionThreadOptions = {
         cwd: worktreePath,
-        runtimeWorkspaceRoots: [worktreePath],
+        runtimeWorkspaceRoots: allowedWritePaths,
         model: config.modelId,
         developerInstructions: `${config.systemPrompt}\n\n${CODEX_HOST_OWNERSHIP_INSTRUCTIONS}`,
         approvalPolicy: 'never',
@@ -357,14 +384,14 @@ export function createCodexExecutionBackend(dependencies: Dependencies) {
         input: config.input,
         cwd: worktreePath,
         model: config.modelId,
-        runtimeWorkspaceRoots: [worktreePath],
+        runtimeWorkspaceRoots: allowedWritePaths,
         ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}),
         ...(config.outputSchema ? { outputSchema: config.outputSchema } : {}),
         approvalPolicy: 'never',
         sandboxPolicy: {
           type: 'workspaceWrite',
           networkAccess: false,
-          writableRoots: [worktreePath],
+          writableRoots: allowedWritePaths,
           excludeTmpdirEnvVar: true,
           excludeSlashTmp: true,
         },
@@ -419,17 +446,32 @@ export function createCodexExecutionBackend(dependencies: Dependencies) {
         latestUsage: emptyUsage(),
         startedAt: Date.now(),
         toolCallCount: 0,
+        seenToolLifecycle: new Set(),
       };
       active = execution;
       const unsubscribeLifecycle = dependencies.manager.subscribeLifecycle(
         config.accountId,
-        (event) => finish(execution, result(execution, 'error', {
-          code: event.type === 'process-death' ? 'account-process-ended' : 'account-retired',
-          message: event.type === 'process-death'
-            ? 'Codex account process ended before the task completed'
-            : 'Codex account session was retired before the task completed',
-          retryable: event.retryable,
-        })),
+        (event) => {
+          if (event.type === 'retiring') return;
+          if (event.type === 'retired') {
+            if (execution.cancelRequested) finish(execution, result(execution, 'cancelled'));
+            else finish(execution, result(execution, 'error', {
+              code: 'account-retired',
+              message: 'Codex account session was retired before the task completed',
+              retryable: true,
+            }));
+            return;
+          }
+          finish(execution, result(execution, 'error', {
+            code: event.type === 'process-death'
+              ? 'account-process-ended'
+              : 'termination-failed',
+            message: event.type === 'process-death'
+              ? 'Codex account process ended before the task completed'
+              : 'Codex session could not be stopped safely',
+            retryable: event.retryable,
+          }));
+        },
       );
       execution.unsubscribeLifecycle = unsubscribeLifecycle;
       if (execution.settled) {
@@ -470,11 +512,7 @@ export function createCodexExecutionBackend(dependencies: Dependencies) {
       if (current.settled) return current.completion;
       try {
         await dependencies.manager.retireAccount(current.accountId);
-        finish(current, result(current, 'error', {
-          code: 'account-retired',
-          message: 'Codex account session was retired before cancellation completed',
-          retryable: true,
-        }));
+        finish(current, result(current, 'cancelled'));
       } catch {
         finish(current, result(current, 'error', {
           code: 'termination-failed',

@@ -504,10 +504,16 @@ export function createCodexAppServerManager(
       const entry = sessions.get(accountId);
       if (!entry) return;
       const session = await entry.promise;
-      emitLifecycle(accountId, { type: 'retiring', retryable: true });
+      emitLifecycle(accountId, { type: 'retiring' });
       if (sessions.get(accountId)?.token === entry.token) sessions.delete(accountId);
       session.client.close();
-      await trackAccountTermination(accountId, session.process);
+      try {
+        await trackAccountTermination(accountId, session.process);
+        emitLifecycle(accountId, { type: 'retired' });
+      } catch (error) {
+        emitLifecycle(accountId, { type: 'termination-failed', retryable: true });
+        throw error;
+      }
     },
     async startLogin(accountId) {
       const session = await getSession(accountId);
@@ -556,21 +562,33 @@ export function createCodexAppServerManager(
       shuttingDown = true;
       const active = [...sessions.entries()];
       for (const [accountId] of active) {
-        emitLifecycle(accountId, { type: 'retiring', retryable: true });
+        emitLifecycle(accountId, { type: 'retiring' });
       }
       for (const [, entry] of active) entry.client?.close();
       sessions.clear();
-      const operations = [
-        ...accountTerminations.values(),
-        ...active.flatMap(([accountId, entry]) => (
-          entry.process ? [trackAccountTermination(accountId, entry.process)] : []
-        )),
-      ];
-      shutdownPromise = Promise.allSettled(operations).then((results) => {
-        if (results.some((result) => result.status === 'rejected')) {
-          throw new CodexRuntimeError('termination-failed');
+      const operationsByAccount = new Map(accountTerminations);
+      for (const [accountId, entry] of active) {
+        if (entry.process) {
+          operationsByAccount.set(accountId, trackAccountTermination(accountId, entry.process));
         }
-      });
+      }
+      const operations = [...operationsByAccount].map(([accountId, operation]) => ({
+        accountId,
+        operation,
+      }));
+      shutdownPromise = Promise.allSettled(operations.map(({ operation }) => operation))
+        .then((results) => {
+          results.forEach((result, index) => {
+            const accountId = operations[index]?.accountId;
+            if (!accountId) return;
+            emitLifecycle(accountId, result.status === 'fulfilled'
+              ? { type: 'retired' }
+              : { type: 'termination-failed', retryable: true });
+          });
+          if (results.some((result) => result.status === 'rejected')) {
+            throw new CodexRuntimeError('termination-failed');
+          }
+        });
       return shutdownPromise;
     },
   };

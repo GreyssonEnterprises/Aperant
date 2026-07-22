@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   createCodexExecutionBackend,
+  type CodexAccountLifecycleEvent,
   type CodexExecutionManager,
   type CodexSessionMetadata,
   type CodexSessionMetadataStore,
@@ -12,7 +13,7 @@ function createHarness(
   canonicalizePath: (value: string) => Promise<string> = async (value) => value,
 ) {
   let notify: ((method: string, params: unknown) => void) | undefined;
-  let notifyLifecycle: ((event: { type: 'process-death' | 'retiring'; retryable: true }) => void) | undefined;
+  let notifyLifecycle: ((event: CodexAccountLifecycleEvent) => void) | undefined;
   const unsubscribe = vi.fn(() => { notify = undefined; });
   const manager: CodexExecutionManager = {
     subscribe: vi.fn((_accountId, callback) => {
@@ -50,6 +51,7 @@ function createHarness(
     systemPrompt: 'Implement the approved task. Aperant owns Git operations.',
     input: 'Work only in the task worktree.',
     worktreePath: '/worktree',
+    allowedWritePaths: ['/worktree'],
     specDir: '/worktree/specs/task-1',
     phase: 'coding',
   } as const;
@@ -62,7 +64,7 @@ function createHarness(
     unsubscribe,
     emit: (event: unknown) => events.push(event),
     notify: (method: string, params: unknown) => notify?.(method, params),
-    notifyLifecycle: (event: { type: 'process-death' | 'retiring'; retryable: true }) =>
+    notifyLifecycle: (event: CodexAccountLifecycleEvent) =>
       notifyLifecycle?.(event),
   };
 }
@@ -129,7 +131,7 @@ describe('Codex execution backend', () => {
 
   it('settles every task sharing an account when cancellation escalates to retirement', async () => {
     const notifications = new Set<(method: string, params: unknown) => void>();
-    const lifecycle = new Set<(event: { type: 'process-death' | 'retiring'; retryable: true }) => void>();
+    const lifecycle = new Set<(event: CodexAccountLifecycleEvent) => void>();
     let threadSequence = 0;
     let turnSequence = 0;
     const manager: CodexExecutionManager = {
@@ -150,7 +152,8 @@ describe('Codex execution backend', () => {
       startTurn: vi.fn(async () => ({ turnId: `turn-${++turnSequence}` })),
       interruptTurn: vi.fn().mockResolvedValue(undefined),
       retireAccount: vi.fn(async () => {
-        for (const listener of [...lifecycle]) listener({ type: 'retiring', retryable: true });
+        for (const listener of [...lifecycle]) listener({ type: 'retiring' });
+        for (const listener of [...lifecycle]) listener({ type: 'retired' });
       }),
     };
     const store: CodexSessionMetadataStore = {
@@ -166,21 +169,39 @@ describe('Codex execution backend', () => {
     const base = createHarness().config;
     const firstRun = first.run(base, vi.fn());
     const secondRun = second.run({
-      ...base, taskId: 'task-2', worktreePath: '/worktree-2', specDir: '/worktree-2/specs/task-2',
+      ...base,
+      taskId: 'task-2',
+      worktreePath: '/worktree-2',
+      allowedWritePaths: ['/worktree-2'],
+      specDir: '/worktree-2/specs/task-2',
     }, vi.fn());
     await vi.waitFor(() => expect(manager.startTurn).toHaveBeenCalledTimes(2));
 
     const cancelled = first.cancel();
 
     await expect(cancelled).resolves.toMatchObject({
-      outcome: 'error', error: { code: 'account-retired', retryable: true },
+      outcome: 'cancelled',
     });
-    await expect(firstRun).resolves.toMatchObject({ outcome: 'error' });
+    await expect(firstRun).resolves.toMatchObject({ outcome: 'cancelled' });
     await expect(secondRun).resolves.toMatchObject({
       outcome: 'error', error: { code: 'account-retired', retryable: true },
     });
     expect(manager.interruptTurn).toHaveBeenCalledWith('account-1', 'thread-1', 'turn-1');
     expect(manager.interruptTurn).not.toHaveBeenCalledWith('account-1', 'thread-2', 'turn-2');
+  });
+
+  it('does not settle on the non-terminal retiring lifecycle event', async () => {
+    const h = createHarness();
+    const run = h.backend.run(h.config, h.emit);
+    await vi.waitFor(() => expect(h.manager.startTurn).toHaveBeenCalled());
+
+    h.notifyLifecycle({ type: 'retiring' });
+    expect(h.backend.isActive).toBe(true);
+    h.notifyLifecycle({ type: 'retired' });
+
+    await expect(run).resolves.toMatchObject({
+      outcome: 'error', error: { code: 'account-retired', retryable: true },
+    });
   });
 
   it('starts a fail-closed thread and persists session metadata', async () => {
@@ -222,6 +243,31 @@ describe('Codex execution backend', () => {
 
     h.notify('turn/completed', { threadId: 'thread-new', turn: { id: 'turn-1', status: 'completed', items: [] } });
     await expect(run).resolves.toMatchObject({ outcome: 'completed' });
+  });
+
+  it('keeps the project cwd readable while restricting spec execution writes to the spec directory', async () => {
+    const h = createHarness();
+    const run = h.backend.run({
+      ...h.config,
+      allowedWritePaths: ['/worktree/specs/task-1'],
+      phase: 'spec',
+    }, h.emit);
+    await vi.waitFor(() => expect(h.manager.startTurn).toHaveBeenCalled());
+
+    expect(h.manager.startThread).toHaveBeenCalledWith('account-1', expect.objectContaining({
+      cwd: '/worktree',
+      runtimeWorkspaceRoots: ['/worktree/specs/task-1'],
+    }));
+    expect(h.manager.startTurn).toHaveBeenCalledWith('account-1', expect.objectContaining({
+      cwd: '/worktree',
+      runtimeWorkspaceRoots: ['/worktree/specs/task-1'],
+      sandboxPolicy: expect.objectContaining({ writableRoots: ['/worktree/specs/task-1'] }),
+    }));
+
+    h.notify('turn/completed', {
+      threadId: 'thread-new', turn: { id: 'turn-1', status: 'completed', items: [] },
+    });
+    await run;
   });
 
   it('resumes only when account, worktree, and runtime version match', async () => {
@@ -268,6 +314,7 @@ describe('Codex execution backend', () => {
     const config = {
       ...h.config,
       worktreePath: '/alias/worktree',
+      allowedWritePaths: ['/alias/worktree'],
       specDir: '/alias/worktree/specs/task-1',
     };
     const run = h.backend.run(config, h.emit);
@@ -298,6 +345,16 @@ describe('Codex execution backend', () => {
     );
     expect(h.store.read).not.toHaveBeenCalled();
     expect(h.manager.getRuntimeVersion).not.toHaveBeenCalled();
+  });
+
+  it('rejects writable roots outside the canonical project cwd', async () => {
+    const h = createHarness();
+
+    await expect(h.backend.run({
+      ...h.config,
+      allowedWritePaths: ['/outside'],
+    }, h.emit)).rejects.toThrow('Codex writable roots must be inside the task worktree');
+    expect(h.store.read).not.toHaveBeenCalled();
   });
 
   it('starts fresh with a warning when resume invariants do not match', async () => {
@@ -396,21 +453,52 @@ describe('Codex execution backend', () => {
     expect(JSON.stringify(h.events)).not.toContain('must-not-emit');
   });
 
-  it('interrupts then returns retryable finalization after retiring an unresponsive server', async () => {
+  it('deduplicates tool lifecycle notifications without dropping identical text deltas', async () => {
     const h = createHarness();
+    const run = h.backend.run(h.config, h.emit);
+    await vi.waitFor(() => expect(h.manager.startTurn).toHaveBeenCalled());
+    const toolStarted = {
+      threadId: 'thread-new', turnId: 'turn-1',
+      item: { id: 'command-1', type: 'commandExecution' },
+    };
+    const textDelta = {
+      threadId: 'thread-new', turnId: 'turn-1', itemId: 'message-1', delta: 'same',
+    };
+
+    h.notify('item/started', toolStarted);
+    h.notify('item/started', toolStarted);
+    h.notify('item/agentMessage/delta', textDelta);
+    h.notify('item/agentMessage/delta', textDelta);
+    h.notify('turn/completed', {
+      threadId: 'thread-new', turn: { id: 'turn-1', status: 'completed', items: [] },
+    });
+    const result = await run;
+
+    expect(h.events.filter((event) => (
+      (event as { type?: string; data?: { type?: string } }).type === 'stream-event' &&
+      (event as { data?: { type?: string } }).data?.type === 'tool-call'
+    ))).toHaveLength(1);
+    expect(h.events.filter((event) => (
+      (event as { type?: string; data?: { type?: string } }).type === 'stream-event' &&
+      (event as { data?: { type?: string } }).data?.type === 'text-delta'
+    ))).toHaveLength(2);
+    expect(result.toolCallCount).toBe(1);
+  });
+
+  it('interrupts then returns cancelled after verified cooperative retirement', async () => {
+    const h = createHarness();
+    vi.mocked(h.manager.retireAccount).mockImplementationOnce(async () => {
+      h.notifyLifecycle({ type: 'retiring' });
+      h.notifyLifecycle({ type: 'retired' });
+    });
     const run = h.backend.run(h.config, h.emit);
     await vi.waitFor(() => expect(h.manager.startTurn).toHaveBeenCalled());
 
     const cancellation = h.backend.cancel();
-    await expect(cancellation).resolves.toMatchObject({
-      outcome: 'error', error: { code: 'account-retired', retryable: true },
-    });
+    await expect(cancellation).resolves.toMatchObject({ outcome: 'cancelled' });
     expect(h.manager.interruptTurn).toHaveBeenCalledWith('account-1', 'thread-new', 'turn-1');
     expect(h.manager.retireAccount).toHaveBeenCalledWith('account-1');
-    await expect(run).resolves.toMatchObject({
-      outcome: 'error',
-      error: { code: 'account-retired', retryable: true },
-    });
+    await expect(run).resolves.toMatchObject({ outcome: 'cancelled' });
   });
 
   it('returns a retryable failure when cooperative retirement cannot prove exit', async () => {

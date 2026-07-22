@@ -206,7 +206,7 @@ export function registerRoadmapHandlers(
 
   ipcMain.on(
     IPC_CHANNELS.ROADMAP_GENERATE,
-    (
+    async (
       _,
       projectId: string,
       enableCompetitorAnalysis?: boolean,
@@ -248,7 +248,7 @@ export function registerRoadmapHandlers(
       });
 
       // Start roadmap generation via agent manager
-      agentManager.startRoadmapGeneration(
+      await agentManager.startRoadmapGeneration(
         projectId,
         project.path,
         false, // refresh (not a refresh operation)
@@ -268,7 +268,7 @@ export function registerRoadmapHandlers(
 
   ipcMain.on(
     IPC_CHANNELS.ROADMAP_REFRESH,
-    (
+    async (
       _,
       projectId: string,
       enableCompetitorAnalysis?: boolean,
@@ -303,7 +303,7 @@ export function registerRoadmapHandlers(
       }
 
       // Start roadmap regeneration with refresh flag
-      agentManager.startRoadmapGeneration(
+      await agentManager.startRoadmapGeneration(
         projectId,
         project.path,
         true, // refresh (this is a refresh operation)
@@ -325,7 +325,7 @@ export function registerRoadmapHandlers(
     debugLog("[Roadmap Handler] Stop generation request:", { projectId });
 
     // Stop roadmap generation for this project
-    const wasStopped = agentManager.stopRoadmap(projectId);
+    const wasStopped = await agentManager.stopRoadmap(projectId);
 
     debugLog("[Roadmap Handler] Stop result:", { projectId, wasStopped });
 

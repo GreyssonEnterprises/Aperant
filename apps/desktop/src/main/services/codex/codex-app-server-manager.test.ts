@@ -108,11 +108,11 @@ class ScriptedProcess extends EventEmitter implements CodexJsonlProcess {
 }
 
 describe('per-account Codex app-server manager', () => {
-  it('publishes account lifecycle before retirement and unexpected process death', async () => {
+  it('publishes authoritative account lifecycle around retirement and process death', async () => {
     let process: ScriptedProcess | undefined;
     const lifecycle = vi.fn();
     const terminate = vi.fn(async () => {
-      expect(lifecycle).toHaveBeenCalledWith({ type: 'retiring', retryable: true });
+      expect(lifecycle).toHaveBeenCalledWith({ type: 'retiring' });
     });
     const manager = createCodexAppServerManager({
       codexHomeRoot: '/tmp/aperant/codex-accounts',
@@ -138,7 +138,35 @@ describe('per-account Codex app-server manager', () => {
     await manager.readAccount('account-b');
     manager.subscribeLifecycle('account-b', lifecycle);
     await manager.retireAccount('account-b');
-    expect(lifecycle).toHaveBeenCalledWith({ type: 'retiring', retryable: true });
+    expect(lifecycle.mock.calls).toEqual([
+      [{ type: 'retiring' }],
+      [{ type: 'retired' }],
+    ]);
+  });
+
+  it('publishes termination-failed only after cooperative retirement fails', async () => {
+    const lifecycle = vi.fn();
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: () => ({
+        found: true, path: '/usr/local/bin/codex', version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      spawn: (_path, _args, options) => new ScriptedProcess(options.env.CODEX_HOME),
+      terminate: vi.fn().mockRejectedValue(new Error('termination failed')),
+    });
+    await manager.readAccount('account-a');
+    manager.subscribeLifecycle('account-a', lifecycle);
+
+    await expect(manager.retireAccount('account-a')).rejects.toMatchObject({
+      code: 'termination-failed',
+    });
+    expect(lifecycle.mock.calls).toEqual([
+      [{ type: 'retiring' }],
+      [{ type: 'termination-failed', retryable: true }],
+    ]);
   });
 
   it('keeps typed execution RPC and notifications inside the account manager', async () => {
@@ -819,6 +847,42 @@ describe('per-account Codex app-server manager', () => {
     await expect(replacement).resolves.toMatchObject({ account: { type: 'chatgpt' } });
     expect(processes).toHaveLength(2);
     await manager.shutdown();
+  });
+
+  it('waits for an already-quarantined account termination during shutdown', async () => {
+    let releaseTermination!: () => void;
+    const terminationReleased = new Promise<void>((resolve) => {
+      releaseTermination = resolve;
+    });
+    let process: ScriptedProcess | undefined;
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: async () => ({
+        found: true, path: '/usr/bin/codex', version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      spawn: (_path, _args, options) => {
+        process = new ScriptedProcess(options.env.CODEX_HOME);
+        return process;
+      },
+      terminate: vi.fn(async (target: CodexJsonlProcess) => {
+        await terminationReleased;
+        (target as unknown as EventEmitter).emit('exit', 0, null);
+      }),
+    });
+    await manager.readAccount('account-a');
+    process?.stdout.write('malformed-json\n');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    let shutdownSettled = false;
+    const shutdown = manager.shutdown().then(() => { shutdownSettled = true; });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(shutdownSettled).toBe(false);
+
+    releaseTermination();
+    await shutdown;
   });
 
   it('uses cooperative EOF shutdown without sending a numeric process signal', async () => {

@@ -85,9 +85,12 @@ export class WorkerBridge extends EventEmitter {
     accountId: string;
     modelId: string;
     worktreePath: string;
+    allowedWritePaths: readonly string[];
     specDir: string;
   }> | null = null;
   private lifecycleClosing = false;
+  private terminalEmitted = false;
+  private quarantinedFinalization: SessionResult | undefined;
 
   /**
    * Spawn a worker thread with the given configuration.
@@ -96,6 +99,9 @@ export class WorkerBridge extends EventEmitter {
    * @param config - Executor configuration (task ID, session params, etc.)
    */
   spawn(config: AgentExecutorConfig): void {
+    if (this.quarantinedFinalization) {
+      throw new Error('WorkerBridge has quarantined Codex ownership and cannot be replaced');
+    }
     if (this.worker) {
       throw new Error('WorkerBridge already has an active worker. Call terminate() first.');
     }
@@ -105,6 +111,7 @@ export class WorkerBridge extends EventEmitter {
     this.processType = config.processType;
     this.progressTracker = new ProgressTracker();
     this.lifecycleClosing = false;
+    this.terminalEmitted = false;
     this.codexAuthorization = config.session.executionBackend === 'codex-app-server' &&
       config.session.accountId
       ? Object.freeze({
@@ -112,6 +119,9 @@ export class WorkerBridge extends EventEmitter {
           accountId: config.session.accountId,
           modelId: config.session.modelId,
           worktreePath: config.session.toolContext.cwd,
+          allowedWritePaths: Object.freeze([
+            ...(config.session.toolContext.allowedWritePaths ?? []),
+          ]),
           specDir: config.session.specDir,
         })
       : null;
@@ -161,15 +171,13 @@ export class WorkerBridge extends EventEmitter {
    * Sends an abort message first for graceful shutdown, then terminates.
    */
   async terminate(): Promise<SessionResult | undefined> {
+    if (this.quarantinedFinalization) return this.quarantinedFinalization;
     this.lifecycleClosing = true;
     let finalization: SessionResult | undefined;
     if (this.codexBackend) {
-      try {
-        finalization = await this.codexBackend.cancel();
-      } catch {
-        // The backend returns a retryable result to the worker on unsafe stop.
-      }
+      finalization = await this.cancelCodexBackend();
     }
+    if (finalization?.error?.retryable) this.quarantinedFinalization = finalization;
     if (!this.worker) return finalization;
 
     // Try graceful abort first
@@ -181,7 +189,7 @@ export class WorkerBridge extends EventEmitter {
 
     // Force terminate after a short grace period
     const worker = this.worker;
-    this.cleanup();
+    this.cleanup(!!this.quarantinedFinalization);
 
     try {
       await worker.terminate();
@@ -193,7 +201,7 @@ export class WorkerBridge extends EventEmitter {
 
   /** Whether the worker is currently active */
   get isActive(): boolean {
-    return this.worker !== null;
+    return this.worker !== null || !!this.quarantinedFinalization;
   }
 
   /** Get the underlying Worker instance (for advanced use) */
@@ -262,30 +270,61 @@ export class WorkerBridge extends EventEmitter {
     });
   }
 
-  private async cancelCodexBackend(): Promise<void> {
+  private async cancelCodexBackend(): Promise<SessionResult | undefined> {
     const backend = this.codexBackend;
     if (!backend) return;
     try {
-      await backend.cancel();
+      return await backend.cancel();
     } catch {
-      // Backend cancellation returns retryable finalization for unsafe retirement.
+      return {
+        outcome: 'error',
+        stepsExecuted: 0,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        messages: [],
+        durationMs: 0,
+        toolCallCount: 0,
+        error: {
+          code: 'termination-failed',
+          message: 'Codex session could not be stopped safely',
+          retryable: true,
+        },
+      };
     }
   }
 
   private async handleWorkerFailure(error: Error): Promise<void> {
     if (this.lifecycleClosing) return;
     this.lifecycleClosing = true;
-    await this.cancelCodexBackend();
+    const finalization = await this.cancelCodexBackend();
+    if (finalization?.error?.retryable) {
+      this.quarantinedFinalization = finalization;
+      this.emitTyped('error', this.taskId, finalization.error.message, this.projectId);
+      this.cleanup(true);
+      return;
+    }
     this.emitTyped('error', this.taskId, error.message, this.projectId);
+    this.emitExitOnce(1);
     this.cleanup();
   }
 
   private async handleWorkerExit(code: number): Promise<void> {
     if (this.lifecycleClosing) return;
     this.lifecycleClosing = true;
-    await this.cancelCodexBackend();
-    this.emitTyped('exit', this.taskId, code === 0 ? 0 : code, this.processType, this.projectId);
+    const finalization = await this.cancelCodexBackend();
+    if (finalization?.error?.retryable) {
+      this.quarantinedFinalization = finalization;
+      this.emitTyped('error', this.taskId, finalization.error.message, this.projectId);
+      this.cleanup(true);
+      return;
+    }
+    this.emitExitOnce(code === 0 ? 0 : code);
     this.cleanup();
+  }
+
+  private emitExitOnce(code: number): void {
+    if (this.terminalEmitted) return;
+    this.terminalEmitted = true;
+    this.emitTyped('exit', this.taskId, code, this.processType, this.projectId);
   }
 
   private handleCodexEvent(event: CodexExecutionOutput): void {
@@ -375,7 +414,10 @@ export class WorkerBridge extends EventEmitter {
     }
 
     // Emit exit and cleanup
-    this.emitTyped('exit', taskId, exitCode, this.processType, projectId);
+    if (!this.terminalEmitted) {
+      this.terminalEmitted = true;
+      this.emitTyped('exit', taskId, exitCode, this.processType, projectId);
+    }
     this.cleanup();
   }
 
@@ -393,9 +435,10 @@ export class WorkerBridge extends EventEmitter {
     this.emit(event, ...args);
   }
 
-  private cleanup(): void {
+  private cleanup(preserveQuarantine = false): void {
     this.worker = null;
     this.codexBackend = null;
     this.codexAuthorization = null;
+    if (!preserveQuarantine) this.quarantinedFinalization = undefined;
   }
 }

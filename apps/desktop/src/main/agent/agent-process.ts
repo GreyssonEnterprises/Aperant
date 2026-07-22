@@ -967,11 +967,11 @@ export class AgentProcessManager {
     // Handle worker thread termination
     if (agentProcess.workerBridge) {
       const finalization = await agentProcess.workerBridge.terminate();
-      this.state.deleteProcess(taskId);
       if (finalization?.error?.retryable) {
         this.emitter.emit('error', taskId, finalization.error.message, undefined);
         return false;
       }
+      this.state.deleteProcess(taskId);
       return true;
     }
 

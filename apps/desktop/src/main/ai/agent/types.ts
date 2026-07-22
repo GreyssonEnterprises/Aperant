@@ -86,6 +86,8 @@ export interface SerializableSessionConfig {
     cwd: string;
     projectDir: string;
     specDir: string;
+    /** Main-process-authorized roots for mutating tools and execution sandboxes. */
+    allowedWritePaths?: string[];
     /**
      * Serialized security profile. SecurityProfile uses Set objects which
      * aren't transferable across worker boundaries, so we serialize to arrays.
