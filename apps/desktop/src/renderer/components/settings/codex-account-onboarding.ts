@@ -9,6 +9,26 @@ export function matchesCodexAuthCompletion(
   return !!accountId && !!loginId && event.accountId === accountId && event.loginId === loginId;
 }
 
+export async function recordAndConsumeCodexCompletion(options: {
+  accountId: string;
+  loginId: string;
+  pending: Map<string, string>;
+  consume(accountId: string, loginId: string): Promise<{
+    success: boolean;
+    data?: CodexAuthChangedEvent;
+  }>;
+  onCompletion(event: CodexAuthChangedEvent): void | Promise<void>;
+}): Promise<void> {
+  options.pending.set(options.accountId, options.loginId);
+  const result = await options.consume(options.accountId, options.loginId);
+  if (!result.success || !result.data || !matchesCodexAuthCompletion(
+    result.data,
+    options.accountId,
+    options.pending.get(options.accountId) ?? null,
+  )) return;
+  await options.onCompletion(result.data);
+}
+
 interface SaveResult {
   success: boolean;
   data?: ProviderAccount;

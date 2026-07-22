@@ -20,6 +20,9 @@ interface Dependencies {
   readAccounts(): ProviderAccount[];
   openExternal(url: string): Promise<unknown>;
   publishAuthChanged(event: CodexAuthChanged): void;
+  now(): number;
+  completionTtlMs: number;
+  completionLimit: number;
 }
 
 export interface CodexAuthStatus {
@@ -57,11 +60,42 @@ export function createCodexAuthHandlers(overrides?: Partial<Dependencies>) {
     readAccounts: defaultAccounts,
     openExternal: (url) => shell.openExternal(url),
     publishAuthChanged,
+    now: Date.now,
+    completionTtlMs: 5 * 60_000,
+    completionLimit: 64,
     ...overrides,
   };
   const startingLogins = new Map<string, symbol>();
   const pendingLogins = new Map<string, string>();
   const bufferedCompletions = new Map<string, Map<string, CodexAuthNotification>>();
+  const retainedCompletions = new Map<string, { event: CodexAuthChanged; expiresAt: number }>();
+
+  function completionKey(accountId: string, loginId: string): string {
+    return JSON.stringify([accountId, loginId]);
+  }
+
+  function purgeExpiredCompletions(): void {
+    const now = dependencies.now();
+    for (const [key, completion] of retainedCompletions) {
+      if (completion.expiresAt <= now) retainedCompletions.delete(key);
+    }
+  }
+
+  function retainCompletion(event: CodexAuthChanged): boolean {
+    purgeExpiredCompletions();
+    const key = completionKey(event.accountId, event.loginId);
+    if (retainedCompletions.has(key)) return false;
+    while (retainedCompletions.size >= dependencies.completionLimit) {
+      const oldest = retainedCompletions.keys().next().value;
+      if (!oldest) break;
+      retainedCompletions.delete(oldest);
+    }
+    retainedCompletions.set(key, {
+      event,
+      expiresAt: dependencies.now() + dependencies.completionTtlMs,
+    });
+    return true;
+  }
 
   function validate(accountId: unknown): accountId is string {
     return typeof accountId === 'string' && accountId.length <= 256 &&
@@ -69,14 +103,16 @@ export function createCodexAuthHandlers(overrides?: Partial<Dependencies>) {
   }
 
   function complete(event: CodexAuthNotification): CodexAuthChanged {
-    pendingLogins.delete(event.accountId);
+    if (pendingLogins.get(event.accountId) === event.loginId) {
+      pendingLogins.delete(event.accountId);
+    }
     const changed: CodexAuthChanged = {
       accountId: event.accountId,
       loginId: event.loginId,
       success: event.success,
       status: event.success ? 'authenticated' : 'failed',
     };
-    dependencies.publishAuthChanged(changed);
+    if (retainCompletion(changed)) dependencies.publishAuthChanged(changed);
     return changed;
   }
 
@@ -134,8 +170,10 @@ export function createCodexAuthHandlers(overrides?: Partial<Dependencies>) {
           },
         };
       } catch {
-        if (startingLogins.get(accountId) === loginToken) startingLogins.delete(accountId);
-        bufferedCompletions.delete(accountId);
+        if (startingLogins.get(accountId) === loginToken) {
+          startingLogins.delete(accountId);
+          bufferedCompletions.delete(accountId);
+        }
         return { success: false as const, error: 'Codex authentication could not be started' };
       }
     },
@@ -171,6 +209,18 @@ export function createCodexAuthHandlers(overrides?: Partial<Dependencies>) {
         error: 'Remove the provider account to stop using this Codex subscription',
       };
     },
+    async consume(accountId: unknown, loginId: unknown) {
+      if (!validate(accountId) || typeof loginId !== 'string' || loginId.length === 0 ||
+        loginId.length > 256) {
+        return { success: false as const, error: 'Codex authentication attempt not found' };
+      }
+      purgeExpiredCompletions();
+      const key = completionKey(accountId, loginId);
+      const completion = retainedCompletions.get(key);
+      if (!completion) return { success: true as const, data: undefined };
+      retainedCompletions.delete(key);
+      return { success: true as const, data: completion.event };
+    },
     handleNotification,
   };
 }
@@ -180,5 +230,9 @@ export function registerCodexAuthHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.CODEX_AUTH_LOGIN, (_event, accountId) => handlers.login(accountId));
   ipcMain.handle(IPC_CHANNELS.CODEX_AUTH_STATUS, (_event, accountId) => handlers.status(accountId));
   ipcMain.handle(IPC_CHANNELS.CODEX_AUTH_LOGOUT, (_event, accountId) => handlers.logout(accountId));
+  ipcMain.handle(
+    IPC_CHANNELS.CODEX_AUTH_CONSUME,
+    (_event, accountId, loginId) => handlers.consume(accountId, loginId),
+  );
   subscribeCodexAccountNotifications((event) => handlers.handleNotification(event));
 }

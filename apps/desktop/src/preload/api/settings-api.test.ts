@@ -11,6 +11,7 @@ describe('Codex authentication preload boundary', () => {
     await api.codexAuthLogin('account-a');
     await api.codexAuthStatus('account-a');
     await api.codexAuthLogout('account-a');
+    await api.codexAuthConsume('account-a', 'login-1');
     expect(ipcRenderer.invoke).toHaveBeenNthCalledWith(
       1, IPC_CHANNELS.CODEX_AUTH_LOGIN, 'account-a',
     );
@@ -19,6 +20,9 @@ describe('Codex authentication preload boundary', () => {
     );
     expect(ipcRenderer.invoke).toHaveBeenNthCalledWith(
       3, IPC_CHANNELS.CODEX_AUTH_LOGOUT, 'account-a',
+    );
+    expect(ipcRenderer.invoke).toHaveBeenNthCalledWith(
+      4, IPC_CHANNELS.CODEX_AUTH_CONSUME, 'account-a', 'login-1',
     );
   });
 

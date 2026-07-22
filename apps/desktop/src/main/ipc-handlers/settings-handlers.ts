@@ -30,6 +30,32 @@ import { getModelCatalogService } from '../services/model-catalog-runtime';
 
 const settingsPath = getSettingsPath();
 
+const providerAccountMutationLocks = new Map<string, Promise<void>>();
+
+async function withProviderAccountMutationLock<T>(
+  accountId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = providerAccountMutationLocks.get(accountId) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  const tail = previous.catch(() => undefined).then(() => current);
+  providerAccountMutationLocks.set(accountId, tail);
+  await previous.catch(() => undefined);
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (providerAccountMutationLocks.get(accountId) === tail) {
+      providerAccountMutationLocks.delete(accountId);
+    }
+  }
+}
+
+function providerAccountGeneration(account: ProviderAccount): string {
+  return JSON.stringify(account);
+}
+
 async function migrateToProviderAccounts(settings: AppSettings): Promise<{ changed: boolean; settings: AppSettings }> {
   if (settings._migratedProviderAccounts) {
     return { changed: false, settings };
@@ -915,14 +941,6 @@ export function registerSettingsHandlers(
     return (settings.providerAccounts as ProviderAccount[] | undefined) ?? [];
   }
 
-  /** Write providerAccounts array back to settings.json (merges with existing settings) */
-  function writeProviderAccounts(accounts: ProviderAccount[]): void {
-    const settings = readSettingsFile() ?? {};
-    settings.providerAccounts = accounts;
-    const settingsPath = getSettingsPath();
-    writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
-  }
-
   async function invalidateAccountCatalog(
     provider: ProviderAccount['provider'],
     accountId?: string,
@@ -999,14 +1017,17 @@ export function registerSettingsHandlers(
   // UPDATE an existing provider account
   ipcMain.handle(
     IPC_CHANNELS.PROVIDER_ACCOUNTS_UPDATE,
-    async (_event, id: string, updates: Partial<ProviderAccount>): Promise<IPCResult<ProviderAccount>> => {
+    async (_event, id: string, updates: Partial<ProviderAccount>): Promise<IPCResult<ProviderAccount>> =>
+      withProviderAccountMutationLock(id, async () => {
       try {
-        const accounts = readProviderAccounts();
+        let settings = readSettingsFile() ?? {};
+        let accounts = (settings.providerAccounts as ProviderAccount[] | undefined) ?? [];
         const index = accounts.findIndex(a => a.id === id);
         if (index === -1) {
           return { success: false, error: `Account not found: ${id}` };
         }
         const previous = accounts[index];
+        const expectedGeneration = providerAccountGeneration(previous);
         if (
           ('provider' in updates && updates.provider !== previous.provider) ||
           ('authType' in updates && updates.authType !== previous.authType) ||
@@ -1034,19 +1055,34 @@ export function registerSettingsHandlers(
               error: 'Codex account process could not be stopped safely',
             };
           }
+          settings = readSettingsFile() ?? {};
+          accounts = (settings.providerAccounts as ProviderAccount[] | undefined) ?? [];
+          const current = accounts.find((candidate) => candidate.id === id);
+          if (!current) {
+            return { success: false, error: `Account not found: ${id}` };
+          }
+          if (providerAccountGeneration(current) !== expectedGeneration) {
+            return { success: false, error: 'Provider account changed during update' };
+          }
         }
+        const freshIndex = accounts.findIndex((candidate) => candidate.id === id);
+        if (freshIndex === -1) return { success: false, error: `Account not found: ${id}` };
+        const freshPrevious = accounts[freshIndex];
         const updated: ProviderAccount = {
-          ...previous,
+          ...freshPrevious,
           ...updates,
           id, // prevent id override
-          createdAt: previous.createdAt,
+          createdAt: freshPrevious.createdAt,
           updatedAt: Date.now(),
         };
-        accounts[index] = updated;
+        accounts[freshIndex] = updated;
+        settings.providerAccounts = accounts;
         try {
-          writeProviderAccounts(accounts);
+          writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2), 'utf-8');
         } catch (error) {
-          if (transportChanged) {
+          const current = readProviderAccounts().find((candidate) => candidate.id === id);
+          if (transportChanged && current &&
+            providerAccountGeneration(current) === expectedGeneration) {
             try {
               await reactivateCodexAccount(id);
             } catch {
@@ -1056,6 +1092,10 @@ export function registerSettingsHandlers(
           throw error;
         }
         if (transportChanged) {
+          const current = readProviderAccounts().find((candidate) => candidate.id === id);
+          if (!current || providerAccountGeneration(current) !== providerAccountGeneration(updated)) {
+            return { success: false, error: 'Provider account changed before restart' };
+          }
           try {
             await reactivateCodexAccount(id);
           } catch {
@@ -1075,16 +1115,18 @@ export function registerSettingsHandlers(
         console.error('[PROVIDER_ACCOUNTS_UPDATE] Error:', error);
         return { success: false, error: error instanceof Error ? error.message : 'Failed to update provider account' };
       }
-    }
+    })
   );
 
   // DELETE a provider account
   ipcMain.handle(
     IPC_CHANNELS.PROVIDER_ACCOUNTS_DELETE,
-    async (_event, id: string): Promise<IPCResult> => {
+    async (_event, id: string): Promise<IPCResult> =>
+      withProviderAccountMutationLock(id, async () => {
       try {
-        const settings = readSettingsFile() ?? {};
-        const accounts: ProviderAccount[] = (settings.providerAccounts as ProviderAccount[] | undefined) ?? [];
+        let settings = readSettingsFile() ?? {};
+        let accounts: ProviderAccount[] =
+          (settings.providerAccounts as ProviderAccount[] | undefined) ?? [];
         const removed = accounts.find(a => a.id === id);
         if (!removed) {
           return { success: false, error: `Account not found: ${id}` };
@@ -1098,6 +1140,13 @@ export function registerSettingsHandlers(
               success: false,
               error: 'Codex account process could not be stopped safely',
             };
+          }
+          settings = readSettingsFile() ?? {};
+          accounts = (settings.providerAccounts as ProviderAccount[] | undefined) ?? [];
+          const current = accounts.find((candidate) => candidate.id === id);
+          if (!current) return { success: false, error: `Account not found: ${id}` };
+          if (providerAccountGeneration(current) !== providerAccountGeneration(removed)) {
+            return { success: false, error: 'Provider account changed during deletion' };
           }
         }
         const filtered = accounts.filter(a => a.id !== id);
@@ -1122,7 +1171,7 @@ export function registerSettingsHandlers(
         console.error('[PROVIDER_ACCOUNTS_DELETE] Error:', error);
         return { success: false, error: error instanceof Error ? error.message : 'Failed to delete provider account' };
       }
-    }
+    })
   );
 
   // SET QUEUE ORDER for provider accounts (global priority queue)

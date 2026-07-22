@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { access, lstat, mkdtemp, readFile, realpath, rm, unlink } from 'node:fs/promises';
+import { access, lstat, mkdtemp, readFile, readdir, realpath, rm, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { CodexRuntimeError } from './codex-errors';
 import {
@@ -42,6 +42,8 @@ interface Dependencies {
   remove(target: string): Promise<void>;
   cleanupRoots?(roots: ProbeRoots): Promise<void>;
   touchExecutable: string;
+  shellExecutable: string;
+  removeExecutable: string;
 }
 
 const PROBE_TIMEOUT_MS = 5_000;
@@ -74,6 +76,15 @@ async function resolveGitRoot(worktree: string): Promise<string> {
 
 async function makeProbeRoots(worktree: string): Promise<ProbeRoots> {
   const gitRoot = await resolveGitRoot(worktree);
+  try {
+    for (const entry of await readdir(gitRoot)) {
+      if (entry.startsWith('.aperant-sandbox-probe-')) {
+        await unlink(path.join(gitRoot, entry));
+      }
+    }
+  } catch {
+    throw new CodexRuntimeError('isolation-failed');
+  }
   const probeRoot = await mkdtemp(path.join(worktree, '.aperant-codex-sandbox-probe-'));
   let outsideRoot: string;
   try {
@@ -139,6 +150,8 @@ export function createCodexSandboxProbe(overrides?: Partial<Dependencies>) {
     remove: unlink,
     cleanupRoots,
     touchExecutable: process.platform === 'darwin' ? '/usr/bin/touch' : '/bin/touch',
+    shellExecutable: '/bin/sh',
+    removeExecutable: '/bin/rm',
     ...overrides,
   };
   const passed = new Map<string, string>();
@@ -180,6 +193,41 @@ export function createCodexSandboxProbe(overrides?: Partial<Dependencies>) {
       outputBytesCap: PROBE_OUTPUT_BYTES,
       sandboxPolicy,
     });
+    const runDeniedTouch = async (target: string) => {
+      let result: CodexSandboxCommandResult | undefined;
+      let executionError: unknown;
+      try {
+        result = await dependencies.execute(accountId, {
+          command: [
+            dependencies.shellExecutable,
+            '-c',
+            'if "$1" "$3"; then if "$2" -f -- "$3"; then exit 0; else exit 2; fi; else exit 1; fi',
+            'aperant-sandbox-denied-probe',
+            dependencies.touchExecutable,
+            dependencies.removeExecutable,
+            target,
+          ],
+          cwd: roots.probeRoot,
+          timeoutMs: PROBE_TIMEOUT_MS,
+          outputBytesCap: PROBE_OUTPUT_BYTES,
+          sandboxPolicy,
+        });
+      } catch (error) {
+        executionError = error;
+      }
+      try {
+        if (await dependencies.markerExists(target)) await dependencies.remove(target);
+        if (await dependencies.markerExists(target)) throw new Error('marker remains');
+      } catch {
+        throw new CodexRuntimeError(
+          'isolation-failed',
+          'Codex sandbox probe cleanup failed',
+        );
+      }
+      if (executionError) throw executionError;
+      if (!result) throw new CodexRuntimeError('isolation-failed');
+      return result;
+    };
 
     let verified = false;
     let allowedMarkerCreated = false;
@@ -187,12 +235,12 @@ export function createCodexSandboxProbe(overrides?: Partial<Dependencies>) {
     try {
       const allowed = await runTouch(roots.allowedMarker);
       allowedMarkerCreated = await dependencies.markerExists(roots.allowedMarker);
-      const outside = await runTouch(roots.outsideMarker);
+      const outside = await runDeniedTouch(roots.outsideMarker);
       const outsideCreated = await dependencies.markerExists(roots.outsideMarker);
-      const git = await runTouch(roots.gitMarker);
+      const git = await runDeniedTouch(roots.gitMarker);
       const gitCreated = await dependencies.markerExists(roots.gitMarker);
       verified = allowed.exitCode === 0 && allowedMarkerCreated &&
-        outside.exitCode !== 0 && !outsideCreated && git.exitCode !== 0 && !gitCreated;
+        outside.exitCode === 1 && !outsideCreated && git.exitCode === 1 && !gitCreated;
       if (!verified) {
         throw new CodexRuntimeError(
           'isolation-failed',

@@ -429,6 +429,7 @@ export interface ElectronAPI {
   codexAuthLogin: (accountId: string) => Promise<{ success: boolean; data?: { type: 'chatgpt' | 'chatgptDeviceCode'; loginId: string; userCode?: string; completion?: CodexAuthChangedEvent }; error?: string }>;
   codexAuthStatus: (accountId: string) => Promise<{ success: boolean; data?: { isAuthenticated: boolean; email?: string; planType?: string }; error?: string }>;
   codexAuthLogout: (accountId: string) => Promise<{ success: boolean; error?: string }>;
+  codexAuthConsume: (accountId: string, loginId: string) => Promise<{ success: boolean; data?: CodexAuthChangedEvent; error?: string }>;
   onCodexAuthChanged: (callback: (data: CodexAuthChangedEvent) => void) => () => void;
 
   // Dialog operations

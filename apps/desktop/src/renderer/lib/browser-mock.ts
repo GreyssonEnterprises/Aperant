@@ -251,6 +251,7 @@ const browserMockAPI: ElectronAPI = {
   codexAuthLogout: async (_accountId: string) => ({
     success: true
   }),
+  codexAuthConsume: async (_accountId: string, _loginId: string) => ({ success: true }),
 
   onCodexAuthChanged: (_callback) => () => undefined,
 

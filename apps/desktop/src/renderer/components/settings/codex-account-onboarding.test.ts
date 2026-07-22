@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   ensureCodexAccountRecord,
   matchesCodexAuthCompletion,
+  recordAndConsumeCodexCompletion,
 } from './codex-account-onboarding';
 
 describe('Codex account-first onboarding', () => {
@@ -45,5 +46,51 @@ describe('Codex account-first onboarding', () => {
     expect(matchesCodexAuthCompletion(event, 'account-a', 'login-1')).toBe(false);
     expect(matchesCodexAuthCompletion(event, 'account-b', 'login-2')).toBe(false);
     expect(matchesCodexAuthCompletion(event, 'account-a', null)).toBe(false);
+  });
+
+  it('records the login synchronously before consuming a completion missed by the event path', async () => {
+    const pending = new Map<string, string>();
+    const completion = {
+      accountId: 'account-a', loginId: 'login-1', success: true,
+      status: 'authenticated' as const,
+    };
+    const handled = vi.fn();
+    const eventHandler = (event: typeof completion) => {
+      if (matchesCodexAuthCompletion(event, event.accountId,
+        pending.get(event.accountId) ?? null)) handled(event);
+    };
+
+    eventHandler(completion); // Event arrived after invoke resolved but before renderer recorded ID.
+    expect(handled).not.toHaveBeenCalled();
+    await recordAndConsumeCodexCompletion({
+      accountId: 'account-a',
+      loginId: 'login-1',
+      pending,
+      consume: vi.fn().mockResolvedValue({ success: true, data: completion }),
+      onCompletion: handled,
+    });
+    expect(handled).toHaveBeenCalledOnce();
+  });
+
+  it('does not process consume replay after the live event already acknowledged the attempt', async () => {
+    const pending = new Map<string, string>();
+    const completion = {
+      accountId: 'account-a', loginId: 'login-1', success: true,
+      status: 'authenticated' as const,
+    };
+    const handled = vi.fn((_event: typeof completion) => {
+      pending.delete('account-a');
+    });
+    await recordAndConsumeCodexCompletion({
+      accountId: 'account-a',
+      loginId: 'login-1',
+      pending,
+      consume: async () => {
+        handled(completion); // Live event wins while consume is in flight.
+        return { success: true, data: completion };
+      },
+      onCompletion: handled,
+    });
+    expect(handled).toHaveBeenCalledOnce();
   });
 });

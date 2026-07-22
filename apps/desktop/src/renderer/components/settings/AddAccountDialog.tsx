@@ -20,6 +20,7 @@ import type { CodexAuthChangedEvent } from '@shared/types/ipc';
 import {
   ensureCodexAccountRecord,
   matchesCodexAuthCompletion,
+  recordAndConsumeCodexCompletion,
 } from './codex-account-onboarding';
 
 const AWS_REGIONS = [
@@ -71,7 +72,6 @@ export function AddAccountDialog({
   const [oauthEmail, setOauthEmail] = useState<string | null>(null);
   const [oauthProfileId, setOauthProfileId] = useState<string | null>(null);
   const [oauthAccountId, setOauthAccountId] = useState<string | null>(null);
-  const [oauthLoginId, setOauthLoginId] = useState<string | null>(null);
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [showFallbackTerminal, setShowFallbackTerminal] = useState(false);
 
@@ -82,6 +82,7 @@ export function AddAccountDialog({
   const [fallbackTerminalId, setFallbackTerminalId] = useState<string | null>(null);
   const [fallbackConfigDir, setFallbackConfigDir] = useState<string | null>(null);
   const codexCompletionHandled = useRef(false);
+  const pendingCodexLogins = useRef(new Map<string, string>());
 
   // Reset form when dialog opens/editAccount changes
   useEffect(() => {
@@ -111,13 +112,13 @@ export function AddAccountDialog({
       setOauthEmail(null);
       setOauthProfileId(null);
       setOauthAccountId(null);
-      setOauthLoginId(null);
       setOauthError(null);
       setAccountSaved(false);
       setShowFallbackTerminal(false);
       setFallbackTerminalId(null);
       setFallbackConfigDir(null);
       codexCompletionHandled.current = false;
+      pendingCodexLogins.current.clear();
     }
   }, [open, editAccount, provider, billingModelOverride]);
 
@@ -167,12 +168,17 @@ export function AddAccountDialog({
   }, [refreshUsageData, toast, isEditing, t, name, onOpenChange]);
 
   useEffect(() => {
-    if (!open || !isCodexOAuth || !oauthAccountId || !oauthLoginId) return;
+    if (!open || !isCodexOAuth) return;
     return window.electronAPI.onCodexAuthChanged(async (data) => {
-      if (!matchesCodexAuthCompletion(data, oauthAccountId, oauthLoginId)) return;
+      if (!matchesCodexAuthCompletion(
+        data,
+        data.accountId,
+        pendingCodexLogins.current.get(data.accountId) ?? null,
+      )) return;
+      pendingCodexLogins.current.delete(data.accountId);
       await completeCodexAuthentication(data);
     });
-  }, [open, isCodexOAuth, oauthAccountId, oauthLoginId, completeCodexAuthentication]);
+  }, [open, isCodexOAuth, completeCodexAuthentication]);
 
   // Subscribe to Anthropic OAuth progress events (not used for Codex/OpenAI)
   useEffect(() => {
@@ -306,12 +312,16 @@ export function AddAccountDialog({
           setOauthStatus('error');
           setOauthError(result.error ?? 'Authentication failed');
         } else if (result.data) {
-          setOauthLoginId(result.data.loginId);
-          if (result.data.completion && matchesCodexAuthCompletion(
-            result.data.completion,
+          await recordAndConsumeCodexCompletion({
             accountId,
-            result.data.loginId,
-          )) await completeCodexAuthentication(result.data.completion);
+            loginId: result.data.loginId,
+            pending: pendingCodexLogins.current,
+            consume: window.electronAPI.codexAuthConsume,
+            onCompletion: async (completion) => {
+              pendingCodexLogins.current.delete(accountId);
+              await completeCodexAuthentication(completion);
+            },
+          });
         }
       } catch (err) {
         setOauthStatus('error');

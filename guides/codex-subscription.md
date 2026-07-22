@@ -16,7 +16,9 @@ app-server.
 Add a **Codex Subscription** provider account, then complete the browser login started by that
 account's isolated app-server. Aperant keeps one long-lived app-server and one private
 `CODEX_HOME` per provider-account ID. Login and status use `account/login/start` and a fresh
-`account/read`; tokens never cross renderer IPC.
+`account/read`; tokens never cross renderer IPC. Login completion is correlated by account and
+login ID, retained briefly in main, and acknowledged once by the renderer so a fast browser return
+can't be lost between an event and UI state update.
 
 Existing provider-account records are retained. Aperant doesn't import, rewrite, or delete legacy
 Codex OAuth tokens. There is no environment-variable rollback to the legacy Vercel transport and
@@ -27,8 +29,9 @@ build.
 
 Before the first turn in a worktree, Aperant uses the installed app-server's typed `command/exec`
 RPC to run a deterministic capability probe. The probe must create an allowed marker while denying
-both an outside marker and a `.git` marker. Ambiguous results, timeouts, cleanup failures, or an
-unsupported platform stop execution.
+both a sibling marker and a marker in the resolved Git directory. Denied attempts self-remove an
+unexpectedly created marker before returning, and the host verifies cleanup. Ambiguous results,
+timeouts, cleanup failures, or an unsupported platform stop execution.
 
 Codex turns run with `workspace-write`, explicit writable roots, network disabled, approvals set to
 `never`, and system temporary roots excluded. Codex owns edits, commands, and tests inside those
@@ -51,4 +54,5 @@ remain available for recovery.
 - Credentials, raw JSON-RPC errors, command output, and hidden reasoning aren't sent to renderers.
 - App-server children receive a strict environment allowlist without provider keys or Sentry data.
 - Catalog availability requires current authentication and fresh model discovery.
-- Deleting a subscription account first requires verified cooperative app-server retirement.
+- Updating or deleting a subscription account is serialized per account. The record is re-read and
+  ownership-checked after verified cooperative app-server retirement before any write or restart.

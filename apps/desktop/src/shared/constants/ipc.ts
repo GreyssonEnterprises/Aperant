@@ -176,6 +176,7 @@ export const IPC_CHANNELS = {
   CODEX_AUTH_LOGIN: 'codex-auth-login',
   CODEX_AUTH_STATUS: 'codex-auth-status',
   CODEX_AUTH_LOGOUT: 'codex-auth-logout',
+  CODEX_AUTH_CONSUME: 'codex-auth-consume',
   CODEX_AUTH_CHANGED: 'codex-auth-changed',
   MODEL_OVERRIDES_SAVE: 'model-overrides:save',
 

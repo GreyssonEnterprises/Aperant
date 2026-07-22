@@ -50,6 +50,7 @@ export interface SettingsAPI {
   codexAuthLogin: (accountId: string) => Promise<{ success: boolean; data?: { type: 'chatgpt' | 'chatgptDeviceCode'; loginId: string; userCode?: string; completion?: CodexAuthChangedEvent }; error?: string }>;
   codexAuthStatus: (accountId: string) => Promise<{ success: boolean; data?: { isAuthenticated: boolean; email?: string; planType?: string }; error?: string }>;
   codexAuthLogout: (accountId: string) => Promise<{ success: boolean; error?: string }>;
+  codexAuthConsume: (accountId: string, loginId: string) => Promise<{ success: boolean; data?: CodexAuthChangedEvent; error?: string }>;
   onCodexAuthChanged: (callback: (data: CodexAuthChangedEvent) => void) => () => void;
 }
 
@@ -121,6 +122,8 @@ export const createSettingsAPI = (): SettingsAPI => ({
     ipcRenderer.invoke(IPC_CHANNELS.CODEX_AUTH_STATUS, accountId),
   codexAuthLogout: (accountId) =>
     ipcRenderer.invoke(IPC_CHANNELS.CODEX_AUTH_LOGOUT, accountId),
+  codexAuthConsume: (accountId, loginId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CODEX_AUTH_CONSUME, accountId, loginId),
   onCodexAuthChanged: (callback) => {
     const handler = (
       _event: Electron.IpcRendererEvent,

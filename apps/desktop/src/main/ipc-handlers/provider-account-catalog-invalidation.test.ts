@@ -77,6 +77,9 @@ describe('provider account catalog invalidation', () => {
     vi.clearAllMocks();
     handlers.clear();
     settingsState.current = {};
+    vi.mocked(writeFileSync).mockImplementation((_file, value) => {
+      settingsState.current = JSON.parse(String(value)) as Record<string, unknown>;
+    });
     registerSettingsHandlers(
       {} as never,
       () => null,
@@ -200,6 +203,134 @@ describe('provider account catalog invalidation', () => {
         success: false,
         error: 'Codex account process could not be stopped safely',
       });
+    expect(writeFileSync).not.toHaveBeenCalled();
+    expect(reactivateCodexAccount).not.toHaveBeenCalled();
+  });
+
+  it('serializes delete before update without resurrecting or reactivating the account', async () => {
+    settingsState.current = { providerAccounts: [account({
+      provider: 'openai', authType: 'oauth', billingModel: 'subscription', apiKey: undefined,
+    })] };
+    let release!: () => void;
+    retireCodexAccount.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      release = resolve;
+    }));
+    const remove = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_DELETE)?.({}, 'account-id');
+    const update = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_UPDATE)?.(
+      {}, 'account-id', { baseUrl: 'https://must-not-return.example' },
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(retireCodexAccount).toHaveBeenCalledTimes(1);
+    release();
+
+    await expect(remove).resolves.toEqual({ success: true });
+    await expect(update).resolves.toEqual({ success: false, error: 'Account not found: account-id' });
+    expect(reactivateCodexAccount).not.toHaveBeenCalled();
+    expect(settingsState.current.providerAccounts).toEqual([]);
+  });
+
+  it('serializes update before delete in invocation order', async () => {
+    settingsState.current = { providerAccounts: [account({
+      provider: 'openai', authType: 'oauth', billingModel: 'subscription', apiKey: undefined,
+    })] };
+    let release!: () => void;
+    retireCodexAccount.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      release = resolve;
+    }));
+    const update = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_UPDATE)?.(
+      {}, 'account-id', { baseUrl: 'https://first.example' },
+    );
+    const remove = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_DELETE)?.({}, 'account-id');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(retireCodexAccount).toHaveBeenCalledTimes(1);
+    release();
+
+    await expect(update).resolves.toMatchObject({ success: true });
+    await expect(remove).resolves.toEqual({ success: true });
+    expect(retireCodexAccount).toHaveBeenCalledTimes(2);
+    expect(settingsState.current.providerAccounts).toEqual([]);
+  });
+
+  it('re-reads inside the account lock so concurrent edits do not lose fields', async () => {
+    settingsState.current = { providerAccounts: [account({
+      provider: 'openai', authType: 'oauth', billingModel: 'subscription', apiKey: undefined,
+    })] };
+    let release!: () => void;
+    retireCodexAccount.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      release = resolve;
+    }));
+    const first = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_UPDATE)?.(
+      {}, 'account-id', { baseUrl: 'https://transport.example' },
+    );
+    const second = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_UPDATE)?.(
+      {}, 'account-id', { name: 'Preserved name' },
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    release();
+    await Promise.all([first, second]);
+
+    expect(settingsState.current.providerAccounts).toEqual([
+      expect.objectContaining({
+        id: 'account-id', baseUrl: 'https://transport.example', name: 'Preserved name',
+      }),
+    ]);
+  });
+
+  it('does not let one account lock block another account', async () => {
+    settingsState.current = { providerAccounts: [
+      account({ id: 'account-a', provider: 'openai', authType: 'oauth',
+        billingModel: 'subscription', apiKey: undefined }),
+      account({ id: 'account-b', name: 'B' }),
+    ] };
+    let release!: () => void;
+    retireCodexAccount.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      release = resolve;
+    }));
+    const blocked = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_UPDATE)?.(
+      {}, 'account-a', { baseUrl: 'https://transport.example' },
+    );
+    const independent = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_UPDATE)?.(
+      {}, 'account-b', { name: 'B updated' },
+    );
+
+    await expect(independent).resolves.toMatchObject({ success: true });
+    release();
+    await expect(blocked).resolves.toMatchObject({ success: true });
+  });
+
+  it('cleans a rejected account lock so the next invocation can proceed', async () => {
+    settingsState.current = { providerAccounts: [account({
+      provider: 'openai', authType: 'oauth', billingModel: 'subscription', apiKey: undefined,
+    })] };
+    retireCodexAccount.mockRejectedValueOnce(new Error('retirement failed'));
+    const handler = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_UPDATE);
+    await expect(handler?.({}, 'account-id', { baseUrl: 'https://failed.example' }))
+      .resolves.toMatchObject({ success: false });
+    await expect(handler?.({}, 'account-id', { baseUrl: 'https://works.example' }))
+      .resolves.toMatchObject({ success: true });
+  });
+
+  it('rejects a stale owner after retirement without writing or reactivating', async () => {
+    const original = account({
+      provider: 'openai', authType: 'oauth', billingModel: 'subscription', apiKey: undefined,
+    });
+    settingsState.current = { providerAccounts: [original] };
+    let release!: () => void;
+    retireCodexAccount.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      release = resolve;
+    }));
+    const update = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_UPDATE)?.(
+      {}, 'account-id', { baseUrl: 'https://ours.example' },
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    settingsState.current = {
+      providerAccounts: [{ ...original, name: 'Externally changed' }],
+    };
+    release();
+
+    await expect(update).resolves.toEqual({
+      success: false, error: 'Provider account changed during update',
+    });
     expect(writeFileSync).not.toHaveBeenCalled();
     expect(reactivateCodexAccount).not.toHaveBeenCalled();
   });

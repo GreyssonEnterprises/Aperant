@@ -18,7 +18,10 @@ import {
 } from '../ui/alert-dialog';
 import type { BillingModel, BuiltinProvider, ProviderAccount, ProviderCategory } from '@shared/types/provider-account';
 import type { CodexAuthChangedEvent } from '@shared/types/ipc';
-import { matchesCodexAuthCompletion } from './codex-account-onboarding';
+import {
+  matchesCodexAuthCompletion,
+  recordAndConsumeCodexCompletion,
+} from './codex-account-onboarding';
 
 export function ProviderAccountsList() {
   const { t } = useTranslation('settings');
@@ -152,10 +155,13 @@ export function ProviderAccountsList() {
           reauthenticatingCodexIds.current.delete(account.id);
           toast({ variant: 'destructive', title: t('providers.toast.reauthFailed'), description: result.error ?? '' });
         } else {
-          reauthenticatingCodexIds.current.set(account.id, result.data.loginId);
-          if (result.data.completion) {
-            await completeCodexReauthentication(result.data.completion);
-          }
+          await recordAndConsumeCodexCompletion({
+            accountId: account.id,
+            loginId: result.data.loginId,
+            pending: reauthenticatingCodexIds.current,
+            consume: window.electronAPI.codexAuthConsume,
+            onCompletion: completeCodexReauthentication,
+          });
         }
       } catch (err) {
         reauthenticatingCodexIds.current.delete(account.id);

@@ -192,4 +192,98 @@ describe('Codex app-server authentication handlers', () => {
       else process.env.APERANT_ENABLE_LEGACY_CODEX_OAUTH = previous;
     }
   });
+
+  it('retains a completion until an exact account-scoped consume acknowledges it', async () => {
+    const h = harness();
+    await h.handlers.login('account-a');
+    h.handlers.handleNotification({ accountId: 'account-a', loginId: 'login-1', success: true });
+
+    await expect(h.handlers.consume('other-account', 'login-1')).resolves.toMatchObject({
+      success: false,
+    });
+    await expect(h.handlers.consume('account-a', 'stale-login')).resolves.toEqual({
+      success: true, data: undefined,
+    });
+    await expect(h.handlers.consume('account-a', 'login-1')).resolves.toEqual({
+      success: true,
+      data: {
+        accountId: 'account-a', loginId: 'login-1', success: true, status: 'authenticated',
+      },
+    });
+    await expect(h.handlers.consume('account-a', 'login-1')).resolves.toEqual({
+      success: true, data: undefined,
+    });
+  });
+
+  it('deduplicates event and consume ordering while retaining one acknowledgement', async () => {
+    const h = harness();
+    await h.handlers.login('account-a');
+    const event = { accountId: 'account-a', loginId: 'login-1', success: false };
+    h.handlers.handleNotification(event);
+    h.handlers.handleNotification(event);
+
+    expect(h.publishAuthChanged).toHaveBeenCalledTimes(1);
+    await expect(h.handlers.consume('account-a', 'login-1')).resolves.toMatchObject({
+      success: true,
+      data: { accountId: 'account-a', loginId: 'login-1', success: false, status: 'failed' },
+    });
+  });
+
+  it('bounds retained completions and expires them by TTL', async () => {
+    let now = 100;
+    const accounts = ['a', 'b', 'c'].map((id) => ({ ...account, id }));
+    const publishAuthChanged = vi.fn();
+    const manager = {
+      startLogin: vi.fn(async (accountId: string) => ({
+        type: 'chatgpt' as const,
+        loginId: `login-${accountId}`,
+        authUrl: `https://auth.openai.com/${accountId}`,
+      })),
+      readAccount: vi.fn(),
+    };
+    const handlers = createCodexAuthHandlers({
+      getManager: () => manager,
+      readAccounts: () => accounts,
+      openExternal: vi.fn(),
+      publishAuthChanged,
+      now: () => now,
+      completionTtlMs: 10,
+      completionLimit: 2,
+    });
+    for (const id of ['a', 'b', 'c']) {
+      await handlers.login(id);
+      handlers.handleNotification({ accountId: id, loginId: `login-${id}`, success: true });
+    }
+
+    await expect(handlers.consume('a', 'login-a')).resolves.toEqual({
+      success: true, data: undefined,
+    });
+    await expect(handlers.consume('b', 'login-b')).resolves.toMatchObject({ success: true, data: {} });
+    now = 111;
+    await expect(handlers.consume('c', 'login-c')).resolves.toEqual({
+      success: true, data: undefined,
+    });
+  });
+
+  it('does not let a superseded failing start clear the newer attempt completion', async () => {
+    const h = harness();
+    let rejectA!: (error: Error) => void;
+    let resolveB!: (value: {
+      type: 'chatgpt'; loginId: string; authUrl: string;
+    }) => void;
+    h.manager.startLogin
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectA = reject; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveB = resolve; }));
+    const startA = h.handlers.login('account-a');
+    const startB = h.handlers.login('account-a');
+    resolveB({ type: 'chatgpt', loginId: 'login-b', authUrl: 'https://auth.openai.com/b' });
+    await expect(startB).resolves.toMatchObject({ success: true, data: { loginId: 'login-b' } });
+    h.handlers.handleNotification({ accountId: 'account-a', loginId: 'login-b', success: true });
+    rejectA(new Error('A failed'));
+    await expect(startA).resolves.toMatchObject({ success: false });
+
+    await expect(h.handlers.consume('account-a', 'login-b')).resolves.toMatchObject({
+      success: true, data: { loginId: 'login-b', success: true },
+    });
+  });
 });
