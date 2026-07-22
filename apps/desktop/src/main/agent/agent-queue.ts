@@ -1,0 +1,676 @@
+import path from 'path';
+import { existsSync, mkdirSync, unlinkSync, promises as fsPromises } from 'fs';
+import { EventEmitter } from 'events';
+import { AgentState } from './agent-state';
+import type { AgentEvents } from './agent-events';
+import { AgentProcessManager } from './agent-process';
+import { RoadmapConfig } from './types';
+import type { IdeationConfig, Idea } from '../../shared/types';
+import { AUTO_BUILD_PATHS } from '../../shared/constants';
+import { detectRateLimit, createSDKRateLimitInfo } from '../rate-limit-detector';
+import { debugLog, debugError } from '../../shared/utils/debug-logger';
+import { transformIdeaFromSnakeCase, transformSessionFromSnakeCase } from '../ipc-handlers/ideation/transformers';
+import { transformRoadmapFromSnakeCase } from '../ipc-handlers/roadmap/transformers';
+import type { RawIdea, RawIdeationData } from '../ipc-handlers/ideation/types';
+import { debounce } from '../utils/debounce';
+import { writeFileWithRetry } from '../utils/atomic-file';
+import { runIdeation, IDEATION_TYPES } from '../ai/runners/ideation';
+import type { IdeationType, IdeationStreamEvent } from '../ai/runners/ideation';
+import { runRoadmapGeneration } from '../ai/runners/roadmap';
+import type { RoadmapStreamEvent } from '../ai/runners/roadmap';
+import type { ModelShorthand, ThinkingLevel } from '../ai/config/types';
+import { resolvePromptsDir } from '../ai/prompts/prompt-loader';
+
+type QueueRunnerKind = 'ideation' | 'roadmap';
+
+interface QueueRunnerRecord {
+  kind: QueueRunnerKind;
+  controller: AbortController;
+  spawnId: number;
+  promise: Promise<void>;
+}
+
+/**
+ * Queue management for ideation and roadmap generation
+ */
+export class AgentQueueManager {
+  private state: AgentState;
+  private processManager: AgentProcessManager;
+  private emitter: EventEmitter;
+  private debouncedPersistRoadmapProgress: (
+    projectPath: string,
+    phase: string,
+    progress: number,
+    message: string,
+    startedAt: string,
+    isRunning: boolean
+  ) => void;
+  private cancelPersistRoadmapProgress: () => void;
+
+  constructor(
+    state: AgentState,
+    _events: AgentEvents,
+    processManager: AgentProcessManager,
+    emitter: EventEmitter
+  ) {
+    this.state = state;
+    this.processManager = processManager;
+    this.emitter = emitter;
+
+    // Create debounced version of persistRoadmapProgress (300ms, leading + trailing)
+    // This limits file writes to ~3-4 per second while ensuring immediate first write
+    // and final state persistence after burst of updates
+    const { fn: debouncedFn, cancel } = debounce(
+      this.persistRoadmapProgress.bind(this),
+      300,
+      { leading: true, trailing: true }
+    );
+    this.debouncedPersistRoadmapProgress = debouncedFn;
+    this.cancelPersistRoadmapProgress = cancel;
+  }
+
+  /** One authoritative queue runner may own a project's shared AgentState. */
+  private runners: Map<string, QueueRunnerRecord> = new Map();
+  /** Serializes every lifecycle transition for a project in invocation order. */
+  private operations: Map<string, Promise<void>> = new Map();
+
+  private enqueueOperation<T>(projectId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.operations.get(projectId) ?? Promise.resolve();
+    const result = previous.then(operation);
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.operations.set(projectId, tail);
+    void tail.finally(() => {
+      if (this.operations.get(projectId) === tail) {
+        this.operations.delete(projectId);
+      }
+    });
+    return result;
+  }
+
+  private releaseRunner(
+    projectId: string,
+    record: QueueRunnerRecord,
+  ): void {
+    if (this.runners.get(projectId) === record) {
+      this.runners.delete(projectId);
+    }
+    if (this.state.getProcess(projectId)?.spawnId === record.spawnId) {
+      this.state.deleteProcess(projectId);
+    }
+  }
+
+  private async stopTrackedRunner(
+    projectId: string,
+    record: QueueRunnerRecord,
+  ): Promise<boolean> {
+    record.controller.abort();
+    try {
+      await record.promise;
+    } catch (error) {
+      debugError(`[Agent Queue] ${record.kind} runner failed while stopping:`, error);
+      return false;
+    }
+    if (this.runners.get(projectId) === record ||
+      this.state.getProcess(projectId)?.spawnId === record.spawnId) {
+      return false;
+    }
+    return true;
+  }
+
+  private async installRunner(
+    kind: QueueRunnerKind,
+    projectId: string,
+    projectPath: string,
+    execute: (controller: AbortController) => Promise<void>,
+  ): Promise<QueueRunnerRecord> {
+    const existing = this.runners.get(projectId);
+    if (existing) {
+      const stopped = await this.stopTrackedRunner(projectId, existing);
+      if (!stopped) {
+        throw new Error(`${kind === 'ideation' ? 'Ideation' : 'Roadmap'} replacement stopped because the previous runner did not stop safely`);
+      }
+    }
+    if (this.runners.has(projectId)) {
+      throw new Error('Queue runner ownership was not released');
+    }
+    if (this.state.hasProcess(projectId) && !(await this.processManager.killProcess(projectId))) {
+      throw new Error(`${kind === 'ideation' ? 'Ideation' : 'Roadmap'} replacement stopped because the previous process did not stop safely`);
+    }
+
+    const controller = new AbortController();
+    const spawnId = this.state.generateSpawnId();
+    const record: QueueRunnerRecord = {
+      kind,
+      controller,
+      spawnId,
+      promise: Promise.resolve(),
+    };
+    this.runners.set(projectId, record);
+    this.state.addProcess(projectId, {
+      taskId: projectId,
+      process: null as unknown as import('child_process').ChildProcess,
+      startedAt: new Date(),
+      projectPath,
+      spawnId,
+      queueProcessType: kind,
+    });
+    record.promise = Promise.resolve()
+      .then(() => execute(controller))
+      .finally(() => this.releaseRunner(projectId, record));
+    return record;
+  }
+
+  /**
+   * Persist roadmap generation progress to disk.
+   * Creates generation_progress.json with current state including timestamps.
+   *
+   * @param projectPath - The project directory path
+   * @param phase - Current generation phase
+   * @param progress - Progress percentage (0-100)
+   * @param message - Status message
+   * @param startedAt - When generation started (ISO string)
+   * @param isRunning - Whether generation is actively running
+   */
+  private async persistRoadmapProgress(
+    projectPath: string,
+    phase: string,
+    progress: number,
+    message: string,
+    startedAt: string,
+    isRunning: boolean
+  ): Promise<void> {
+    try {
+      const roadmapDir = path.join(projectPath, AUTO_BUILD_PATHS.ROADMAP_DIR);
+      const progressPath = path.join(roadmapDir, AUTO_BUILD_PATHS.GENERATION_PROGRESS);
+
+      // Ensure roadmap directory exists
+      if (!existsSync(roadmapDir)) {
+        mkdirSync(roadmapDir, { recursive: true });
+      }
+
+      const progressData = {
+        phase,
+        progress,
+        message,
+        started_at: startedAt,
+        last_update_at: new Date().toISOString(),
+        is_running: isRunning
+      };
+
+      await writeFileWithRetry(progressPath, JSON.stringify(progressData, null, 2), { encoding: 'utf-8' });
+      debugLog('[Agent Queue] Persisted roadmap progress:', { phase, progress });
+    } catch (err) {
+      debugError('[Agent Queue] Failed to persist roadmap progress:', err);
+    }
+  }
+
+  /**
+   * Clear roadmap generation progress file from disk.
+   * Called when generation completes, errors, or is stopped.
+   *
+   * @param projectPath - The project directory path
+   */
+  private clearRoadmapProgress(projectPath: string): void {
+    // Cancel any pending debounced write to prevent re-creating the file after deletion
+    this.cancelPersistRoadmapProgress();
+
+    try {
+      const progressPath = path.join(
+        projectPath,
+        AUTO_BUILD_PATHS.ROADMAP_DIR,
+        AUTO_BUILD_PATHS.GENERATION_PROGRESS
+      );
+
+      if (existsSync(progressPath)) {
+        unlinkSync(progressPath);
+        debugLog('[Agent Queue] Cleared roadmap progress file');
+      }
+    } catch (err) {
+      debugError('[Agent Queue] Failed to clear roadmap progress:', err);
+    }
+  }
+
+  /**
+   * Start roadmap generation process
+   *
+   * @param refreshCompetitorAnalysis - Force refresh competitor analysis even if it exists.
+   *   This allows refreshing competitor data independently of the general roadmap refresh.
+   *   Use when user explicitly wants new competitor research.
+   */
+  async startRoadmapGeneration(
+    projectId: string,
+    projectPath: string,
+    refresh: boolean = false,
+    enableCompetitorAnalysis: boolean = false,
+    _refreshCompetitorAnalysis: boolean = false,
+    config?: RoadmapConfig
+  ): Promise<void> {
+    debugLog('[Agent Queue] Starting roadmap generation:', {
+      projectId,
+      projectPath,
+      refresh,
+      enableCompetitorAnalysis,
+      config
+    });
+
+    const record = await this.enqueueOperation(projectId, () => (
+      this.installRunner('roadmap', projectId, projectPath, (controller) => (
+        this.runRoadmapRunner(
+          projectId, projectPath, refresh, enableCompetitorAnalysis, controller, config,
+        )
+      ))
+    ));
+    await record.promise;
+  }
+
+  /**
+   * Start ideation generation process
+   */
+  async startIdeationGeneration(
+    projectId: string,
+    projectPath: string,
+    config: IdeationConfig,
+    _refresh: boolean = false
+  ): Promise<void> {
+    debugLog('[Agent Queue] Starting ideation generation:', {
+      projectId,
+      projectPath,
+      config
+    });
+
+    const record = await this.enqueueOperation(projectId, () => (
+      this.installRunner('ideation', projectId, projectPath, (controller) => (
+        this.runIdeationRunner(projectId, projectPath, config, controller)
+      ))
+    ));
+    await record.promise;
+  }
+
+  /**
+   * Run ideation generation using the TypeScript ideation runner.
+   * Replaces the previous Python subprocess spawning approach.
+   */
+  private async runIdeationRunner(
+    projectId: string,
+    projectPath: string,
+    config: IdeationConfig,
+    abortController: AbortController,
+  ): Promise<void> {
+    debugLog('[Agent Queue] Running ideation via TS runner:', { projectId, projectPath });
+
+    // Track progress
+    const completedTypes = new Set<string>();
+    const failures: string[] = [];
+    const generatedIdeas: RawIdea[] = [];
+    const enabledTypes = config.enabledTypes.length > 0
+      ? config.enabledTypes
+      : [...IDEATION_TYPES];
+    const totalTypes = enabledTypes.length;
+
+    // Resolve prompts directory using the proper prompt-loader utility
+    // which handles both dev (apps/desktop/prompts/) and production (resourcesPath/prompts/)
+    const promptsDir = resolvePromptsDir();
+
+    const outputDir = path.join(projectPath, '.auto-claude', 'ideation');
+    // Emit initial progress
+    this.emitter.emit('ideation-progress', projectId, {
+      phase: 'analyzing',
+      progress: 10,
+      message: 'Starting ideation generation...',
+      completedTypes: []
+    });
+
+    // Run each ideation type sequentially (matches Python runner behavior)
+    for (const ideationType of enabledTypes) {
+      if (abortController.signal.aborted) {
+        debugLog('[Agent Queue] Ideation aborted before type:', ideationType);
+        break;
+      }
+
+      const typeProgress = Math.round(10 + (completedTypes.size / totalTypes) * 80);
+      this.emitter.emit('ideation-progress', projectId, {
+        phase: 'generating',
+        progress: typeProgress,
+        message: `Generating ${ideationType} ideas...`,
+        completedTypes: Array.from(completedTypes)
+      });
+      this.emitter.emit('ideation-log', projectId, `Starting ${ideationType}...`);
+
+      try {
+        const typeFilePath = path.join(outputDir, `${ideationType}_ideas.json`);
+        await fsPromises.unlink(typeFilePath).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error;
+        });
+        const result = await runIdeation(
+          {
+            projectDir: projectPath,
+            outputDir,
+            promptsDir,
+            ideationType: ideationType as IdeationType,
+            modelShorthand: (config.model || 'sonnet') as ModelShorthand,
+            thinkingLevel: (config.thinkingLevel || 'medium') as ThinkingLevel,
+            maxIdeasPerType: config.maxIdeasPerType || 5,
+            abortSignal: abortController.signal,
+          },
+          (event: IdeationStreamEvent) => {
+            if (event.type === 'text-delta') {
+              this.emitter.emit('ideation-log', projectId, event.text);
+            }
+          }
+        );
+
+        if (result.success) {
+          // Load and emit type-specific ideas
+          try {
+            const content = await fsPromises.readFile(typeFilePath, 'utf-8');
+            const data: Record<string, RawIdea[]> = JSON.parse(content);
+            const rawIdeas: RawIdea[] = data[ideationType] || [];
+            const ideas: Idea[] = rawIdeas.map(transformIdeaFromSnakeCase);
+            generatedIdeas.push(...rawIdeas);
+            completedTypes.add(ideationType);
+            debugLog('[Agent Queue] Ideation type completed:', { projectId, ideationType });
+            this.emitter.emit('ideation-type-complete', projectId, ideationType, ideas);
+          } catch (err) {
+            debugError('[Agent Queue] Failed to load ideas for type:', ideationType, err);
+            failures.push(`${ideationType} did not produce a valid category output file`);
+            this.emitter.emit('ideation-type-failed', projectId, ideationType);
+          }
+        } else {
+          debugError('[Agent Queue] Ideation type failed:', { projectId, ideationType, error: result.error });
+          failures.push(result.error || `${ideationType} generation failed`);
+          this.emitter.emit('ideation-type-failed', projectId, ideationType);
+
+          // Check for rate limit
+          if (result.error) {
+            const rateLimitDetection = detectRateLimit(result.error);
+            if (rateLimitDetection.isRateLimited) {
+              const rateLimitInfo = createSDKRateLimitInfo('ideation', rateLimitDetection, { projectId });
+              this.emitter.emit('sdk-rate-limit', rateLimitInfo);
+            }
+          }
+        }
+      } catch (err) {
+        if (abortController.signal.aborted) {
+          debugLog('[Agent Queue] Ideation type aborted:', ideationType);
+          break;
+        }
+        debugError('[Agent Queue] Ideation type error:', { ideationType, err });
+        failures.push(err instanceof Error ? err.message : String(err));
+        this.emitter.emit('ideation-type-failed', projectId, ideationType);
+      }
+    }
+
+    if (abortController.signal.aborted) {
+      return;
+    }
+
+    if (completedTypes.size === 0) {
+      const detail = failures[0] ? ` ${failures[0]}` : '';
+      this.emitter.emit(
+        'ideation-error',
+        projectId,
+        `Ideation generation failed for every selected category.${detail}`,
+      );
+      return;
+    }
+
+    // Emit completion
+    this.emitter.emit('ideation-progress', projectId, {
+      phase: 'complete',
+      progress: 100,
+      message: 'Ideation generation complete',
+      completedTypes: Array.from(completedTypes)
+    });
+
+    // Persist and emit one complete session assembled from category files.
+    try {
+      const ideationFilePath = path.join(outputDir, 'ideation.json');
+      let existingSession: RawIdeationData | undefined;
+      if (config.append && existsSync(ideationFilePath)) {
+        existingSession = JSON.parse(await fsPromises.readFile(ideationFilePath, 'utf-8'));
+      }
+      const now = new Date().toISOString();
+      const rawSession: RawIdeationData = {
+        id: existingSession?.id || `ideation-${Date.now()}`,
+        config: {
+          enabled_types: config.append
+            ? [...new Set([
+                ...(existingSession?.config?.enabled_types || []),
+                ...enabledTypes,
+              ])]
+            : enabledTypes,
+          include_roadmap_context: config.includeRoadmapContext,
+          include_kanban_context: config.includeKanbanContext,
+          max_ideas_per_type: config.maxIdeasPerType,
+        },
+        ideas: [...(existingSession?.ideas || []), ...generatedIdeas],
+        project_context: existingSession?.project_context || {
+          existing_features: [],
+          tech_stack: [],
+          planned_features: [],
+        },
+        generated_at: existingSession?.generated_at || now,
+        updated_at: now,
+      };
+      await writeFileWithRetry(
+        ideationFilePath,
+        JSON.stringify(rawSession, null, 2),
+        { encoding: 'utf-8' },
+      );
+      const session = transformSessionFromSnakeCase(rawSession, projectId);
+      debugLog('[Agent Queue] Persisted ideation session:', { totalIdeas: session.ideas.length });
+      this.emitter.emit('ideation-complete', projectId, session);
+    } catch (err) {
+      debugError('[Agent Queue] Failed to load ideation session:', err);
+      this.emitter.emit('ideation-error', projectId,
+        `Failed to load ideation session: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Run roadmap generation using the TypeScript roadmap runner.
+   * Replaces the previous Python subprocess spawning approach.
+   */
+  private async runRoadmapRunner(
+    projectId: string,
+    projectPath: string,
+    refresh: boolean,
+    enableCompetitorAnalysis: boolean,
+    abortController: AbortController,
+    config?: RoadmapConfig
+  ): Promise<void> {
+    debugLog('[Agent Queue] Running roadmap via TS runner:', { projectId, projectPath });
+
+    // Track progress
+    let progressPhase = 'analyzing';
+    let progressPercent = 10;
+    const roadmapStartedAt = new Date().toISOString();
+
+    // Persist initial progress
+    this.debouncedPersistRoadmapProgress(
+      projectPath,
+      progressPhase,
+      progressPercent,
+      'Starting roadmap generation...',
+      roadmapStartedAt,
+      true
+    );
+
+    // Emit initial progress
+    this.emitter.emit('roadmap-progress', projectId, {
+      phase: progressPhase,
+      progress: progressPercent,
+      message: 'Starting roadmap generation...'
+    });
+
+    try {
+      const result = await runRoadmapGeneration(
+        {
+          projectDir: projectPath,
+          modelShorthand: (config?.model || 'sonnet') as ModelShorthand,
+          thinkingLevel: (config?.thinkingLevel || 'medium') as ThinkingLevel,
+          refresh,
+          enableCompetitorAnalysis,
+          abortSignal: abortController.signal,
+        },
+        (event: RoadmapStreamEvent) => {
+          switch (event.type) {
+            case 'phase-start': {
+              progressPhase = event.phase;
+              progressPercent = Math.min(progressPercent + 20, 90);
+              const msg = `Running ${event.phase} phase...`;
+              this.emitter.emit('roadmap-log', projectId, msg);
+              this.emitter.emit('roadmap-progress', projectId, {
+                phase: progressPhase,
+                progress: progressPercent,
+                message: msg
+              });
+              this.debouncedPersistRoadmapProgress(
+                projectPath, progressPhase, progressPercent, msg, roadmapStartedAt, true
+              );
+              break;
+            }
+            case 'phase-complete': {
+              const msg = `Phase ${event.phase} ${event.success ? 'completed' : 'failed'}`;
+              this.emitter.emit('roadmap-log', projectId, msg);
+              break;
+            }
+            case 'text-delta': {
+              this.emitter.emit('roadmap-log', projectId, event.text);
+              break;
+            }
+            case 'error': {
+              this.emitter.emit('roadmap-log', projectId, `Error: ${event.error}`);
+              break;
+            }
+          }
+        }
+      );
+
+      if (abortController.signal.aborted) {
+        this.clearRoadmapProgress(projectPath);
+        return;
+      }
+
+      if (result.success) {
+        debugLog('[Agent Queue] Roadmap generation completed successfully');
+        this.emitter.emit('roadmap-progress', projectId, {
+          phase: 'complete',
+          progress: 100,
+          message: 'Roadmap generation complete'
+        });
+        this.clearRoadmapProgress(projectPath);
+
+        // Load and emit the complete roadmap
+        const roadmapFilePath = path.join(projectPath, '.auto-claude', 'roadmap', 'roadmap.json');
+        if (existsSync(roadmapFilePath)) {
+          try {
+            const content = await fsPromises.readFile(roadmapFilePath, 'utf-8');
+            const rawRoadmap = JSON.parse(content);
+            const transformedRoadmap = transformRoadmapFromSnakeCase(rawRoadmap, projectId);
+            debugLog('[Agent Queue] Loaded roadmap:', {
+              featuresCount: transformedRoadmap.features?.length || 0,
+              phasesCount: transformedRoadmap.phases?.length || 0
+            });
+            this.emitter.emit('roadmap-complete', projectId, transformedRoadmap);
+          } catch (err) {
+            debugError('[Roadmap] Failed to load roadmap:', err);
+            this.emitter.emit('roadmap-error', projectId,
+              `Failed to load roadmap: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          }
+        } else {
+          debugError('[Roadmap] roadmap.json not found');
+          this.emitter.emit('roadmap-error', projectId, 'Roadmap completed but file not found.');
+        }
+      } else {
+        debugError('[Agent Queue] Roadmap generation failed:', { projectId, error: result.error });
+        this.clearRoadmapProgress(projectPath);
+
+        // Check for rate limit
+        if (result.error) {
+          const rateLimitDetection = detectRateLimit(result.error);
+          if (rateLimitDetection.isRateLimited) {
+            const rateLimitInfo = createSDKRateLimitInfo('roadmap', rateLimitDetection, { projectId });
+            this.emitter.emit('sdk-rate-limit', rateLimitInfo);
+          }
+        }
+
+        this.emitter.emit('roadmap-error', projectId,
+          result.error || 'Roadmap generation failed');
+      }
+    } catch (err) {
+      this.clearRoadmapProgress(projectPath);
+
+      if (abortController.signal.aborted) {
+        return;
+      }
+
+      debugError('[Agent Queue] Roadmap runner error:', err);
+      this.emitter.emit('roadmap-error', projectId,
+        `Roadmap generation error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Stop ideation generation for a project
+   */
+  async stopIdeation(projectId: string): Promise<boolean> {
+    debugLog('[Agent Queue] Stop ideation requested:', { projectId });
+
+    return this.enqueueOperation(projectId, () => this.stopRunner('ideation', projectId));
+  }
+
+  private async stopRunner(kind: QueueRunnerKind, projectId: string): Promise<boolean> {
+    const runner = this.runners.get(projectId);
+    if (runner) {
+      if (runner.kind !== kind) return false;
+      debugLog(`[Agent Queue] Aborting ${kind} TS runner:`, projectId);
+      return this.stopTrackedRunner(projectId, runner);
+    }
+
+    // Fallback: check for legacy process
+    const processInfo = this.state.getProcess(projectId);
+    if (processInfo?.queueProcessType === kind) {
+      debugLog(`[Agent Queue] Killing legacy ${kind} process:`, projectId);
+      const wasStopped = await this.processManager.killProcess(projectId);
+      if (!wasStopped) {
+        return false;
+      }
+      return true;
+    }
+
+    debugLog(`[Agent Queue] No running ${kind} process found for:`, projectId);
+    return false;
+  }
+
+  /**
+   * Check if ideation is running for a project
+   */
+  isIdeationRunning(projectId: string): boolean {
+    const runner = this.runners.get(projectId);
+    if (runner) return runner.kind === 'ideation';
+    const processInfo = this.state.getProcess(projectId);
+    return processInfo?.queueProcessType === 'ideation';
+  }
+
+  /**
+   * Stop roadmap generation for a project
+   */
+  async stopRoadmap(projectId: string): Promise<boolean> {
+    debugLog('[Agent Queue] Stop roadmap requested:', { projectId });
+    return this.enqueueOperation(projectId, () => this.stopRunner('roadmap', projectId));
+  }
+
+  /**
+   * Check if roadmap is running for a project
+   */
+  isRoadmapRunning(projectId: string): boolean {
+    const runner = this.runners.get(projectId);
+    if (runner) return runner.kind === 'roadmap';
+    const processInfo = this.state.getProcess(projectId);
+    return processInfo?.queueProcessType === 'roadmap';
+  }
+}

@@ -1,3 +1,11 @@
+> # 🚫 Pull requests are paused
+>
+> We're rebuilding the entire app from the ground up for **Aperant 3.0** (with new cloud features), so PRs against the current codebase **can't be merged** and will be closed automatically. This is temporary.
+>
+> Please help shape 3.0 instead: [open an issue](https://github.com/AndyMik90/Aperant/issues) · [start a discussion](https://github.com/AndyMik90/Aperant/discussions) · [join Discord](https://discord.gg/KCXaPBr4Dj). Thank you! 🙏
+
+---
+
 ## Base Branch
 
 - [ ] This PR targets the `develop` branch (required for all feature/fix PRs)
