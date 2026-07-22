@@ -117,6 +117,26 @@ export interface CodexTurnInterruptParams {
   turnId: string;
 }
 
+export interface CodexCommandExecParams {
+  command: string[];
+  cwd: string;
+  timeoutMs: number;
+  outputBytesCap: number;
+  sandboxPolicy: {
+    type: 'workspaceWrite';
+    networkAccess: false;
+    writableRoots: string[];
+    excludeTmpdirEnvVar: true;
+    excludeSlashTmp: true;
+  };
+}
+
+export interface CodexCommandExecResponse {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
 export interface CodexClientRequestMap {
   initialize: { params: CodexInitializeParams; response: CodexInitializeResponse };
   'account/read': { params: { refreshToken: boolean }; response: CodexAccountReadResponse };
@@ -126,6 +146,7 @@ export interface CodexClientRequestMap {
   'thread/resume': { params: CodexThreadResumeParams; response: CodexThreadResponse };
   'turn/start': { params: CodexTurnStartParams; response: CodexTurnStartResponse };
   'turn/interrupt': { params: CodexTurnInterruptParams; response: Record<string, never> };
+  'command/exec': { params: CodexCommandExecParams; response: CodexCommandExecResponse };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -235,5 +256,15 @@ export function parseTurnStartResponse(value: unknown): CodexTurnStartResponse |
       id: value.turn.id as string,
       status: value.turn.status as CodexTurnStatus,
     },
+  };
+}
+
+export function parseCommandExecResponse(value: unknown): CodexCommandExecResponse | null {
+  if (!isRecord(value) || !Number.isInteger(value.exitCode) ||
+    typeof value.stdout !== 'string' || typeof value.stderr !== 'string') return null;
+  return {
+    exitCode: value.exitCode as number,
+    stdout: value.stdout,
+    stderr: value.stderr,
   };
 }

@@ -7,6 +7,7 @@ import {
   parseInitializeResponse,
   parseLoginStartResponse,
   parseModelListResponse,
+  parseCommandExecResponse,
 } from './codex-app-server-protocol';
 
 describe('Codex app-server protocol validation', () => {
@@ -89,5 +90,13 @@ describe('Codex app-server protocol validation', () => {
       loginId: 'login-1',
       authUrl: 'https://auth.openai.com/example',
     })).not.toBeNull();
+  });
+
+  it('accepts only bounded command execution results', () => {
+    expect(parseCommandExecResponse({ exitCode: 1, stdout: '', stderr: 'denied' })).toEqual({
+      exitCode: 1, stdout: '', stderr: 'denied',
+    });
+    expect(parseCommandExecResponse({ exitCode: 1.5, stdout: '', stderr: '' })).toBeNull();
+    expect(parseCommandExecResponse({ exitCode: 0, stdout: 42, stderr: '' })).toBeNull();
   });
 });

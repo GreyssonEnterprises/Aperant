@@ -173,6 +173,10 @@ export const IPC_CHANNELS = {
   PROVIDER_ACCOUNTS_SET_CROSS_PROVIDER_QUEUE_ORDER: 'provider-accounts:set-cross-provider-queue-order',
   PROVIDER_ACCOUNTS_TEST_CONNECTION: 'provider-accounts:test-connection',
   PROVIDER_ACCOUNTS_CHECK_ENV: 'provider-accounts:check-env',
+  CODEX_AUTH_LOGIN: 'codex-auth-login',
+  CODEX_AUTH_STATUS: 'codex-auth-status',
+  CODEX_AUTH_LOGOUT: 'codex-auth-logout',
+  CODEX_AUTH_CHANGED: 'codex-auth-changed',
   MODEL_OVERRIDES_SAVE: 'model-overrides:save',
 
   // Provider-aware model catalog (credentials remain in main)

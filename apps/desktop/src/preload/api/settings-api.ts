@@ -46,9 +46,10 @@ export interface SettingsAPI {
   checkEnvCredentials: () => Promise<IPCResult<Record<string, boolean>>>;
 
   // Codex OAuth authentication
-  codexAuthLogin: () => Promise<{ success: boolean; data?: { accessToken: string; refreshToken: string; expiresAt: number; email?: string }; error?: string }>;
-  codexAuthStatus: () => Promise<{ success: boolean; data?: { isAuthenticated: boolean; expiresAt?: number }; error?: string }>;
-  codexAuthLogout: () => Promise<{ success: boolean; error?: string }>;
+  codexAuthLogin: (accountId: string) => Promise<{ success: boolean; data?: { type: 'chatgpt' | 'chatgptDeviceCode'; loginId: string; userCode?: string }; error?: string }>;
+  codexAuthStatus: (accountId: string) => Promise<{ success: boolean; data?: { isAuthenticated: boolean; email?: string; planType?: string }; error?: string }>;
+  codexAuthLogout: (accountId: string) => Promise<{ success: boolean; error?: string }>;
+  onCodexAuthChanged: (callback: (data: { accountId: string; isAuthenticated: boolean; email?: string; planType?: string }) => void) => () => void;
 }
 
 export const createSettingsAPI = (): SettingsAPI => ({
@@ -113,10 +114,18 @@ export const createSettingsAPI = (): SettingsAPI => ({
     ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_ACCOUNTS_CHECK_ENV),
 
   // Codex OAuth authentication
-  codexAuthLogin: () =>
-    ipcRenderer.invoke('codex-auth-login'),
-  codexAuthStatus: () =>
-    ipcRenderer.invoke('codex-auth-status'),
-  codexAuthLogout: () =>
-    ipcRenderer.invoke('codex-auth-logout'),
+  codexAuthLogin: (accountId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CODEX_AUTH_LOGIN, accountId),
+  codexAuthStatus: (accountId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CODEX_AUTH_STATUS, accountId),
+  codexAuthLogout: (accountId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CODEX_AUTH_LOGOUT, accountId),
+  onCodexAuthChanged: (callback) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: { accountId: string; isAuthenticated: boolean; email?: string; planType?: string },
+    ) => callback(data);
+    ipcRenderer.on(IPC_CHANNELS.CODEX_AUTH_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.CODEX_AUTH_CHANGED, handler);
+  },
 });

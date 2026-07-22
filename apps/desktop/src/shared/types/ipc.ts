@@ -419,9 +419,10 @@ export interface ElectronAPI {
   getModelCatalogStatus: () => Promise<IPCResult<ModelCatalogStatus>>;
 
   // Codex OAuth authentication
-  codexAuthLogin: () => Promise<{ success: boolean; data?: { accessToken: string; refreshToken: string; expiresAt: number; email?: string }; error?: string }>;
-  codexAuthStatus: () => Promise<{ success: boolean; data?: { isAuthenticated: boolean; expiresAt?: number }; error?: string }>;
-  codexAuthLogout: () => Promise<{ success: boolean; error?: string }>;
+  codexAuthLogin: (accountId: string) => Promise<{ success: boolean; data?: { type: 'chatgpt' | 'chatgptDeviceCode'; loginId: string; userCode?: string }; error?: string }>;
+  codexAuthStatus: (accountId: string) => Promise<{ success: boolean; data?: { isAuthenticated: boolean; email?: string; planType?: string }; error?: string }>;
+  codexAuthLogout: (accountId: string) => Promise<{ success: boolean; error?: string }>;
+  onCodexAuthChanged: (callback: (data: { accountId: string; isAuthenticated: boolean; email?: string; planType?: string }) => void) => () => void;
 
   // Dialog operations
   selectDirectory: () => Promise<string | null>;

@@ -38,6 +38,8 @@ describe('BUNDLED_MODEL_CATALOG', () => {
     expect(model).toMatchObject({
       id,
       provider: 'anthropic',
+      authModes: ['oauth', 'api-key'],
+      backend: 'vercel',
       contextWindow: 1_000_000,
       maxOutputTokens: 128_000,
       thinking: { mode: thinkingMode, effortLevels: [] },

@@ -12,6 +12,7 @@ import {
   handleCodexNotification,
   resetCodexAppServerRuntimeForTests,
   shutdownCodexAppServerRuntime,
+  subscribeCodexAccountNotifications,
 } from './codex-app-server-runtime';
 
 describe('Codex runtime notifications', () => {
@@ -37,6 +38,19 @@ describe('Codex runtime notifications', () => {
     await handleCodexNotification('account-a', 'thread/started', {}, invalidate);
 
     expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it('publishes account-scoped auth notifications without raw parameters', async () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeCodexAccountNotifications(listener);
+
+    await handleCodexNotification('account-a', 'account/login/completed', {
+      accessToken: 'never-forward-this',
+    }, vi.fn(async () => undefined));
+
+    expect(listener).toHaveBeenCalledWith('account-a', 'account/login/completed');
+    expect(JSON.stringify(listener.mock.calls)).not.toContain('never-forward-this');
+    unsubscribe();
   });
 
   it('cannot recreate the singleton once shutdown begins', async () => {

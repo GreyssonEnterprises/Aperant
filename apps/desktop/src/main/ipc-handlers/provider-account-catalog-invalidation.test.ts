@@ -3,9 +3,10 @@ import type { ModelCatalogService } from '../services/model-catalog-service';
 import type { ProviderAccount } from '@shared/types/provider-account';
 
 type IpcHandler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
-const { handlers, settingsState } = vi.hoisted(() => ({
+const { handlers, settingsState, retireCodexAccount } = vi.hoisted(() => ({
   handlers: new Map<string, IpcHandler>(),
   settingsState: { current: {} as Record<string, unknown> },
+  retireCodexAccount: vi.fn(async () => undefined),
 }));
 
 vi.mock('electron', () => ({
@@ -74,7 +75,7 @@ describe('provider account catalog invalidation', () => {
     vi.clearAllMocks();
     handlers.clear();
     settingsState.current = {};
-    registerSettingsHandlers({} as never, () => null, catalog);
+    registerSettingsHandlers({} as never, () => null, catalog, retireCodexAccount);
   });
 
   it('invalidates the provider when an account is created', async () => {
@@ -110,5 +111,29 @@ describe('provider account catalog invalidation', () => {
       provider: 'anthropic',
       accountId: 'account-id',
     });
+  });
+
+  it('retires an OpenAI subscription process before deleting its account record', async () => {
+    settingsState.current = { providerAccounts: [account({
+      provider: 'openai', authType: 'oauth', billingModel: 'subscription', apiKey: undefined,
+    })] };
+    const handler = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_DELETE);
+    await handler?.({}, 'account-id');
+
+    expect(retireCodexAccount).toHaveBeenCalledWith('account-id');
+    expect(catalog.invalidate).toHaveBeenCalledWith({ provider: 'openai', accountId: 'account-id' });
+  });
+
+  it('retains the account when Codex retirement cannot be verified', async () => {
+    settingsState.current = { providerAccounts: [account({
+      provider: 'openai', authType: 'oauth', billingModel: 'subscription', apiKey: undefined,
+    })] };
+    retireCodexAccount.mockRejectedValueOnce(new Error('private process details'));
+    const handler = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_DELETE);
+    await expect(handler?.({}, 'account-id')).resolves.toEqual({
+      success: false,
+      error: 'Codex account process could not be stopped safely',
+    });
+    expect(catalog.invalidate).not.toHaveBeenCalled();
   });
 });

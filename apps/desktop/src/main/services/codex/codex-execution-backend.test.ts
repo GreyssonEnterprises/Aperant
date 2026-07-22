@@ -40,6 +40,7 @@ function createHarness(
   const backend = createCodexExecutionBackend({
     manager,
     store,
+    sandboxProbe: { verify: vi.fn().mockResolvedValue(undefined) },
     cancellationGraceMs: 5,
     canonicalizePath,
   });
@@ -92,6 +93,23 @@ describe('Codex execution backend', () => {
       threadId: 'thread-new', turn: { id: 'turn-1', status: 'completed', items: [] },
     });
     await first;
+  });
+
+  it('fails closed before model or thread work when sandbox enforcement is unproven', async () => {
+    const h = createHarness();
+    const sandboxProbe = { verify: vi.fn().mockRejectedValue(new Error('unproven')) };
+    const backend = createCodexExecutionBackend({
+      manager: h.manager,
+      store: h.store,
+      sandboxProbe,
+      canonicalizePath: async (value) => value,
+    });
+
+    await expect(backend.run(h.config, h.emit)).rejects.toThrow('unproven');
+    expect(sandboxProbe.verify).toHaveBeenCalledWith('account-1', '/worktree');
+    expect(h.manager.verifyExecutionModel).not.toHaveBeenCalled();
+    expect(h.manager.startThread).not.toHaveBeenCalled();
+    expect(h.manager.startTurn).not.toHaveBeenCalled();
   });
 
   it('fences cancellation during startup before creating a thread', async () => {
@@ -161,10 +179,12 @@ describe('Codex execution backend', () => {
       write: vi.fn().mockResolvedValue(undefined),
     };
     const first = createCodexExecutionBackend({
-      manager, store, cancellationGraceMs: 1, canonicalizePath: async (value) => value,
+      manager, store, sandboxProbe: { verify: vi.fn().mockResolvedValue(undefined) },
+      cancellationGraceMs: 1, canonicalizePath: async (value) => value,
     });
     const second = createCodexExecutionBackend({
-      manager, store, cancellationGraceMs: 1, canonicalizePath: async (value) => value,
+      manager, store, sandboxProbe: { verify: vi.fn().mockResolvedValue(undefined) },
+      cancellationGraceMs: 1, canonicalizePath: async (value) => value,
     });
     const base = createHarness().config;
     const firstRun = first.run(base, vi.fn());

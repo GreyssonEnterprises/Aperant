@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, CheckCircle2, AlertCircle, Terminal, Plus, X } from 'lucide-react';
 import {
@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { useSettingsStore } from '../../stores/settings-store';
 import { useToast } from '../../hooks/use-toast';
 import type { BillingModel, BuiltinProvider, CustomModel, ProviderAccount } from '@shared/types/provider-account';
+import { ensureCodexAccountRecord } from './codex-account-onboarding';
 
 const AWS_REGIONS = [
   'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
@@ -65,6 +66,7 @@ export function AddAccountDialog({
   const [oauthStatus, setOauthStatus] = useState<OAuthStatus>('idle');
   const [oauthEmail, setOauthEmail] = useState<string | null>(null);
   const [oauthProfileId, setOauthProfileId] = useState<string | null>(null);
+  const [oauthAccountId, setOauthAccountId] = useState<string | null>(null);
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [showFallbackTerminal, setShowFallbackTerminal] = useState(false);
 
@@ -74,6 +76,7 @@ export function AddAccountDialog({
   // AuthTerminal fallback state
   const [fallbackTerminalId, setFallbackTerminalId] = useState<string | null>(null);
   const [fallbackConfigDir, setFallbackConfigDir] = useState<string | null>(null);
+  const codexCompletionHandled = useRef(false);
 
   // Reset form when dialog opens/editAccount changes
   useEffect(() => {
@@ -102,11 +105,13 @@ export function AddAccountDialog({
       setOauthStatus('idle');
       setOauthEmail(null);
       setOauthProfileId(null);
+      setOauthAccountId(null);
       setOauthError(null);
       setAccountSaved(false);
       setShowFallbackTerminal(false);
       setFallbackTerminalId(null);
       setFallbackConfigDir(null);
+      codexCompletionHandled.current = false;
     }
   }, [open, editAccount, provider, billingModelOverride]);
 
@@ -134,6 +139,35 @@ export function AddAccountDialog({
       // Non-fatal. Usage will refresh on the next polling cycle.
     }
   }, []);
+
+  const completeCodexAuthentication = useCallback(async (data: {
+    accountId: string;
+    isAuthenticated: boolean;
+    email?: string;
+  }) => {
+    if (!data.isAuthenticated || codexCompletionHandled.current) return;
+    codexCompletionHandled.current = true;
+    setOauthStatus('success');
+    setOauthEmail(data.email ?? null);
+    setAccountSaved(true);
+    if (data.email) await updateProviderAccount(data.accountId, { email: data.email });
+    await refreshUsageData();
+    toast({
+      title: isEditing
+        ? t('providers.dialog.toast.updated')
+        : t('providers.dialog.toast.added'),
+      description: name.trim(),
+    });
+    onOpenChange(false);
+  }, [updateProviderAccount, refreshUsageData, toast, isEditing, t, name, onOpenChange]);
+
+  useEffect(() => {
+    if (!open || !isCodexOAuth || !oauthAccountId) return;
+    return window.electronAPI.onCodexAuthChanged(async (data) => {
+      if (data.accountId !== oauthAccountId) return;
+      await completeCodexAuthentication(data);
+    });
+  }, [open, isCodexOAuth, oauthAccountId, completeCodexAuthentication]);
 
   // Subscribe to Anthropic OAuth progress events (not used for Codex/OpenAI)
   useEffect(() => {
@@ -247,55 +281,30 @@ export function AddAccountDialog({
     if (isCodexOAuth) {
       try {
         setOauthStatus('waiting');
-        const result = await window.electronAPI.codexAuthLogin();
-        if (result.success) {
-          setOauthStatus('success');
-          if (result.data?.email) {
-            setOauthEmail(result.data.email);
-          }
-          // Auto-save and close after a brief delay so user sees the success state
-          setTimeout(async () => {
-            let saveResult: {
-              success: boolean;
-              data?: ProviderAccount;
-              error?: string;
-            };
-            if (isEditing && editAccount) {
-              // Re-authenticating existing account — update in place
-              saveResult = await updateProviderAccount(editAccount.id, {
-                name: name.trim(),
-                ...(result.data?.email ? { email: result.data.email } : {}),
-              });
-            } else {
-              const payload = {
-                provider,
-                name: name.trim(),
-                authType: 'oauth' as const,
-                billingModel: 'subscription' as const,
-                ...(result.data?.email ? { email: result.data.email } : {}),
-              };
-              saveResult = await addProviderAccount(payload);
-            }
-              if (saveResult.success) {
-                toast({
-                  title: isEditing
-                    ? t('providers.dialog.toast.updated')
-                    : t('providers.dialog.toast.added'),
-                  description: name.trim(),
-                });
-                await refreshUsageData();
-                onOpenChange(false);
-              } else if (saveResult.error && !handleDuplicateEmailError(saveResult.error)) {
-                toast({
-                  variant: 'destructive',
-                  title: t('providers.dialog.toast.error'),
-                  description: saveResult.error,
-                });
-              }
-            }, 800);
-        } else {
+        const saveResult = await ensureCodexAccountRecord({
+          retainedAccountId: oauthAccountId,
+          ...(isEditing && editAccount ? { editAccountId: editAccount.id } : {}),
+          name: name.trim(),
+          add: addProviderAccount,
+          update: updateProviderAccount,
+        });
+        if (!saveResult.success || !saveResult.accountId) {
+          setOauthStatus('error');
+          setOauthError(saveResult.error ?? 'Failed to retain Codex account');
+          return;
+        }
+        const accountId = saveResult.accountId;
+        setOauthAccountId(accountId);
+        setAccountSaved(true);
+        const result = await window.electronAPI.codexAuthLogin(accountId);
+        if (!result.success) {
           setOauthStatus('error');
           setOauthError(result.error ?? 'Authentication failed');
+        } else {
+          const status = await window.electronAPI.codexAuthStatus(accountId);
+          if (status.success && status.data?.isAuthenticated) {
+            await completeCodexAuthentication({ accountId, ...status.data });
+          }
         }
       } catch (err) {
         setOauthStatus('error');
@@ -344,7 +353,8 @@ export function AddAccountDialog({
       setOauthStatus('error');
       setOauthError(err instanceof Error ? err.message : 'Unexpected error');
     }
-  }, [name, t, toast, isCodexOAuth, isEditing, editAccount, provider, addProviderAccount, updateProviderAccount, handleDuplicateEmailError, onOpenChange, refreshUsageData]);
+  }, [name, t, toast, isCodexOAuth, isEditing, editAccount, addProviderAccount,
+    updateProviderAccount, oauthAccountId, completeCodexAuthentication]);
 
   const handleFallbackTerminal = useCallback(async () => {
     if (!name.trim()) {

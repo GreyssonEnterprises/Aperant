@@ -81,6 +81,8 @@ class ScriptedProcess extends EventEmitter implements CodexJsonlProcess {
               this.reply(request.id, { turn: { id: 'turn-1', status: 'inProgress' } });
             } else if (request.method === 'turn/interrupt') {
               this.reply(request.id, {});
+            } else if (request.method === 'command/exec') {
+              this.reply(request.id, { exitCode: 1, stdout: '', stderr: 'denied' });
             }
           });
         }
@@ -108,6 +110,37 @@ class ScriptedProcess extends EventEmitter implements CodexJsonlProcess {
 }
 
 describe('per-account Codex app-server manager', () => {
+  it('runs a typed sandbox command before account authentication', async () => {
+    let process: ScriptedProcess | undefined;
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: () => ({
+        found: true, path: '/usr/local/bin/codex', version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      spawn: (_path, _args, options) => {
+        process = new ScriptedProcess(options.env.CODEX_HOME);
+        return process;
+      },
+      terminate: vi.fn(),
+    });
+
+    await expect(manager.executeSandboxCommand('account-a', {
+      command: ['/usr/bin/touch', '/worktree/marker'],
+      cwd: '/worktree',
+      timeoutMs: 5_000,
+      outputBytesCap: 4_096,
+      sandboxPolicy: {
+        type: 'workspaceWrite', networkAccess: false, writableRoots: ['/worktree'],
+        excludeTmpdirEnvVar: true, excludeSlashTmp: true,
+      },
+    })).resolves.toEqual({ exitCode: 1, stdout: '', stderr: 'denied' });
+    expect(process?.methods).not.toContain('account/read');
+    expect(await manager.getSandboxRuntimeVersion('account-a')).toBe('0.144.6');
+  });
+
   it('publishes authoritative account lifecycle around retirement and process death', async () => {
     let process: ScriptedProcess | undefined;
     const lifecycle = vi.fn();

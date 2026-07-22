@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { useSettingsStore } from '../../stores/settings-store';
@@ -33,6 +33,7 @@ export function ProviderAccountsList() {
   const [isLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const reauthenticatingCodexIds = useRef(new Set<string>());
 
   // AddAccountDialog state
   const [dialogState, setDialogState] = useState<{
@@ -56,6 +57,19 @@ export function ProviderAccountsList() {
       // Non-fatal
     });
   }, [loadProviderAccounts, checkEnvCredentials]);
+
+  useEffect(() => window.electronAPI.onCodexAuthChanged(async (data) => {
+    if (!data.isAuthenticated || !reauthenticatingCodexIds.current.delete(data.accountId)) return;
+    const account = providerAccounts.find((candidate) => candidate.id === data.accountId);
+    if (!account || account.provider !== 'openai' || account.authType !== 'oauth') return;
+    if (data.email) await updateProviderAccount(account.id, { email: data.email });
+    try {
+      await window.electronAPI.requestAllProfilesUsage?.(true);
+    } catch {
+      // Non-fatal. Usage will refresh on the next polling cycle.
+    }
+    toast({ title: t('providers.toast.reauthSuccess'), description: account.name });
+  }), [providerAccounts, updateProviderAccount, toast, t]);
 
   const allAccounts = providerAccounts;
 
@@ -122,17 +136,14 @@ export function ProviderAccountsList() {
       // Codex OAuth: trigger re-auth flow directly
       try {
         toast({ title: t('providers.toast.reauthStarted') });
-        const result = await window.electronAPI.codexAuthLogin();
-        if (result.success) {
-          if (result.data?.email) {
-            await updateProviderAccount(account.id, { email: result.data.email });
-          }
-          await refreshUsageData();
-          toast({ title: t('providers.toast.reauthSuccess'), description: account.name });
-        } else {
+        reauthenticatingCodexIds.current.add(account.id);
+        const result = await window.electronAPI.codexAuthLogin(account.id);
+        if (!result.success) {
+          reauthenticatingCodexIds.current.delete(account.id);
           toast({ variant: 'destructive', title: t('providers.toast.reauthFailed'), description: result.error ?? '' });
         }
       } catch (err) {
+        reauthenticatingCodexIds.current.delete(account.id);
         toast({ variant: 'destructive', title: t('providers.toast.reauthFailed'), description: err instanceof Error ? err.message : '' });
       }
     } else if (account.claudeProfileId) {

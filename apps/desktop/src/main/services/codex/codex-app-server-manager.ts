@@ -10,6 +10,7 @@ import { createCodexEnvironment } from './codex-environment';
 import { CodexRuntimeError } from './codex-errors';
 import {
   parseAccountReadResponse,
+  parseCommandExecResponse,
   parseLoginStartResponse,
   parseModelListResponse,
   parseThreadResumeResponse,
@@ -17,6 +18,8 @@ import {
   parseTurnStartResponse,
   type CodexAccountReadResponse,
   type CodexLoginStartResponse,
+  type CodexCommandExecParams,
+  type CodexCommandExecResponse,
   type CodexModel,
 } from './codex-app-server-protocol';
 import type {
@@ -63,6 +66,11 @@ export interface CodexAppServerManager extends CodexExecutionManager {
   readAccount(accountId: string): Promise<CodexAccountReadResponse>;
   startLogin(accountId: string): Promise<CodexLoginStartResponse>;
   listModels(accountId: string): Promise<ModelDescriptor[]>;
+  getSandboxRuntimeVersion(accountId: string): Promise<string>;
+  executeSandboxCommand(
+    accountId: string,
+    request: CodexCommandExecParams,
+  ): Promise<CodexCommandExecResponse>;
   shutdown(): Promise<void>;
 }
 
@@ -435,6 +443,15 @@ export function createCodexAppServerManager(
 
   return {
     readAccount,
+    async getSandboxRuntimeVersion(accountId) {
+      return (await getSession(accountId)).runtimeVersion;
+    },
+    async executeSandboxCommand(accountId, request) {
+      const session = await getSession(accountId);
+      const parsed = parseCommandExecResponse(await session.client.request('command/exec', request));
+      if (!parsed) throw new CodexRuntimeError('protocol-error');
+      return parsed;
+    },
     async getRuntimeVersion(accountId) {
       return (await authenticatedSession(accountId)).runtimeVersion;
     },

@@ -5,6 +5,7 @@ import {
   translateCodexNotification,
   type CodexTranslatedEvent,
 } from './codex-event-translator';
+import type { CodexSandboxProbe } from './codex-sandbox-probe';
 
 export interface CodexExecutionThreadOptions {
   cwd: string;
@@ -108,6 +109,7 @@ const CODEX_HOST_OWNERSHIP_INSTRUCTIONS = [
 interface Dependencies {
   manager: CodexExecutionManager;
   store: CodexSessionMetadataStore;
+  sandboxProbe: CodexSandboxProbe;
   cancellationGraceMs?: number;
   canonicalizePath?: (value: string) => Promise<string>;
   now?: () => Date;
@@ -308,6 +310,8 @@ export function createCodexExecutionBackend(dependencies: Dependencies) {
       if (allowedWritePaths.some((writePath) => !isContainedOrEqual(worktreePath, writePath))) {
         throw new Error('Codex writable roots must be inside the task worktree');
       }
+      if (checkpointCancellation(execution)) return;
+      await dependencies.sandboxProbe.verify(config.accountId, worktreePath);
       if (checkpointCancellation(execution)) return;
       const saved = await dependencies.store.read(specDir, config.phase);
       if (checkpointCancellation(execution)) return;

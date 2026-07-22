@@ -776,7 +776,7 @@
       "apiKeyDescription": "Add your API key and configuration",
       "zaiCodingPlanDescription": "Add your Z.AI Coding Plan API key to use GLM models with your subscription",
       "zaiUsageBasedDescription": "Add your Z.AI usage-based API key for pay-per-use access to GLM models",
-      "codexOAuthDescription": "Sign in with your ChatGPT Plus or Pro subscription to use Codex models",
+      "codexOAuthDescription": "Requires an installed Codex CLI. Sign in with ChatGPT Plus or Pro; Aperant keeps each account isolated.",
       "codexAuthenticating": "Opening OpenAI login in your browser...",
       "codexWaiting": "Waiting for browser authentication...",
       "codexSuccess": "Authenticated with OpenAI Codex",

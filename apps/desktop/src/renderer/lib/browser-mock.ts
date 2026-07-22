@@ -238,19 +238,21 @@ const browserMockAPI: ElectronAPI = {
   }),
 
   // Codex OAuth authentication (mock)
-  codexAuthLogin: async () => ({
+  codexAuthLogin: async (_accountId: string) => ({
     success: false,
     error: 'Codex OAuth not available in browser mock'
   }),
 
-  codexAuthStatus: async () => ({
+  codexAuthStatus: async (_accountId: string) => ({
     success: true,
     data: { isAuthenticated: false }
   }),
 
-  codexAuthLogout: async () => ({
+  codexAuthLogout: async (_accountId: string) => ({
     success: true
   }),
+
+  onCodexAuthChanged: (_callback) => () => undefined,
 
   // GitHub API
   github: {

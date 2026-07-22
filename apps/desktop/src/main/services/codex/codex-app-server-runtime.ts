@@ -9,6 +9,10 @@ import { CodexRuntimeError } from './codex-errors';
 let manager: CodexAppServerManager | undefined;
 let state: 'open' | 'shutting-down' | 'closed' = 'open';
 let shutdownPromise: Promise<void> | undefined;
+const accountNotificationListeners = new Set<(
+  accountId: string,
+  method: string,
+) => void>();
 
 type InvalidateCatalog = (
   query: { provider: 'openai'; accountId: string },
@@ -25,8 +29,16 @@ export async function handleCodexNotification(
   _params: unknown,
   invalidate: InvalidateCatalog,
 ): Promise<void> {
+  for (const listener of accountNotificationListeners) listener(accountId, method);
   if (!CATALOG_INVALIDATION_NOTIFICATIONS.has(method)) return;
   await invalidate({ provider: 'openai', accountId });
+}
+
+export function subscribeCodexAccountNotifications(
+  listener: (accountId: string, method: string) => void,
+): () => void {
+  accountNotificationListeners.add(listener);
+  return () => accountNotificationListeners.delete(listener);
 }
 
 export function getCodexAppServerManager(): CodexAppServerManager {
@@ -72,4 +84,5 @@ export function resetCodexAppServerRuntimeForTests(): void {
   manager = undefined;
   state = 'open';
   shutdownPromise = undefined;
+  accountNotificationListeners.clear();
 }

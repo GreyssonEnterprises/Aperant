@@ -278,6 +278,10 @@ export function registerSettingsHandlers(
   agentManager: AgentManager,
   getMainWindow: () => BrowserWindow | null,
   modelCatalog: ModelCatalogService = getModelCatalogService(),
+  retireCodexAccount: (accountId: string) => Promise<void> = async (accountId) => {
+    const { getCodexAppServerManager } = await import('../services/codex/codex-app-server-runtime');
+    await getCodexAppServerManager().retireAccount(accountId);
+  },
 ): void {
   // ============================================
   // Settings Operations
@@ -1030,6 +1034,17 @@ export function registerSettingsHandlers(
         const removed = accounts.find(a => a.id === id);
         if (!removed) {
           return { success: false, error: `Account not found: ${id}` };
+        }
+        if (removed.provider === 'openai' && removed.authType === 'oauth' &&
+          removed.billingModel === 'subscription') {
+          try {
+            await retireCodexAccount(id);
+          } catch {
+            return {
+              success: false,
+              error: 'Codex account process could not be stopped safely',
+            };
+          }
         }
         const filtered = accounts.filter(a => a.id !== id);
         settings.providerAccounts = filtered;

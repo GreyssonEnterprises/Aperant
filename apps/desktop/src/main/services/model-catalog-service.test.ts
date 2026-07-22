@@ -209,6 +209,40 @@ describe('model catalog service', () => {
     expect(newModels.some((model) => model.id === 'claude-old')).toBe(false);
   });
 
+  it('keeps an overlapping replacement refresh registered when the invalidated promise settles', async () => {
+    const path = await cachePath();
+    let resolveOld!: (response: Response) => void;
+    let resolveNew!: (response: Response) => void;
+    const fetch = vi.fn()
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveOld = resolve; }))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveNew = resolve; }));
+    const service = createModelCatalogService({
+      cachePath: path,
+      fetch,
+      now: () => 3_750,
+      readAccounts: () => [account()],
+    });
+
+    const oldRefresh = service.refresh({ provider: 'anthropic', accountId: 'anthropic-account' });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await service.invalidate({ provider: 'anthropic', accountId: 'anthropic-account' });
+    const newRefresh = service.refresh({ provider: 'anthropic', accountId: 'anthropic-account' });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+
+    resolveOld(anthropicResponse('claude-old'));
+    await oldRefresh;
+    const overlappingCaller = service.refresh({
+      provider: 'anthropic', accountId: 'anthropic-account',
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    resolveNew(anthropicResponse('claude-new'));
+    const [models, overlappingModels] = await Promise.all([newRefresh, overlappingCaller]);
+    expect(overlappingModels).toEqual(models);
+    expect(models.some((model) => model.id === 'claude-new')).toBe(true);
+    expect(models.some((model) => model.id === 'claude-old')).toBe(false);
+  });
+
   it('uses bounded exponential backoff then returns bundled fallback', async () => {
     const path = await cachePath();
     const delays: number[] = [];
