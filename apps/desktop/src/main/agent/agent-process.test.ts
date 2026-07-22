@@ -11,14 +11,15 @@ import { EventEmitter } from 'events';
 // Create a mock process object that will be returned by spawn
 function createMockProcess() {
   return {
-    stdout: { on: vi.fn() },
-    stderr: { on: vi.fn() },
+    stdout: { on: vi.fn(), off: vi.fn() },
+    stderr: { on: vi.fn(), off: vi.fn() },
     on: vi.fn((event: string, callback: (code: number) => void) => {
       if (event === 'exit') {
         // Simulate immediate exit with code 0
         setTimeout(() => callback(0), 10);
       }
     }),
+    off: vi.fn(),
     kill: vi.fn()
   };
 }

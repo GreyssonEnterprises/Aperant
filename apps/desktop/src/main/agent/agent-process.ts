@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readFileSync } from 'fs';
@@ -103,11 +103,31 @@ export class AgentProcessManager {
   private events: AgentEvents;
   private emitter: EventEmitter;
   private autoBuildSourcePath: string = '';
+  private ownerListenerCleanups = new WeakMap<object, () => void>();
 
-  private deleteProcessIfCurrentSpawn(taskId: string, spawnId: number): void {
-    if (this.state.getProcess(taskId)?.spawnId === spawnId) {
+  private isCurrentOwner(taskId: string, owner: object, spawnId: number): boolean {
+    const current = this.state.getProcess(taskId);
+    return current?.spawnId === spawnId && (
+      current === owner || current.process === owner || current.worker === owner ||
+      current.workerBridge === owner
+    );
+  }
+
+  private deleteProcessIfCurrentOwner(taskId: string, owner: object, spawnId: number): void {
+    if (this.isCurrentOwner(taskId, owner, spawnId)) {
       this.state.deleteProcess(taskId);
     }
+  }
+
+  private registerOwnerListenerCleanup(owner: object, cleanup: () => void): void {
+    this.ownerListenerCleanups.set(owner, cleanup);
+  }
+
+  private cleanupOwnerListeners(owner: object): void {
+    const cleanup = this.ownerListenerCleanups.get(owner);
+    if (!cleanup) return;
+    this.ownerListenerCleanups.delete(owner);
+    cleanup();
   }
 
   constructor(state: AgentState, events: AgentEvents, emitter: EventEmitter) {
@@ -550,12 +570,13 @@ export class AgentProcessManager {
     // This ensures getRunningTasks() returns the task right away, preventing
     // flaky tests on slower Windows CI where async setup may take longer than
     // vi.waitFor timeout (ACS-392).
-    this.state.addProcess(taskId, {
+    const setupOwner = {
       taskId,
       process: null, // Will be set after spawn() call completes below
       startedAt: new Date(),
       spawnId
-    });
+    };
+    this.state.addProcess(taskId, setupOwner);
 
     const env = this.setupProcessEnvironment(extraEnv);
 
@@ -590,7 +611,7 @@ export class AgentProcessManager {
     // The first element of args is used as the command for backward compatibility with tests.
     const command = args[0] ?? 'echo';
     const commandArgs = args.slice(1);
-    let childProcess;
+    let childProcess: ChildProcess;
     try {
       childProcess = spawn(command, commandArgs, {
         cwd,
@@ -603,12 +624,23 @@ export class AgentProcessManager {
     } catch (err) {
       // spawn() failed synchronously (e.g., command not found, permission denied)
       // Clean up tracking entry and propagate error
-      this.state.deleteProcess(taskId);
-      this.emitter.emit('error', taskId, err instanceof Error ? err.message : String(err), projectId);
+      const isCurrent = this.isCurrentOwner(taskId, setupOwner, spawnId);
+      this.deleteProcessIfCurrentOwner(taskId, setupOwner, spawnId);
+      if (isCurrent) {
+        this.emitter.emit('error', taskId, err instanceof Error ? err.message : String(err), projectId);
+      }
       throw err;
     }
 
     // Update the tracked process with the actual spawned ChildProcess
+    if (!this.isCurrentOwner(taskId, setupOwner, spawnId)) {
+      killProcessGracefully(childProcess, {
+        debugPrefix: '[AgentProcess]',
+        debug: process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development'
+      });
+      this.state.clearKilledSpawn(spawnId);
+      return;
+    }
     this.state.updateProcess(taskId, { process: childProcess });
 
     // Check if this spawn was killed during async setup (before spawn() completed).
@@ -616,19 +648,23 @@ export class AgentProcessManager {
     // Note: wasSpawnKilled() is checked AFTER updateProcess() because killProcess()
     // marks the spawn as killed before deleting the tracking entry.
     //
-    // CRITICAL: The `?? spawnId` fallback is essential here because if killProcess()
-    // was called during the async setup window, the taskId entry may have been deleted
-    // from the process map. In that case, getProcess(taskId) returns undefined, so we
-    // fall back to the local spawnId variable to check if this specific spawn was killed.
-    const currentSpawnId = this.state.getProcess(taskId)?.spawnId ?? spawnId;
-    if (this.state.wasSpawnKilled(currentSpawnId)) {
+    // Exact object and spawn ownership prevent this setup from modifying a newer run.
+    if (!this.isCurrentOwner(taskId, childProcess, spawnId)) {
+      killProcessGracefully(childProcess, {
+        debugPrefix: '[AgentProcess]',
+        debug: process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development'
+      });
+      this.state.clearKilledSpawn(spawnId);
+      return;
+    }
+    if (this.state.wasSpawnKilled(spawnId)) {
       console.log(`[AgentProcess] Task ${taskId} was killed during spawn setup. Terminating newly created process.`);
       killProcessGracefully(childProcess, {
         debugPrefix: '[AgentProcess]',
         debug: process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development'
       });
-      this.state.deleteProcess(taskId);
-      this.state.clearKilledSpawn(currentSpawnId);
+      this.deleteProcessIfCurrentOwner(taskId, childProcess, spawnId);
+      this.state.clearKilledSpawn(spawnId);
       return; // Do not proceed with this spawn
     }
 
@@ -762,15 +798,27 @@ export class AgentProcessManager {
       return remaining;
     };
 
-    childProcess.stdout?.on('data', (data: Buffer) => {
+    const onStdoutData = (data: Buffer) => {
+      if (!this.isCurrentOwner(taskId, childProcess, spawnId)) {
+        return;
+      }
       stdoutBuffer = processBufferedOutput(stdoutBuffer, data.toString('utf-8'));
-    });
+    };
 
-    childProcess.stderr?.on('data', (data: Buffer) => {
+    const onStderrData = (data: Buffer) => {
+      if (!this.isCurrentOwner(taskId, childProcess, spawnId)) {
+        return;
+      }
       stderrBuffer = processBufferedOutput(stderrBuffer, data.toString('utf-8'));
-    });
+    };
 
-    childProcess.on('exit', (code: number | null) => {
+    const onExit = (code: number | null) => {
+      const isCurrent = this.isCurrentOwner(taskId, childProcess, spawnId);
+      this.cleanupOwnerListeners(childProcess);
+      if (!isCurrent) {
+        if (this.state.wasSpawnKilled(spawnId)) this.state.clearKilledSpawn(spawnId);
+        return;
+      }
       if (stdoutBuffer.trim()) {
         this.emitter.emit('log', taskId, stdoutBuffer + '\n', projectId);
         processLog(stdoutBuffer);
@@ -780,7 +828,7 @@ export class AgentProcessManager {
         processLog(stderrBuffer);
       }
 
-      this.state.deleteProcess(taskId);
+      this.deleteProcessIfCurrentOwner(taskId, childProcess, spawnId);
 
       if (this.state.wasSpawnKilled(spawnId)) {
         this.state.clearKilledSpawn(spawnId);
@@ -810,12 +858,18 @@ export class AgentProcessManager {
       }
 
       this.emitter.emit('exit', taskId, code, processType, projectId);
-    });
+    };
 
     // Handle process error
-    childProcess.on('error', (err: Error) => {
+    const onError = (err: Error) => {
+      const isCurrent = this.isCurrentOwner(taskId, childProcess, spawnId);
+      this.cleanupOwnerListeners(childProcess);
+      if (!isCurrent) {
+        if (this.state.wasSpawnKilled(spawnId)) this.state.clearKilledSpawn(spawnId);
+        return;
+      }
       console.error('[AgentProcess] Process error:', err.message);
-      this.state.deleteProcess(taskId);
+      this.deleteProcessIfCurrentOwner(taskId, childProcess, spawnId);
 
       this.emitter.emit('execution-progress', taskId, {
         phase: 'failed',
@@ -827,7 +881,19 @@ export class AgentProcessManager {
       }, projectId);
 
       this.emitter.emit('error', taskId, err.message, projectId);
-    });
+    };
+
+    const cleanupChildListeners = () => {
+      childProcess.stdout?.off('data', onStdoutData);
+      childProcess.stderr?.off('data', onStderrData);
+      childProcess.off('exit', onExit);
+      childProcess.off('error', onError);
+    };
+    this.registerOwnerListenerCleanup(childProcess, cleanupChildListeners);
+    childProcess.stdout?.on('data', onStdoutData);
+    childProcess.stderr?.on('data', onStderrData);
+    childProcess.on('exit', onExit);
+    childProcess.on('error', onError);
   }
 
   /**
@@ -855,48 +921,70 @@ export class AgentProcessManager {
     const spawnId = this.state.generateSpawnId();
 
     // Add to tracking immediately (same pattern as spawnProcess)
-    this.state.addProcess(taskId, {
+    const setupOwner = {
       taskId,
       process: null, // No ChildProcess for worker threads
       startedAt: new Date(),
       spawnId,
       worker: null, // Will be set after bridge.spawn()
       workerBridge: null,
-    });
+    };
+    this.state.addProcess(taskId, setupOwner);
 
     // Check if killed during setup
     if (this.state.wasSpawnKilled(spawnId)) {
-      this.state.deleteProcess(taskId);
+      this.deleteProcessIfCurrentOwner(taskId, setupOwner, spawnId);
       this.state.clearKilledSpawn(spawnId);
       return;
     }
 
     const bridge = new WorkerBridge();
+    if (!this.isCurrentOwner(taskId, setupOwner, spawnId)) {
+      this.state.clearKilledSpawn(spawnId);
+      return;
+    }
+    this.state.updateProcess(taskId, { workerBridge: bridge });
+    if (!this.isCurrentOwner(taskId, bridge, spawnId)) return;
 
     const isDebug = ['true', '1', 'yes', 'on'].includes(process.env.DEBUG?.toLowerCase() ?? '');
 
+    const isCurrentBridgeEvent = (tId: string): boolean => (
+      tId === taskId && this.isCurrentOwner(taskId, bridge, spawnId)
+    );
+    const rejectStaleBridgeEvent = (tId: string): boolean => !isCurrentBridgeEvent(tId);
+
     // Forward all bridge events to the main emitter (matching existing event contract)
-    bridge.on('log', (tId: string, log: string, pId?: string) => {
+    const onLog = (tId: string, log: string, pId?: string) => {
+      if (rejectStaleBridgeEvent(tId)) return;
       this.emitter.emit('log', tId, log, pId);
       if (isDebug) {
         console.log(`[Agent:${tId}] ${log}`);
       }
-    });
+    };
 
-    bridge.on('error', (tId: string, error: string, pId?: string) => {
+    const onError = (tId: string, error: string, pId?: string) => {
+      if (rejectStaleBridgeEvent(tId)) return;
       this.emitter.emit('error', tId, error, pId);
-    });
+    };
 
-    bridge.on('execution-progress', (tId: string, progress: ExecutionProgressData, pId?: string) => {
+    const onProgress = (tId: string, progress: ExecutionProgressData, pId?: string) => {
+      if (rejectStaleBridgeEvent(tId)) return;
       this.emitter.emit('execution-progress', tId, progress, pId);
-    });
+    };
 
-    bridge.on('task-event', (tId: string, event: unknown, pId?: string) => {
+    const onTaskEvent = (tId: string, event: unknown, pId?: string) => {
+      if (rejectStaleBridgeEvent(tId)) return;
       this.emitter.emit('task-event', tId, event, pId);
-    });
+    };
 
-    bridge.on('exit', (tId: string, code: number | null, pType: ProcessType, pId?: string) => {
-      this.state.deleteProcess(tId);
+    const onExit = (tId: string, code: number | null, pType: ProcessType, pId?: string) => {
+      const isCurrent = isCurrentBridgeEvent(tId);
+      this.cleanupOwnerListeners(bridge);
+      if (!isCurrent) {
+        if (this.state.wasSpawnKilled(spawnId)) this.state.clearKilledSpawn(spawnId);
+        return;
+      }
+      this.deleteProcessIfCurrentOwner(taskId, bridge, spawnId);
 
       if (this.state.wasSpawnKilled(spawnId)) {
         this.state.clearKilledSpawn(spawnId);
@@ -917,29 +1005,52 @@ export class AgentProcessManager {
       }
 
       this.emitter.emit('exit', tId, code, pType, pId);
-    });
+    };
+
+    const cleanupBridgeListeners = () => {
+      bridge.off('log', onLog);
+      bridge.off('error', onError);
+      bridge.off('execution-progress', onProgress);
+      bridge.off('task-event', onTaskEvent);
+      bridge.off('exit', onExit);
+    };
+    this.registerOwnerListenerCleanup(bridge, cleanupBridgeListeners);
+    bridge.on('log', onLog);
+    bridge.on('error', onError);
+    bridge.on('execution-progress', onProgress);
+    bridge.on('task-event', onTaskEvent);
+    bridge.on('exit', onExit);
 
     // Spawn the worker via the bridge
     try {
       bridge.spawn(executorConfig);
     } catch (err) {
-      this.state.deleteProcess(taskId);
-      this.emitter.emit('error', taskId, err instanceof Error ? err.message : String(err), projectId);
+      const isCurrent = this.isCurrentOwner(taskId, bridge, spawnId);
+      this.cleanupOwnerListeners(bridge);
+      this.deleteProcessIfCurrentOwner(taskId, bridge, spawnId);
+      if (isCurrent) {
+        this.emitter.emit('error', taskId, err instanceof Error ? err.message : String(err), projectId);
+      }
       throw err;
     }
 
     // Store the worker reference for kill support
+    if (!this.isCurrentOwner(taskId, bridge, spawnId)) {
+      this.cleanupOwnerListeners(bridge);
+      await bridge.terminate();
+      return;
+    }
     this.state.updateProcess(taskId, {
       worker: bridge.workerInstance,
       workerBridge: bridge,
     });
 
     // Check if killed during bridge setup
-    const currentSpawnId = this.state.getProcess(taskId)?.spawnId ?? spawnId;
-    if (this.state.wasSpawnKilled(currentSpawnId)) {
+    if (this.state.wasSpawnKilled(spawnId)) {
       await bridge.terminate();
-      this.state.deleteProcess(taskId);
-      this.state.clearKilledSpawn(currentSpawnId);
+      this.cleanupOwnerListeners(bridge);
+      this.deleteProcessIfCurrentOwner(taskId, bridge, spawnId);
+      this.state.clearKilledSpawn(spawnId);
       return;
     }
 
@@ -966,18 +1077,23 @@ export class AgentProcessManager {
     // just remove from tracking. The spawn() call will still complete, but the spawned process
     // will be terminated by the post-spawn wasSpawnKilled() check (see spawnProcess() after updateProcess).
     if (!agentProcess.process && !agentProcess.worker && !agentProcess.workerBridge) {
-      this.deleteProcessIfCurrentSpawn(taskId, agentProcess.spawnId);
+      this.deleteProcessIfCurrentOwner(taskId, agentProcess, agentProcess.spawnId);
       return true;
     }
 
     // Handle worker thread termination
     if (agentProcess.workerBridge) {
       const finalization = await agentProcess.workerBridge.terminate();
+      const isCurrent = this.isCurrentOwner(taskId, agentProcess, agentProcess.spawnId);
+      this.cleanupOwnerListeners(agentProcess.workerBridge);
       if (finalization?.error?.retryable) {
-        this.emitter.emit('error', taskId, finalization.error.message, undefined);
+        if (isCurrent) {
+          this.emitter.emit('error', taskId, finalization.error.message, undefined);
+        }
         return false;
       }
-      this.deleteProcessIfCurrentSpawn(taskId, agentProcess.spawnId);
+      this.deleteProcessIfCurrentOwner(taskId, agentProcess, agentProcess.spawnId);
+      this.state.clearKilledSpawn(agentProcess.spawnId);
       return true;
     }
 
@@ -987,7 +1103,8 @@ export class AgentProcessManager {
       } catch {
         // Worker may already be terminated
       }
-      this.deleteProcessIfCurrentSpawn(taskId, agentProcess.spawnId);
+      this.deleteProcessIfCurrentOwner(taskId, agentProcess, agentProcess.spawnId);
+      this.state.clearKilledSpawn(agentProcess.spawnId);
       return true;
     }
 
@@ -997,9 +1114,11 @@ export class AgentProcessManager {
         debugPrefix: '[AgentProcess]',
         debug: process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development'
       });
+      this.cleanupOwnerListeners(agentProcess.process);
     }
 
-    this.deleteProcessIfCurrentSpawn(taskId, agentProcess.spawnId);
+    this.deleteProcessIfCurrentOwner(taskId, agentProcess, agentProcess.spawnId);
+    this.state.clearKilledSpawn(agentProcess.spawnId);
     return true;
   }
 

@@ -9,6 +9,26 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import type { AgentExecutorConfig } from '../../main/ai/agent/types';
 
+class MockChildProcess extends EventEmitter {
+  stdout = new EventEmitter();
+  stderr = new EventEmitter();
+  kill = vi.fn();
+}
+
+const createdChildren: MockChildProcess[] = [];
+
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return {
+    ...actual,
+    spawn: vi.fn(() => {
+      const child = new MockChildProcess();
+      createdChildren.push(child);
+      return child;
+    }),
+  };
+});
+
 // =============================================================================
 // Mock WorkerBridge
 // =============================================================================
@@ -189,11 +209,13 @@ describe('WorkerBridge Spawn Integration', () => {
     vi.clearAllMocks();
     // Clear bridge tracking array
     createdBridges.length = 0;
+    createdChildren.length = 0;
   });
 
   afterEach(() => {
     vi.clearAllMocks();
     createdBridges.length = 0;
+    createdChildren.length = 0;
   });
 
   describe('AgentManager', () => {
@@ -372,6 +394,26 @@ describe('WorkerBridge Spawn Integration', () => {
       expect(exitHandler).toHaveBeenCalledWith('task-1', 0, 'spec-creation', undefined);
     }, 15000);
 
+    it('should forward current bridge progress and task events', async () => {
+      const { AgentManager } = await import('../../main/agent');
+      const manager = new AgentManager();
+      const progress = vi.fn();
+      const taskEvent = vi.fn();
+      manager.on('execution-progress', progress);
+      manager.on('task-event', taskEvent);
+      await manager.startSpecCreation('task-1', '/project', 'Test');
+      progress.mockClear();
+
+      const bridge = createdBridges[0];
+      bridge.emit('execution-progress', 'task-1', {
+        phase: 'coding', phaseProgress: 75, overallProgress: 75,
+      });
+      bridge.emit('task-event', 'task-1', { type: 'current' });
+
+      expect(progress).toHaveBeenCalledOnce();
+      expect(taskEvent).toHaveBeenCalledOnce();
+    }, 15000);
+
     it('should report task as running after spawn', async () => {
       const { AgentManager } = await import('../../main/agent');
 
@@ -393,6 +435,7 @@ describe('WorkerBridge Spawn Integration', () => {
 
       expect(result).toBe(true);
       expect(manager.isRunning('task-1')).toBe(false);
+      expect(createdBridges[0].eventNames()).toEqual([]);
     }, 15000);
 
     it('should return false when killing non-existent task', async () => {
@@ -458,6 +501,164 @@ describe('WorkerBridge Spawn Integration', () => {
       const bridge = createdBridges[0];
       const config: AgentExecutorConfig = bridge.spawn.mock.calls[0][0];
       expect(config.projectId).toBe('project-42');
+    }, 15000);
+
+    it('drops delayed callbacks from a replaced bridge and keeps the new owner', async () => {
+      const { AgentManager } = await import('../../main/agent');
+      const manager = new AgentManager();
+      const progress = vi.fn();
+      const error = vi.fn();
+      const taskEvent = vi.fn();
+      const exit = vi.fn();
+      manager.on('execution-progress', progress);
+      manager.on('error', error);
+      manager.on('task-event', taskEvent);
+      manager.on('exit', exit);
+
+      await manager.startSpecCreation('task-1', '/project', 'Old');
+      const oldBridge = createdBridges[0];
+      const state = (manager as unknown as {
+        state: { addProcess: (taskId: string, process: object) => void; getProcess: (taskId: string) => unknown };
+      }).state;
+      const newerOwner = {
+        taskId: 'task-1', process: null, worker: null,
+        workerBridge: { terminate: vi.fn().mockResolvedValue(undefined) },
+        startedAt: new Date(), spawnId: 999,
+      };
+      state.addProcess('task-1', newerOwner);
+      progress.mockClear();
+
+      oldBridge.emit('execution-progress', 'task-1', {
+        phase: 'coding', phaseProgress: 50, overallProgress: 50,
+      });
+      oldBridge.emit('error', 'task-1', 'stale error');
+      oldBridge.emit('task-event', 'task-1', { type: 'stale' });
+      oldBridge.emit('exit', 'task-1', 1, 'spec-creation');
+
+      expect(progress).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+      expect(taskEvent).not.toHaveBeenCalled();
+      expect(exit).not.toHaveBeenCalled();
+      expect(manager.isRunning('task-1')).toBe(true);
+      expect(state.getProcess('task-1')).toBe(newerOwner);
+      expect(oldBridge.eventNames()).toEqual([]);
+    }, 15000);
+
+    it('keeps a newer owner when an old bridge exits during awaited cancellation', async () => {
+      const { AgentManager } = await import('../../main/agent');
+      const manager = new AgentManager();
+      const exit = vi.fn();
+      manager.on('exit', exit);
+      await manager.startSpecCreation('task-1', '/project', 'Old');
+      const oldBridge = createdBridges[0];
+      let settle!: () => void;
+      oldBridge.terminate = vi.fn(() => new Promise<void>((resolve) => { settle = resolve; }));
+
+      const killing = manager.killTask('task-1');
+      await Promise.resolve();
+      const state = (manager as unknown as {
+        state: { addProcess: (taskId: string, process: object) => void; getProcess: (taskId: string) => unknown };
+      }).state;
+      const newerOwner = {
+        taskId: 'task-1', process: null, worker: null,
+        workerBridge: { terminate: vi.fn().mockResolvedValue(undefined) },
+        startedAt: new Date(), spawnId: 999,
+      };
+      state.addProcess('task-1', newerOwner);
+
+      oldBridge.emit('exit', 'task-1', 0, 'spec-creation');
+      expect(exit).not.toHaveBeenCalled();
+      expect(state.getProcess('task-1')).toBe(newerOwner);
+      settle();
+      await expect(killing).resolves.toBe(true);
+      expect(state.getProcess('task-1')).toBe(newerOwner);
+      expect(oldBridge.eventNames()).toEqual([]);
+    }, 15000);
+
+    it('drops delayed child output, errors, and exit after child replacement', async () => {
+      const { AgentManager } = await import('../../main/agent');
+      const manager = new AgentManager();
+      const log = vi.fn();
+      const error = vi.fn();
+      const taskEvent = vi.fn();
+      const exit = vi.fn();
+      manager.on('log', log);
+      manager.on('error', error);
+      manager.on('task-event', taskEvent);
+      manager.on('exit', exit);
+      const processManager = (manager as unknown as {
+        processManager: { spawnProcess: (...args: unknown[]) => Promise<void> };
+      }).processManager;
+
+      await processManager.spawnProcess('task-child', '/project', ['old'], {}, 'task-execution');
+      const oldChild = createdChildren[0];
+      const state = (manager as unknown as {
+        state: { addProcess: (taskId: string, process: object) => void; getProcess: (taskId: string) => unknown };
+      }).state;
+      const newerChild = new MockChildProcess();
+      const newerOwner = {
+        taskId: 'task-child', process: newerChild, worker: null, workerBridge: null,
+        startedAt: new Date(), spawnId: 999,
+      };
+      state.addProcess('task-child', newerOwner);
+      log.mockClear();
+
+      const payload = JSON.stringify({
+        type: 'status', taskId: 'task-child', specId: 'spec-1', projectId: 'project-1',
+        timestamp: new Date().toISOString(), eventId: 'event-1', sequence: 1,
+      });
+      oldChild.stdout.emit('data', Buffer.from(`__TASK_EVENT__:${payload}\n`));
+      oldChild.stderr.emit('data', Buffer.from('stale stderr\n'));
+      oldChild.emit('error', new Error('stale child error'));
+      oldChild.emit('exit', 1);
+
+      expect(log).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+      expect(taskEvent).not.toHaveBeenCalled();
+      expect(exit).not.toHaveBeenCalled();
+      expect(manager.isRunning('task-child')).toBe(true);
+      expect(state.getProcess('task-child')).toBe(newerOwner);
+      expect(oldChild.eventNames()).toEqual([]);
+      expect(oldChild.stdout.eventNames()).toEqual([]);
+      expect(oldChild.stderr.eventNames()).toEqual([]);
+
+      await processManager.spawnProcess('task-child', '/project', ['new'], {}, 'task-execution');
+      const newChild = createdChildren[1];
+      newChild.stdout.emit('data', Buffer.from(`__TASK_EVENT__:${payload}\n`));
+      expect(log).toHaveBeenCalledOnce();
+      expect(taskEvent).toHaveBeenCalledOnce();
+      newChild.emit('exit', 0);
+      expect(exit).toHaveBeenCalledOnce();
+      expect(manager.isRunning('task-child')).toBe(false);
+    }, 15000);
+
+    it('keeps a newer child owner when the old child exits late', async () => {
+      const { AgentManager } = await import('../../main/agent');
+      const manager = new AgentManager();
+      const exit = vi.fn();
+      manager.on('exit', exit);
+      const processManager = (manager as unknown as {
+        processManager: { spawnProcess: (...args: unknown[]) => Promise<void> };
+      }).processManager;
+      const state = (manager as unknown as {
+        state: { addProcess: (taskId: string, process: object) => void; getProcess: (taskId: string) => unknown };
+      }).state;
+
+      await processManager.spawnProcess('task-child', '/project', ['old'], {}, 'task-execution');
+      const oldChild = createdChildren[0];
+      const newerOwner = {
+        taskId: 'task-child', process: new MockChildProcess(), worker: null, workerBridge: null,
+        startedAt: new Date(), spawnId: 999,
+      };
+      state.addProcess('task-child', newerOwner);
+
+      oldChild.emit('exit', 1);
+
+      expect(exit).not.toHaveBeenCalled();
+      expect(state.getProcess('task-child')).toBe(newerOwner);
+      expect(oldChild.eventNames()).toEqual([]);
+      expect(oldChild.stdout.eventNames()).toEqual([]);
+      expect(oldChild.stderr.eventNames()).toEqual([]);
     }, 15000);
   });
 });
