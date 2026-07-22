@@ -88,6 +88,7 @@ Object.defineProperty(window, 'electronAPI', {
     onAppUpdateDownloaded: vi.fn(),
     requestAllProfilesUsage: vi.fn().mockResolvedValue({ success: true, data: { allProfiles: [] } }),
     onAllProfilesUsageUpdated: vi.fn(() => vi.fn()),
+    onCodexAuthChanged: vi.fn(() => vi.fn()),
   },
   writable: true
 });

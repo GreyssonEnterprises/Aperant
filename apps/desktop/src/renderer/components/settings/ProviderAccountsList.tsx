@@ -17,6 +17,8 @@ import {
   AlertDialogTitle
 } from '../ui/alert-dialog';
 import type { BillingModel, BuiltinProvider, ProviderAccount, ProviderCategory } from '@shared/types/provider-account';
+import type { CodexAuthChangedEvent } from '@shared/types/ipc';
+import { matchesCodexAuthCompletion } from './codex-account-onboarding';
 
 export function ProviderAccountsList() {
   const { t } = useTranslation('settings');
@@ -33,7 +35,7 @@ export function ProviderAccountsList() {
   const [isLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const reauthenticatingCodexIds = useRef(new Set<string>());
+  const reauthenticatingCodexIds = useRef(new Map<string, string>());
 
   // AddAccountDialog state
   const [dialogState, setDialogState] = useState<{
@@ -58,18 +60,27 @@ export function ProviderAccountsList() {
     });
   }, [loadProviderAccounts, checkEnvCredentials]);
 
-  useEffect(() => window.electronAPI.onCodexAuthChanged(async (data) => {
-    if (!data.isAuthenticated || !reauthenticatingCodexIds.current.delete(data.accountId)) return;
+  const completeCodexReauthentication = useCallback(async (data: CodexAuthChangedEvent) => {
+    const loginId = reauthenticatingCodexIds.current.get(data.accountId) ?? null;
+    if (!matchesCodexAuthCompletion(data, data.accountId, loginId)) return;
+    reauthenticatingCodexIds.current.delete(data.accountId);
     const account = providerAccounts.find((candidate) => candidate.id === data.accountId);
     if (!account || account.provider !== 'openai' || account.authType !== 'oauth') return;
-    if (data.email) await updateProviderAccount(account.id, { email: data.email });
+    if (!data.success || data.status !== 'authenticated') {
+      toast({ variant: 'destructive', title: t('providers.toast.reauthFailed') });
+      return;
+    }
     try {
       await window.electronAPI.requestAllProfilesUsage?.(true);
     } catch {
       // Non-fatal. Usage will refresh on the next polling cycle.
     }
     toast({ title: t('providers.toast.reauthSuccess'), description: account.name });
-  }), [providerAccounts, updateProviderAccount, toast, t]);
+  }, [providerAccounts, toast, t]);
+
+  useEffect(() => window.electronAPI.onCodexAuthChanged((data) => {
+    void completeCodexReauthentication(data);
+  }), [completeCodexReauthentication]);
 
   const allAccounts = providerAccounts;
 
@@ -136,11 +147,15 @@ export function ProviderAccountsList() {
       // Codex OAuth: trigger re-auth flow directly
       try {
         toast({ title: t('providers.toast.reauthStarted') });
-        reauthenticatingCodexIds.current.add(account.id);
         const result = await window.electronAPI.codexAuthLogin(account.id);
-        if (!result.success) {
+        if (!result.success || !result.data) {
           reauthenticatingCodexIds.current.delete(account.id);
           toast({ variant: 'destructive', title: t('providers.toast.reauthFailed'), description: result.error ?? '' });
+        } else {
+          reauthenticatingCodexIds.current.set(account.id, result.data.loginId);
+          if (result.data.completion) {
+            await completeCodexReauthentication(result.data.completion);
+          }
         }
       } catch (err) {
         reauthenticatingCodexIds.current.delete(account.id);
@@ -164,7 +179,7 @@ export function ProviderAccountsList() {
         toast({ variant: 'destructive', title: t('providers.toast.reauthFailed'), description: err instanceof Error ? err.message : '' });
       }
     }
-  }, [toast, t, updateProviderAccount]);
+  }, [toast, t, updateProviderAccount, completeCodexReauthentication]);
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;

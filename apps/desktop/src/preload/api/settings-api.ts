@@ -4,7 +4,8 @@ import type {
   AppSettings,
   IPCResult,
   ToolDetectionResult,
-  ProviderAccount
+  ProviderAccount,
+  CodexAuthChangedEvent
 } from '../../shared/types';
 
 export interface SettingsAPI {
@@ -46,10 +47,10 @@ export interface SettingsAPI {
   checkEnvCredentials: () => Promise<IPCResult<Record<string, boolean>>>;
 
   // Codex OAuth authentication
-  codexAuthLogin: (accountId: string) => Promise<{ success: boolean; data?: { type: 'chatgpt' | 'chatgptDeviceCode'; loginId: string; userCode?: string }; error?: string }>;
+  codexAuthLogin: (accountId: string) => Promise<{ success: boolean; data?: { type: 'chatgpt' | 'chatgptDeviceCode'; loginId: string; userCode?: string; completion?: CodexAuthChangedEvent }; error?: string }>;
   codexAuthStatus: (accountId: string) => Promise<{ success: boolean; data?: { isAuthenticated: boolean; email?: string; planType?: string }; error?: string }>;
   codexAuthLogout: (accountId: string) => Promise<{ success: boolean; error?: string }>;
-  onCodexAuthChanged: (callback: (data: { accountId: string; isAuthenticated: boolean; email?: string; planType?: string }) => void) => () => void;
+  onCodexAuthChanged: (callback: (data: CodexAuthChangedEvent) => void) => () => void;
 }
 
 export const createSettingsAPI = (): SettingsAPI => ({
@@ -123,7 +124,7 @@ export const createSettingsAPI = (): SettingsAPI => ({
   onCodexAuthChanged: (callback) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
-      data: { accountId: string; isAuthenticated: boolean; email?: string; planType?: string },
+      data: CodexAuthChangedEvent,
     ) => callback(data);
     ipcRenderer.on(IPC_CHANNELS.CODEX_AUTH_CHANGED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.CODEX_AUTH_CHANGED, handler);

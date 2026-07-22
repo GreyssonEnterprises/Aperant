@@ -8,6 +8,7 @@ import {
   parseLoginStartResponse,
   parseModelListResponse,
   parseCommandExecResponse,
+  parseLoginCompletedNotification,
 } from './codex-app-server-protocol';
 
 describe('Codex app-server protocol validation', () => {
@@ -98,5 +99,16 @@ describe('Codex app-server protocol validation', () => {
     });
     expect(parseCommandExecResponse({ exitCode: 1.5, stdout: '', stderr: '' })).toBeNull();
     expect(parseCommandExecResponse({ exitCode: 0, stdout: 42, stderr: '' })).toBeNull();
+  });
+
+  it('accepts only correlatable login completion notifications', () => {
+    expect(parseLoginCompletedNotification({ loginId: 'login-1', success: true })).toEqual({
+      loginId: 'login-1', success: true,
+    });
+    expect(parseLoginCompletedNotification({
+      loginId: 'login-1', success: false, error: 'private provider details',
+    })).toEqual({ loginId: 'login-1', success: false });
+    expect(parseLoginCompletedNotification({ loginId: null, success: true })).toBeNull();
+    expect(parseLoginCompletedNotification({ loginId: 'login-1', success: 'yes' })).toBeNull();
   });
 });

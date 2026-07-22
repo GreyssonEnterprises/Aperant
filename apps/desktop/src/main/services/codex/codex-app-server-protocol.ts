@@ -2,6 +2,7 @@
  * Pinned stable Codex app-server protocol subset for codex-cli 0.144.x.
  * Unknown fields are intentionally tolerated for forward compatibility.
  */
+import type { CodexWorkspaceWritePolicy } from './codex-sandbox-policy';
 
 export interface CodexInitializeParams {
   clientInfo: { name: string; title?: string; version: string };
@@ -37,6 +38,11 @@ export type CodexLoginStartResponse =
       userCode: string;
       verificationUrl: string;
     };
+
+export interface CodexLoginCompletedNotification {
+  loginId: string;
+  success: boolean;
+}
 
 export interface CodexModel {
   id: string;
@@ -99,13 +105,7 @@ export interface CodexTurnStartParams {
   effort?: string;
   outputSchema?: unknown;
   approvalPolicy: 'never';
-  sandboxPolicy: {
-    type: 'workspaceWrite';
-    networkAccess: false;
-    writableRoots: string[];
-    excludeTmpdirEnvVar: true;
-    excludeSlashTmp: true;
-  };
+  sandboxPolicy: CodexWorkspaceWritePolicy;
 }
 
 export interface CodexTurnStartResponse {
@@ -122,13 +122,7 @@ export interface CodexCommandExecParams {
   cwd: string;
   timeoutMs: number;
   outputBytesCap: number;
-  sandboxPolicy: {
-    type: 'workspaceWrite';
-    networkAccess: false;
-    writableRoots: string[];
-    excludeTmpdirEnvVar: true;
-    excludeSlashTmp: true;
-  };
+  sandboxPolicy: CodexWorkspaceWritePolicy;
 }
 
 export interface CodexCommandExecResponse {
@@ -212,6 +206,14 @@ export function parseLoginStartResponse(value: unknown): CodexLoginStartResponse
     isSafeLoginUrl(value.verificationUrl)
   ) return value as unknown as CodexLoginStartResponse;
   return null;
+}
+
+export function parseLoginCompletedNotification(
+  value: unknown,
+): CodexLoginCompletedNotification | null {
+  if (!isRecord(value) || !hasNonEmptyStrings(value, ['loginId']) ||
+    typeof value.success !== 'boolean') return null;
+  return { loginId: value.loginId as string, success: value.success };
 }
 
 export function parseModelListResponse(value: unknown): CodexModelListResponse | null {

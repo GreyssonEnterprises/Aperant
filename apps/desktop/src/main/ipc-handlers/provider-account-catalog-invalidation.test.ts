@@ -1,12 +1,14 @@
+import { writeFileSync } from 'fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelCatalogService } from '../services/model-catalog-service';
 import type { ProviderAccount } from '@shared/types/provider-account';
 
 type IpcHandler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
-const { handlers, settingsState, retireCodexAccount } = vi.hoisted(() => ({
+const { handlers, settingsState, retireCodexAccount, reactivateCodexAccount } = vi.hoisted(() => ({
   handlers: new Map<string, IpcHandler>(),
   settingsState: { current: {} as Record<string, unknown> },
-  retireCodexAccount: vi.fn(async () => undefined),
+  retireCodexAccount: vi.fn<(accountId: string) => Promise<void>>(async () => undefined),
+  reactivateCodexAccount: vi.fn(() => undefined),
 }));
 
 vi.mock('electron', () => ({
@@ -75,7 +77,13 @@ describe('provider account catalog invalidation', () => {
     vi.clearAllMocks();
     handlers.clear();
     settingsState.current = {};
-    registerSettingsHandlers({} as never, () => null, catalog, retireCodexAccount);
+    registerSettingsHandlers(
+      {} as never,
+      () => null,
+      catalog,
+      retireCodexAccount,
+      reactivateCodexAccount,
+    );
   });
 
   it('invalidates the provider when an account is created', async () => {
@@ -135,5 +143,64 @@ describe('provider account catalog invalidation', () => {
       error: 'Codex account process could not be stopped safely',
     });
     expect(catalog.invalidate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['provider', { provider: 'anthropic' }],
+    ['authentication mode', { authType: 'api-key' }],
+    ['billing model', { billingModel: 'pay-per-use' }],
+  ])('rejects immutable %s changes without retiring or writing', async (_name, updates) => {
+    settingsState.current = { providerAccounts: [account({
+      provider: 'openai', authType: 'oauth', billingModel: 'subscription', apiKey: undefined,
+    })] };
+    const handler = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_UPDATE);
+
+    await expect(handler?.({}, 'account-id', updates)).resolves.toEqual({
+      success: false,
+      error: 'Provider, authentication mode, and billing model cannot be changed',
+    });
+    expect(retireCodexAccount).not.toHaveBeenCalled();
+    expect(writeFileSync).not.toHaveBeenCalled();
+  });
+
+  it('fences and retires an active Codex account before a transport-affecting update', async () => {
+    settingsState.current = { providerAccounts: [account({
+      provider: 'openai', authType: 'oauth', billingModel: 'subscription', apiKey: undefined,
+    })] };
+    let releaseRetirement!: () => void;
+    retireCodexAccount.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      releaseRetirement = resolve;
+    }));
+    const handler = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_UPDATE);
+
+    const update = handler?.({}, 'account-id', { baseUrl: 'https://new.example.test' });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(retireCodexAccount).toHaveBeenCalledWith('account-id');
+    expect(writeFileSync).not.toHaveBeenCalled();
+    expect(reactivateCodexAccount).not.toHaveBeenCalled();
+
+    releaseRetirement();
+    await expect(update).resolves.toMatchObject({ success: true });
+    expect(writeFileSync).toHaveBeenCalledOnce();
+    expect(reactivateCodexAccount).toHaveBeenCalledWith('account-id');
+    expect(vi.mocked(writeFileSync).mock.invocationCallOrder[0]).toBeLessThan(
+      reactivateCodexAccount.mock.invocationCallOrder[0] as number,
+    );
+  });
+
+  it('retains the Codex record and quarantine when update retirement fails', async () => {
+    settingsState.current = { providerAccounts: [account({
+      provider: 'openai', authType: 'oauth', billingModel: 'subscription', apiKey: undefined,
+    })] };
+    retireCodexAccount.mockRejectedValueOnce(new Error('private process failure'));
+    const handler = handlers.get(IPC_CHANNELS.PROVIDER_ACCOUNTS_UPDATE);
+
+    await expect(handler?.({}, 'account-id', { baseUrl: 'https://new.example.test' }))
+      .resolves.toEqual({
+        success: false,
+        error: 'Codex account process could not be stopped safely',
+      });
+    expect(writeFileSync).not.toHaveBeenCalled();
+    expect(reactivateCodexAccount).not.toHaveBeenCalled();
   });
 });

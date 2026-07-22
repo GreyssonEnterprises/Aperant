@@ -6,6 +6,10 @@ import {
   type CodexTranslatedEvent,
 } from './codex-event-translator';
 import type { CodexSandboxProbe } from './codex-sandbox-probe';
+import {
+  buildCodexWorkspaceWritePolicy,
+  type CodexWorkspaceWritePolicy,
+} from './codex-sandbox-policy';
 
 export interface CodexExecutionThreadOptions {
   cwd: string;
@@ -26,13 +30,7 @@ export interface CodexExecutionTurnOptions {
   reasoningEffort?: string;
   outputSchema?: unknown;
   approvalPolicy: 'never';
-  sandboxPolicy: {
-    type: 'workspaceWrite';
-    networkAccess: false;
-    writableRoots: string[];
-    excludeTmpdirEnvVar: true;
-    excludeSlashTmp: true;
-  };
+  sandboxPolicy: CodexWorkspaceWritePolicy;
 }
 
 export interface CodexExecutionManager {
@@ -109,7 +107,7 @@ const CODEX_HOST_OWNERSHIP_INSTRUCTIONS = [
 interface Dependencies {
   manager: CodexExecutionManager;
   store: CodexSessionMetadataStore;
-  sandboxProbe: CodexSandboxProbe;
+  sandboxProbe: Pick<CodexSandboxProbe, 'verify'>;
   cancellationGraceMs?: number;
   canonicalizePath?: (value: string) => Promise<string>;
   now?: () => Date;
@@ -392,13 +390,7 @@ export function createCodexExecutionBackend(dependencies: Dependencies) {
         ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}),
         ...(config.outputSchema ? { outputSchema: config.outputSchema } : {}),
         approvalPolicy: 'never',
-        sandboxPolicy: {
-          type: 'workspaceWrite',
-          networkAccess: false,
-          writableRoots: allowedWritePaths,
-          excludeTmpdirEnvVar: true,
-          excludeSlashTmp: true,
-        },
+        sandboxPolicy: buildCodexWorkspaceWritePolicy(allowedWritePaths),
       });
       execution.turnId = turn.turnId;
       for (const [method, params] of pendingEvents) {

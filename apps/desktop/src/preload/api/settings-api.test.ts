@@ -32,11 +32,13 @@ describe('Codex authentication preload boundary', () => {
     );
     const handler = vi.mocked(ipcRenderer.on).mock.calls[0]?.[1] as (
       event: unknown,
-      data: { accountId: string; isAuthenticated: boolean; email?: string },
+      data: { accountId: string; loginId: string; success: boolean; status: 'authenticated' },
     ) => void;
-    handler({}, { accountId: 'account-a', isAuthenticated: true, email: 'user@example.com' });
+    handler({}, {
+      accountId: 'account-a', loginId: 'login-1', success: true, status: 'authenticated',
+    });
     expect(callback).toHaveBeenCalledWith({
-      accountId: 'account-a', isAuthenticated: true, email: 'user@example.com',
+      accountId: 'account-a', loginId: 'login-1', success: true, status: 'authenticated',
     });
     unsubscribe();
     expect(ipcRenderer.removeListener).toHaveBeenCalledWith(

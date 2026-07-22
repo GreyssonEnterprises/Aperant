@@ -155,6 +155,52 @@ describe('Codex app-server JSONL client', () => {
     await expect(exitedRequest).rejects.toMatchObject({ code: 'process-exited' });
   });
 
+  it('permanently observes asynchronous stdin EPIPE and rejects pending requests once', async () => {
+    const process = new FakeCodexProcess(() => undefined);
+    const onFatal = vi.fn();
+    const client = new CodexAppServerClient(process, {
+      expectedCodexHome: '/tmp/aperant-codex/account-a',
+      onFatal,
+    });
+
+    expect(process.stdin.listenerCount('error')).toBeGreaterThan(0);
+    const pending = client.request('model/list', {});
+    const error = Object.assign(new Error('private pipe details'), { code: 'EPIPE' });
+    process.stdin.emit('error', error);
+    process.stdin.emit('error', error);
+
+    await expect(pending).rejects.toMatchObject({ code: 'process-exited' });
+    expect(onFatal).toHaveBeenCalledTimes(1);
+    expect(onFatal).toHaveBeenCalledWith(expect.objectContaining({ code: 'process-exited' }), false);
+    expect(process.stdin.listenerCount('error')).toBeGreaterThan(0);
+  });
+
+  it('fails closed when the stdin write callback reports an error', async () => {
+    const process = new FakeCodexProcess(() => undefined);
+    const callbackError = Object.assign(new Error('private callback details'), {
+      code: 'ERR_STREAM_DESTROYED',
+    });
+    vi.spyOn(process.stdin, 'write').mockImplementation(((...args: unknown[]) => {
+      const callback = args.find((argument) => typeof argument === 'function') as
+        ((error?: Error | null) => void) | undefined;
+      queueMicrotask(() => callback?.(callbackError));
+      return true;
+    }) as typeof process.stdin.write);
+    const onFatal = vi.fn();
+    const client = new CodexAppServerClient(process, {
+      expectedCodexHome: '/tmp/aperant-codex/account-a',
+      onFatal,
+    });
+
+    const pending = client.request('model/list', {});
+    const rejection = expect(pending).rejects.toMatchObject({ code: 'process-exited' });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(client.isAlive).toBe(false);
+    await rejection;
+    expect(onFatal).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects invalid initialize shapes and a mismatched isolated home', async () => {
     const invalidShape = new FakeCodexProcess((request) => ({
       id: request.id,

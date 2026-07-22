@@ -1,6 +1,6 @@
 import { spawn as nodeSpawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { chmod, mkdir, realpath } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { chmod, mkdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { ModelDescriptor } from '@shared/types/model-catalog';
 import { detectCodexCliAsync, type CodexCliDetectionResult } from '../../cli-tool-manager';
@@ -46,6 +46,8 @@ export interface CodexAppServerManagerDependencies {
   detectCli?: () => CodexCliDetectionResult | Promise<CodexCliDetectionResult>;
   ensureDirectory?: (directory: string) => Promise<void>;
   canonicalizeDirectory?: (directory: string) => Promise<string>;
+  canonicalizeExecutable?: (executable: string) => Promise<string>;
+  getExecutableIdentity?: (canonicalExecutable: string) => Promise<string>;
   spawn?: (
     executable: string,
     args: string[],
@@ -67,17 +69,29 @@ export interface CodexAppServerManager extends CodexExecutionManager {
   startLogin(accountId: string): Promise<CodexLoginStartResponse>;
   listModels(accountId: string): Promise<ModelDescriptor[]>;
   getSandboxRuntimeVersion(accountId: string): Promise<string>;
+  getSandboxCapabilityContext(accountId: string): Promise<CodexSandboxCapabilityContext>;
   executeSandboxCommand(
     accountId: string,
     request: CodexCommandExecParams,
   ): Promise<CodexCommandExecResponse>;
+  reactivateAccount(accountId: string): void;
   shutdown(): Promise<void>;
+}
+
+export interface CodexSandboxCapabilityContext {
+  executablePath: string;
+  executableIdentity: string;
+  runtimeVersion: string;
+  sessionEpoch: string;
+  lifecycleGeneration: number;
 }
 
 interface AccountSession {
   client: CodexAppServerClient;
   process: CodexJsonlProcess;
   runtimeVersion: string;
+  executablePath: string;
+  sessionEpoch: string;
 }
 
 interface PendingSession {
@@ -208,6 +222,23 @@ export function createCodexAppServerManager(
     await chmod(directory, 0o700);
   });
   const canonicalizeDirectory = dependencies.canonicalizeDirectory ?? realpath;
+  const canonicalizeExecutable = dependencies.canonicalizeExecutable ?? (
+    dependencies.detectCli ? async (executable: string) => executable : realpath
+  );
+  const getExecutableIdentity = dependencies.getExecutableIdentity ?? (
+    dependencies.detectCli
+      ? async (executable: string) => `${executable}:injected-test-identity`
+      : async (executable: string) => {
+          const metadata = await stat(executable);
+          return [
+            executable,
+            `dev=${metadata.dev}`,
+            `ino=${metadata.ino}`,
+            `mtime=${metadata.mtimeMs}`,
+            `size=${metadata.size}`,
+          ].join(':');
+        }
+  );
   const spawn = dependencies.spawn ?? ((executable, args, options) => (
     nodeSpawn(executable, args, options) as unknown as CodexJsonlProcess
   ));
@@ -217,6 +248,10 @@ export function createCodexAppServerManager(
   ));
   const sessions = new Map<string, PendingSession>();
   const accountTerminations = new Map<string, Promise<void>>();
+  const accountRetirements = new Map<string, Promise<void>>();
+  const blockedAccounts = new Map<string, CodexRuntimeError>();
+  const retiredAccounts = new Set<string>();
+  const accountGenerations = new Map<string, number>();
   const canonicalOwners = new Map<string, string>();
   const terminations = new WeakMap<object, Promise<void>>();
   const expectedTerminations = new WeakSet<object>();
@@ -240,6 +275,16 @@ export function createCodexAppServerManager(
 
   function assertOpen(): void {
     if (shuttingDown) throw new CodexRuntimeError('shutdown');
+  }
+
+  function assertAccountAvailable(accountId: string): void {
+    assertOpen();
+    const blocked = blockedAccounts.get(accountId);
+    if (blocked) throw blocked;
+  }
+
+  function advanceAccountGeneration(accountId: string): void {
+    accountGenerations.set(accountId, (accountGenerations.get(accountId) ?? 0) + 1);
   }
 
   function terminateOnce(process: CodexJsonlProcess): Promise<void> {
@@ -303,24 +348,32 @@ export function createCodexAppServerManager(
 
   async function createSession(accountId: string, entry: PendingSession): Promise<AccountSession> {
     try {
-      assertOpen();
+      assertAccountAvailable(accountId);
       if (platform === 'win32') throw new CodexRuntimeError('platform-unsupported');
       await accountTerminations.get(accountId);
-      assertOpen();
+      assertAccountAvailable(accountId);
       const baseEnvironment = dependencies.baseEnv ??
         await (dependencies.getBaseEnvironment ?? getAugmentedEnvAsync)();
-      assertOpen();
+      assertAccountAvailable(accountId);
       const detection = await detectCli();
-      assertOpen();
+      assertAccountAvailable(accountId);
       const runtimeExecutable = detection.runtimePath ?? (
         dependencies.detectCli ? detection.path : undefined
       );
       if (!detection.found || !runtimeExecutable) {
         throw new CodexRuntimeError(detection.version ? 'cli-unsupported' : 'cli-unavailable');
       }
+      let executablePath: string;
+      try {
+        executablePath = await canonicalizeExecutable(runtimeExecutable);
+        await getExecutableIdentity(executablePath);
+      } catch {
+        throw new CodexRuntimeError('cli-unavailable');
+      }
+      assertAccountAvailable(accountId);
 
       const root = await canonicalRoot();
-      assertOpen();
+      assertAccountAvailable(accountId);
       const requestedHome = pathApi.join(root, createHash('sha256')
         .update(accountId)
         .digest('hex')
@@ -332,7 +385,7 @@ export function createCodexAppServerManager(
       } catch {
         throw new CodexRuntimeError('isolation-failed');
       }
-      assertOpen();
+      assertAccountAvailable(accountId);
       if (!isContained(pathApi, root, codexHome)) {
         throw new CodexRuntimeError('isolation-failed');
       }
@@ -340,7 +393,8 @@ export function createCodexAppServerManager(
       if (owner && owner !== accountId) throw new CodexRuntimeError('isolation-failed');
       canonicalOwners.set(codexHome, accountId);
 
-      const child = spawn(runtimeExecutable, ['app-server', '--stdio'], {
+      assertAccountAvailable(accountId);
+      const child = spawn(executablePath, ['app-server', '--stdio'], {
         env: createCodexEnvironment(
           baseEnvironment,
           codexHome,
@@ -369,6 +423,9 @@ export function createCodexAppServerManager(
           else if (!expectedTerminations.has(child)) quarantineAccount(accountId);
         },
         onNotification: (method, params) => {
+          if (method === 'account/login/completed' || method === 'account/updated') {
+            advanceAccountGeneration(accountId);
+          }
           for (const listener of notificationListeners.get(accountId) ?? []) {
             try {
               listener(method, params);
@@ -383,12 +440,19 @@ export function createCodexAppServerManager(
       });
       entry.client = client;
       await client.initialize();
+      assertAccountAvailable(accountId);
       if (detection.runtimeValidationRequired) {
         dependencies.onDiagnostic?.(
           `Codex CLI ${detection.version ?? 'newer'} passed runtime protocol validation`,
         );
       }
-      return { client, process: child, runtimeVersion: detection.version ?? 'unknown' };
+      return {
+        client,
+        process: child,
+        runtimeVersion: detection.version ?? 'unknown',
+        executablePath,
+        sessionEpoch: randomUUID(),
+      };
     } catch (error) {
       if (entry.process && !entry.processEnded) await terminateOnce(entry.process);
       throw publicError(error);
@@ -396,7 +460,7 @@ export function createCodexAppServerManager(
   }
 
   function getSession(accountId: string): Promise<AccountSession> {
-    assertOpen();
+    assertAccountAvailable(accountId);
     if (!accountId.trim()) throw new CodexRuntimeError('isolation-failed');
     let entry = sessions.get(accountId);
     if (!entry) {
@@ -445,6 +509,16 @@ export function createCodexAppServerManager(
     readAccount,
     async getSandboxRuntimeVersion(accountId) {
       return (await getSession(accountId)).runtimeVersion;
+    },
+    async getSandboxCapabilityContext(accountId) {
+      const session = await getSession(accountId);
+      return {
+        executablePath: session.executablePath,
+        executableIdentity: await getExecutableIdentity(session.executablePath),
+        runtimeVersion: session.runtimeVersion,
+        sessionEpoch: session.sessionEpoch,
+        lifecycleGeneration: accountGenerations.get(accountId) ?? 0,
+      };
     },
     async executeSandboxCommand(accountId, request) {
       const session = await getSession(accountId);
@@ -517,24 +591,50 @@ export function createCodexAppServerManager(
       const session = await getSession(accountId);
       await session.client.request('turn/interrupt', { threadId, turnId });
     },
-    async retireAccount(accountId) {
-      const entry = sessions.get(accountId);
-      if (!entry) {
-        const termination = accountTerminations.get(accountId);
-        if (termination) await termination;
-        return;
-      }
-      const session = await entry.promise;
+    retireAccount(accountId) {
+      const existingRetirement = accountRetirements.get(accountId);
+      if (existingRetirement) return existingRetirement;
+      blockedAccounts.set(accountId, new CodexRuntimeError('shutdown'));
+      advanceAccountGeneration(accountId);
       emitLifecycle(accountId, { type: 'retiring' });
-      if (sessions.get(accountId)?.token === entry.token) sessions.delete(accountId);
-      session.client.close();
-      try {
-        await trackAccountTermination(accountId, session.process);
+      const retirement = (async () => {
+        try {
+          const entry = sessions.get(accountId);
+          let session: AccountSession | undefined;
+          if (entry) {
+            try {
+              session = await entry.promise;
+            } catch {
+              // Session creation observes the fence and owns cleanup of any process it spawned.
+            }
+            if (sessions.get(accountId)?.token === entry.token) sessions.delete(accountId);
+          }
+          if (session) {
+            session.client.close();
+            await trackAccountTermination(accountId, session.process);
+          } else {
+            const termination = accountTerminations.get(accountId);
+            if (termination) await termination;
+          }
+        } catch {
+          const error = new CodexRuntimeError('termination-failed');
+          blockedAccounts.set(accountId, error);
+          emitLifecycle(accountId, { type: 'termination-failed', retryable: true });
+          throw error;
+        }
+        retiredAccounts.add(accountId);
         emitLifecycle(accountId, { type: 'retired' });
-      } catch (error) {
-        emitLifecycle(accountId, { type: 'termination-failed', retryable: true });
-        throw error;
+      })();
+      accountRetirements.set(accountId, retirement);
+      return retirement;
+    },
+    reactivateAccount(accountId) {
+      if (!retiredAccounts.delete(accountId)) {
+        throw new CodexRuntimeError('termination-failed');
       }
+      accountRetirements.delete(accountId);
+      blockedAccounts.delete(accountId);
+      advanceAccountGeneration(accountId);
     },
     async startLogin(accountId) {
       const session = await getSession(accountId);

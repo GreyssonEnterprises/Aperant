@@ -141,6 +141,44 @@ describe('per-account Codex app-server manager', () => {
     expect(await manager.getSandboxRuntimeVersion('account-a')).toBe('0.144.6');
   });
 
+  it('reports executable identity, session epoch, and lifecycle generation for probe caching', async () => {
+    let process: ScriptedProcess | undefined;
+    let binaryIdentity = '/usr/local/bin/codex:dev=1:ino=2:mtime=3:size=4';
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: () => ({
+        found: true, path: '/usr/local/bin/codex', runtimePath: '/usr/local/bin/codex',
+        version: '0.144.6', runtimeValidationRequired: false,
+      }),
+      getExecutableIdentity: async () => binaryIdentity,
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      spawn: (_path, _args, options) => {
+        process = new ScriptedProcess(options.env.CODEX_HOME);
+        return process;
+      },
+      terminate: vi.fn(async () => undefined),
+    });
+
+    const first = await manager.getSandboxCapabilityContext('account-a');
+    binaryIdentity = '/usr/local/bin/codex:dev=1:ino=9:mtime=10:size=11';
+    const replaced = await manager.getSandboxCapabilityContext('account-a');
+    process?.notify('account/login/completed', { loginId: 'login-1', success: true });
+    await new Promise((resolve) => setImmediate(resolve));
+    const authChanged = await manager.getSandboxCapabilityContext('account-a');
+
+    expect(first).toEqual({
+      executablePath: '/usr/local/bin/codex',
+      executableIdentity: '/usr/local/bin/codex:dev=1:ino=2:mtime=3:size=4',
+      runtimeVersion: '0.144.6',
+      sessionEpoch: expect.any(String),
+      lifecycleGeneration: 0,
+    });
+    expect(replaced.executableIdentity).not.toBe(first.executableIdentity);
+    expect(replaced.sessionEpoch).toBe(first.sessionEpoch);
+    expect(authChanged.lifecycleGeneration).toBe(1);
+  });
+
   it('publishes authoritative account lifecycle around retirement and process death', async () => {
     let process: ScriptedProcess | undefined;
     const lifecycle = vi.fn();
@@ -263,6 +301,132 @@ describe('per-account Codex app-server manager', () => {
       expect(firstResult.reason).toMatchObject({ code: 'termination-failed' });
     }
     expect(terminate).toHaveBeenCalledOnce();
+  });
+
+  it('atomically fences every account operation before awaiting active-session retirement', async () => {
+    let releaseTermination!: () => void;
+    const termination = new Promise<void>((resolve) => { releaseTermination = resolve; });
+    let spawnCount = 0;
+    let process: ScriptedProcess | undefined;
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: () => ({
+        found: true, path: '/usr/local/bin/codex', version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      spawn: (_path, _args, options) => {
+        spawnCount += 1;
+        process = new ScriptedProcess(options.env.CODEX_HOME);
+        return process;
+      },
+      terminate: vi.fn(async () => termination),
+    });
+    await manager.readAccount('account-a');
+    const methodCount = process?.methods.length;
+
+    const retirement = manager.retireAccount('account-a');
+    const options = {
+      cwd: '/worktree', model: 'gpt-5.6-codex', developerInstructions: 'test',
+      approvalPolicy: 'never' as const, sandbox: 'workspace-write' as const,
+      networkAccess: false as const, runtimeWorkspaceRoots: ['/worktree'],
+    };
+    const blocked = await Promise.allSettled([
+      manager.readAccount('account-a'),
+      manager.startLogin('account-a'),
+      manager.getRuntimeVersion('account-a'),
+      manager.startThread('account-a', options),
+    ]);
+
+    expect(blocked.every((result) => result.status === 'rejected' &&
+      (result.reason as { code?: string }).code === 'shutdown')).toBe(true);
+    expect(spawnCount).toBe(1);
+    expect(process?.methods).toHaveLength(methodCount ?? 0);
+    releaseTermination();
+    await retirement;
+  });
+
+  it('does not spawn when retirement starts during pending session creation', async () => {
+    let releaseDetection!: () => void;
+    const detectionBlocked = new Promise<void>((resolve) => { releaseDetection = resolve; });
+    const spawn = vi.fn((_path, _args, options: CodexAppServerSpawnOptions) => (
+      new ScriptedProcess(options.env.CODEX_HOME)
+    ));
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: async () => {
+        await detectionBlocked;
+        return {
+          found: true, path: '/usr/local/bin/codex', version: '0.144.6',
+          runtimeValidationRequired: false,
+        };
+      },
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      spawn,
+      terminate: vi.fn(),
+    });
+
+    const accountRead = manager.readAccount('account-a');
+    await new Promise((resolve) => setImmediate(resolve));
+    const retirement = manager.retireAccount('account-a');
+    releaseDetection();
+
+    await expect(accountRead).rejects.toMatchObject({ code: 'shutdown' });
+    await expect(retirement).resolves.toBeUndefined();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('reactivates only after verified retirement so a transport update can restart cleanly', async () => {
+    let spawnCount = 0;
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: () => ({
+        found: true, path: '/usr/local/bin/codex', version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      spawn: (_path, _args, options) => {
+        spawnCount += 1;
+        return new ScriptedProcess(options.env.CODEX_HOME);
+      },
+      terminate: vi.fn(async () => undefined),
+    });
+    await manager.readAccount('account-a');
+    await manager.retireAccount('account-a');
+    await expect(manager.readAccount('account-a')).rejects.toMatchObject({ code: 'shutdown' });
+
+    manager.reactivateAccount('account-a');
+
+    await expect(manager.readAccount('account-a')).resolves.toMatchObject({
+      account: { type: 'chatgpt' },
+    });
+    expect(spawnCount).toBe(2);
+  });
+
+  it('cannot reactivate an account whose retirement was not verified', async () => {
+    const manager = createCodexAppServerManager({
+      codexHomeRoot: '/tmp/aperant/codex-accounts',
+      detectCli: () => ({
+        found: true, path: '/usr/local/bin/codex', version: '0.144.6',
+        runtimeValidationRequired: false,
+      }),
+      ensureDirectory: vi.fn(async () => undefined),
+      canonicalizeDirectory: async (directory) => directory,
+      spawn: (_path, _args, options) => new ScriptedProcess(options.env.CODEX_HOME),
+      terminate: vi.fn(async () => { throw new Error('private failure'); }),
+    });
+    await manager.readAccount('account-a');
+    await expect(manager.retireAccount('account-a')).rejects.toMatchObject({
+      code: 'termination-failed',
+    });
+
+    expect(() => manager.reactivateAccount('account-a')).toThrow('termination');
+    await expect(manager.readAccount('account-a')).rejects.toMatchObject({
+      code: 'termination-failed',
+    });
   });
 
   it('keeps typed execution RPC and notifications inside the account manager', async () => {
@@ -1093,7 +1257,7 @@ describe('per-account Codex app-server manager', () => {
 
         await expect(manager.shutdown()).resolves.toBeUndefined();
         expect(stdinErrorListeners).toBeGreaterThan(0);
-        expect(process?.stdin.listenerCount('error')).toBe(0);
+        expect(process?.stdin.listenerCount('error')).toBe(1);
         expect(process?.stdin.listenerCount('close')).toBe(0);
         expect(process?.stdin.listenerCount('finish')).toBe(0);
         expect(process?.listenerCount('exit')).toBe(1);

@@ -178,6 +178,13 @@ export interface TabState {
   tabOrder: string[];
 }
 
+export interface CodexAuthChangedEvent {
+  accountId: string;
+  loginId: string;
+  success: boolean;
+  status: 'authenticated' | 'failed';
+}
+
 export interface ElectronAPI {
   // Project operations
   addProject: (projectPath: string) => Promise<IPCResult<Project>>;
@@ -419,10 +426,10 @@ export interface ElectronAPI {
   getModelCatalogStatus: () => Promise<IPCResult<ModelCatalogStatus>>;
 
   // Codex OAuth authentication
-  codexAuthLogin: (accountId: string) => Promise<{ success: boolean; data?: { type: 'chatgpt' | 'chatgptDeviceCode'; loginId: string; userCode?: string }; error?: string }>;
+  codexAuthLogin: (accountId: string) => Promise<{ success: boolean; data?: { type: 'chatgpt' | 'chatgptDeviceCode'; loginId: string; userCode?: string; completion?: CodexAuthChangedEvent }; error?: string }>;
   codexAuthStatus: (accountId: string) => Promise<{ success: boolean; data?: { isAuthenticated: boolean; email?: string; planType?: string }; error?: string }>;
   codexAuthLogout: (accountId: string) => Promise<{ success: boolean; error?: string }>;
-  onCodexAuthChanged: (callback: (data: { accountId: string; isAuthenticated: boolean; email?: string; planType?: string }) => void) => () => void;
+  onCodexAuthChanged: (callback: (data: CodexAuthChangedEvent) => void) => () => void;
 
   // Dialog operations
   selectDirectory: () => Promise<string | null>;

@@ -19,9 +19,9 @@ account's isolated app-server. Aperant keeps one long-lived app-server and one p
 `account/read`; tokens never cross renderer IPC.
 
 Existing provider-account records are retained. Aperant doesn't import, rewrite, or delete legacy
-Codex OAuth tokens. The old transport is available only for internal rollback when
-`APERANT_ENABLE_LEGACY_CODEX_OAUTH=1` is set before launch. It is off by default and must not be
-used as an automatic fallback.
+Codex OAuth tokens. There is no environment-variable rollback to the legacy Vercel transport and
+no automatic fallback. Recovery uses the isolated app-server account or a previous application
+build.
 
 ## Sandbox and ownership boundary
 

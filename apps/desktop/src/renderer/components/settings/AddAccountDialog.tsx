@@ -16,7 +16,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { useSettingsStore } from '../../stores/settings-store';
 import { useToast } from '../../hooks/use-toast';
 import type { BillingModel, BuiltinProvider, CustomModel, ProviderAccount } from '@shared/types/provider-account';
-import { ensureCodexAccountRecord } from './codex-account-onboarding';
+import type { CodexAuthChangedEvent } from '@shared/types/ipc';
+import {
+  ensureCodexAccountRecord,
+  matchesCodexAuthCompletion,
+} from './codex-account-onboarding';
 
 const AWS_REGIONS = [
   'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
@@ -67,6 +71,7 @@ export function AddAccountDialog({
   const [oauthEmail, setOauthEmail] = useState<string | null>(null);
   const [oauthProfileId, setOauthProfileId] = useState<string | null>(null);
   const [oauthAccountId, setOauthAccountId] = useState<string | null>(null);
+  const [oauthLoginId, setOauthLoginId] = useState<string | null>(null);
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [showFallbackTerminal, setShowFallbackTerminal] = useState(false);
 
@@ -106,6 +111,7 @@ export function AddAccountDialog({
       setOauthEmail(null);
       setOauthProfileId(null);
       setOauthAccountId(null);
+      setOauthLoginId(null);
       setOauthError(null);
       setAccountSaved(false);
       setShowFallbackTerminal(false);
@@ -140,17 +146,16 @@ export function AddAccountDialog({
     }
   }, []);
 
-  const completeCodexAuthentication = useCallback(async (data: {
-    accountId: string;
-    isAuthenticated: boolean;
-    email?: string;
-  }) => {
-    if (!data.isAuthenticated || codexCompletionHandled.current) return;
+  const completeCodexAuthentication = useCallback(async (data: CodexAuthChangedEvent) => {
+    if (codexCompletionHandled.current) return;
     codexCompletionHandled.current = true;
+    if (!data.success || data.status !== 'authenticated') {
+      setOauthStatus('error');
+      setOauthError('Codex authentication failed');
+      return;
+    }
     setOauthStatus('success');
-    setOauthEmail(data.email ?? null);
     setAccountSaved(true);
-    if (data.email) await updateProviderAccount(data.accountId, { email: data.email });
     await refreshUsageData();
     toast({
       title: isEditing
@@ -159,15 +164,15 @@ export function AddAccountDialog({
       description: name.trim(),
     });
     onOpenChange(false);
-  }, [updateProviderAccount, refreshUsageData, toast, isEditing, t, name, onOpenChange]);
+  }, [refreshUsageData, toast, isEditing, t, name, onOpenChange]);
 
   useEffect(() => {
-    if (!open || !isCodexOAuth || !oauthAccountId) return;
+    if (!open || !isCodexOAuth || !oauthAccountId || !oauthLoginId) return;
     return window.electronAPI.onCodexAuthChanged(async (data) => {
-      if (data.accountId !== oauthAccountId) return;
+      if (!matchesCodexAuthCompletion(data, oauthAccountId, oauthLoginId)) return;
       await completeCodexAuthentication(data);
     });
-  }, [open, isCodexOAuth, oauthAccountId, completeCodexAuthentication]);
+  }, [open, isCodexOAuth, oauthAccountId, oauthLoginId, completeCodexAuthentication]);
 
   // Subscribe to Anthropic OAuth progress events (not used for Codex/OpenAI)
   useEffect(() => {
@@ -300,11 +305,13 @@ export function AddAccountDialog({
         if (!result.success) {
           setOauthStatus('error');
           setOauthError(result.error ?? 'Authentication failed');
-        } else {
-          const status = await window.electronAPI.codexAuthStatus(accountId);
-          if (status.success && status.data?.isAuthenticated) {
-            await completeCodexAuthentication({ accountId, ...status.data });
-          }
+        } else if (result.data) {
+          setOauthLoginId(result.data.loginId);
+          if (result.data.completion && matchesCodexAuthCompletion(
+            result.data.completion,
+            accountId,
+            result.data.loginId,
+          )) await completeCodexAuthentication(result.data.completion);
         }
       } catch (err) {
         setOauthStatus('error');

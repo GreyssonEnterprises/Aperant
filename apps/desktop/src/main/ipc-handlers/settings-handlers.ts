@@ -282,6 +282,10 @@ export function registerSettingsHandlers(
     const { getCodexAppServerManager } = await import('../services/codex/codex-app-server-runtime');
     await getCodexAppServerManager().retireAccount(accountId);
   },
+  reactivateCodexAccount: (accountId: string) => void | Promise<void> = async (accountId) => {
+    const { getCodexAppServerManager } = await import('../services/codex/codex-app-server-runtime');
+    getCodexAppServerManager().reactivateAccount(accountId);
+  },
 ): void {
   // ============================================
   // Settings Operations
@@ -1003,14 +1007,64 @@ export function registerSettingsHandlers(
           return { success: false, error: `Account not found: ${id}` };
         }
         const previous = accounts[index];
+        if (
+          ('provider' in updates && updates.provider !== previous.provider) ||
+          ('authType' in updates && updates.authType !== previous.authType) ||
+          ('billingModel' in updates && updates.billingModel !== previous.billingModel)
+        ) {
+          return {
+            success: false,
+            error: 'Provider, authentication mode, and billing model cannot be changed',
+          };
+        }
+        const isCodexSubscription = previous.provider === 'openai' &&
+          previous.authType === 'oauth' && previous.billingModel === 'subscription';
+        const codexTransportFields = [
+          'apiKey', 'baseUrl', 'region', 'claudeProfileId', 'customModels',
+        ] as const;
+        const transportChanged = isCodexSubscription && codexTransportFields.some((field) => (
+          field in updates && updates[field] !== previous[field]
+        ));
+        if (transportChanged) {
+          try {
+            await retireCodexAccount(id);
+          } catch {
+            return {
+              success: false,
+              error: 'Codex account process could not be stopped safely',
+            };
+          }
+        }
         const updated: ProviderAccount = {
           ...previous,
           ...updates,
           id, // prevent id override
+          createdAt: previous.createdAt,
           updatedAt: Date.now(),
         };
         accounts[index] = updated;
-        writeProviderAccounts(accounts);
+        try {
+          writeProviderAccounts(accounts);
+        } catch (error) {
+          if (transportChanged) {
+            try {
+              await reactivateCodexAccount(id);
+            } catch {
+              // Keep the account fenced if reactivation cannot be proven.
+            }
+          }
+          throw error;
+        }
+        if (transportChanged) {
+          try {
+            await reactivateCodexAccount(id);
+          } catch {
+            return {
+              success: false,
+              error: 'Codex account process could not be restarted safely',
+            };
+          }
+        }
         await invalidateAccountCatalog(previous.provider, id);
         if (updated.provider !== previous.provider) {
           await invalidateAccountCatalog(updated.provider);

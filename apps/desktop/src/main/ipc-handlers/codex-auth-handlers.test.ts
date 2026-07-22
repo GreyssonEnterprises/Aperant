@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ipcMain } from 'electron';
 import type { ProviderAccount } from '@shared/types/provider-account';
-import { createCodexAuthHandlers } from './codex-auth-handlers';
+import { IPC_CHANNELS } from '@shared/constants/ipc';
+import { createCodexAuthHandlers, registerCodexAuthHandlers } from './codex-auth-handlers';
+
+const legacyAuth = vi.hoisted(() => ({
+  startCodexOAuthFlow: vi.fn(),
+  getCodexAuthState: vi.fn(),
+  clearCodexAuth: vi.fn(),
+}));
+
+vi.mock('../ai/auth/codex-oauth', () => legacyAuth);
 
 const account: ProviderAccount = {
   id: 'account-a',
@@ -25,12 +35,14 @@ function harness() {
     }),
   };
   const openExternal = vi.fn().mockResolvedValue(undefined);
+  const publishAuthChanged = vi.fn();
   const handlers = createCodexAuthHandlers({
     getManager: () => manager,
     readAccounts: () => [account],
     openExternal,
+    publishAuthChanged,
   });
-  return { handlers, manager, openExternal };
+  return { handlers, manager, openExternal, publishAuthChanged };
 }
 
 describe('Codex app-server authentication handlers', () => {
@@ -87,5 +99,97 @@ describe('Codex app-server authentication handlers', () => {
       success: false,
       error: 'Remove the provider account to stop using this Codex subscription',
     });
+  });
+
+  it('publishes only the completion matching the latest account-scoped login', async () => {
+    const h = harness();
+    await h.handlers.login('account-a');
+    h.manager.startLogin.mockResolvedValueOnce({
+      type: 'chatgpt', loginId: 'login-2', authUrl: 'https://auth.openai.com/second',
+    });
+    await h.handlers.login('account-a');
+
+    h.handlers.handleNotification({ accountId: 'other-account', loginId: 'login-2', success: true });
+    h.handlers.handleNotification({ accountId: 'account-a', loginId: 'login-1', success: true });
+    h.handlers.handleNotification({ accountId: 'account-a', loginId: 'login-2', success: true });
+    h.handlers.handleNotification({ accountId: 'account-a', loginId: 'login-2', success: true });
+
+    expect(h.publishAuthChanged).toHaveBeenCalledTimes(1);
+    expect(h.publishAuthChanged).toHaveBeenCalledWith({
+      accountId: 'account-a',
+      loginId: 'login-2',
+      success: true,
+      status: 'authenticated',
+    });
+  });
+
+  it('publishes a correlated failed completion without private provider details', async () => {
+    const h = harness();
+    await h.handlers.login('account-a');
+
+    h.handlers.handleNotification({ accountId: 'account-a', loginId: 'login-1', success: false });
+
+    expect(h.publishAuthChanged).toHaveBeenCalledWith({
+      accountId: 'account-a', loginId: 'login-1', success: false, status: 'failed',
+    });
+    expect(JSON.stringify(h.publishAuthChanged.mock.calls)).not.toContain('private');
+  });
+
+  it('buffers a fast completion during login start and returns it for renderer reconciliation', async () => {
+    const h = harness();
+    h.manager.startLogin.mockImplementationOnce(async () => {
+      h.handlers.handleNotification({ accountId: 'account-a', loginId: 'login-fast', success: true });
+      return {
+        type: 'chatgpt', loginId: 'login-fast', authUrl: 'https://auth.openai.com/fast',
+      };
+    });
+
+    await expect(h.handlers.login('account-a')).resolves.toEqual({
+      success: true,
+      data: {
+        type: 'chatgpt',
+        loginId: 'login-fast',
+        completion: {
+          accountId: 'account-a', loginId: 'login-fast', success: true,
+          status: 'authenticated',
+        },
+      },
+    });
+    expect(h.publishAuthChanged).toHaveBeenCalledOnce();
+  });
+
+  it('does not treat an already-authenticated status read as reauthentication completion', async () => {
+    const h = harness();
+    await h.handlers.login('account-a');
+
+    await h.handlers.status('account-a');
+
+    expect(h.publishAuthChanged).not.toHaveBeenCalled();
+  });
+
+  it('ignores the removed legacy rollback flag and never imports or deletes legacy tokens', async () => {
+    const previous = process.env.APERANT_ENABLE_LEGACY_CODEX_OAUTH;
+    process.env.APERANT_ENABLE_LEGACY_CODEX_OAUTH = '1';
+    try {
+      registerCodexAuthHandlers();
+      const testIpc = ipcMain as unknown as {
+        invokeHandler(channel: string, event: unknown, ...args: unknown[]): Promise<unknown>;
+      };
+      await expect(testIpc.invokeHandler(
+        IPC_CHANNELS.CODEX_AUTH_LOGIN,
+        {},
+        'missing-account',
+      )).resolves.toEqual({
+        success: false,
+        error: 'Codex subscription account not found',
+      });
+      await testIpc.invokeHandler(IPC_CHANNELS.CODEX_AUTH_LOGOUT, {}, 'missing-account');
+      expect(legacyAuth.startCodexOAuthFlow).not.toHaveBeenCalled();
+      expect(legacyAuth.getCodexAuthState).not.toHaveBeenCalled();
+      expect(legacyAuth.clearCodexAuth).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.APERANT_ENABLE_LEGACY_CODEX_OAUTH;
+      else process.env.APERANT_ENABLE_LEGACY_CODEX_OAUTH = previous;
+    }
   });
 });

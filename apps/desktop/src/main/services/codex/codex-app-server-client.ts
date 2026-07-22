@@ -66,6 +66,7 @@ export class CodexAppServerClient {
   private processEndReported = false;
   private readonly onStdoutData: (chunk: string | Buffer) => void;
   private readonly onStderrData: () => void;
+  private readonly onStdinError: () => void;
 
   constructor(
     readonly process: CodexJsonlProcess,
@@ -75,6 +76,10 @@ export class CodexAppServerClient {
     this.onStderrData = () => {
       options.onDiagnostic?.('Codex app-server emitted stderr output');
     };
+    this.onStdinError = () => {
+      this.fail(new CodexRuntimeError('process-exited'));
+    };
+    process.stdin.on('error', this.onStdinError);
     process.stdout.on('data', this.onStdoutData);
     process.stderr.on('data', this.onStderrData);
     process.on('error', () => this.fail(new CodexRuntimeError('process-exited'), true));
@@ -177,7 +182,14 @@ export class CodexAppServerClient {
 
   private write(message: unknown): void {
     if (this.closedError) throw this.closedError;
-    this.process.stdin.write(`${JSON.stringify(message)}\n`);
+    try {
+      this.process.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
+        if (error) this.onStdinError();
+      });
+    } catch {
+      this.onStdinError();
+      throw this.closedError ?? new CodexRuntimeError('process-exited');
+    }
   }
 
   private consumeStdout(chunk: string | Buffer): void {

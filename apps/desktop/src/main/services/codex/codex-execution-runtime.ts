@@ -8,7 +8,7 @@ let sharedSandboxProbe: ReturnType<typeof createCodexSandboxProbe> | undefined;
 export function createMainCodexExecutionBackend() {
   const manager = getCodexAppServerManager();
   sharedSandboxProbe ??= createCodexSandboxProbe({
-    getRuntimeVersion: (accountId) => manager.getSandboxRuntimeVersion(accountId),
+    getCapabilityContext: (accountId) => manager.getSandboxCapabilityContext(accountId),
     execute: (accountId, request) => manager.executeSandboxCommand(accountId, request),
   });
   return createCodexExecutionBackend({

@@ -1,4 +1,13 @@
 import type { ProviderAccount } from '@shared/types/provider-account';
+import type { CodexAuthChangedEvent } from '@shared/types/ipc';
+
+export function matchesCodexAuthCompletion(
+  event: CodexAuthChangedEvent,
+  accountId: string | null,
+  loginId: string | null,
+): boolean {
+  return !!accountId && !!loginId && event.accountId === accountId && event.loginId === loginId;
+}
 
 interface SaveResult {
   success: boolean;

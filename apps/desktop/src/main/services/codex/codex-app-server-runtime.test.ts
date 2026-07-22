@@ -40,17 +40,35 @@ describe('Codex runtime notifications', () => {
     expect(invalidate).not.toHaveBeenCalled();
   });
 
-  it('publishes account-scoped auth notifications without raw parameters', async () => {
+  it('publishes typed account-scoped login completions without raw parameters', async () => {
     const listener = vi.fn();
     const unsubscribe = subscribeCodexAccountNotifications(listener);
 
     await handleCodexNotification('account-a', 'account/login/completed', {
+      loginId: 'login-1',
+      success: true,
       accessToken: 'never-forward-this',
     }, vi.fn(async () => undefined));
 
-    expect(listener).toHaveBeenCalledWith('account-a', 'account/login/completed');
+    expect(listener).toHaveBeenCalledWith({
+      accountId: 'account-a', loginId: 'login-1', success: true,
+    });
     expect(JSON.stringify(listener.mock.calls)).not.toContain('never-forward-this');
     unsubscribe();
+  });
+
+  it('does not publish account updates or uncorrelatable login completions as auth success', async () => {
+    const listener = vi.fn();
+    subscribeCodexAccountNotifications(listener);
+
+    await handleCodexNotification('account-a', 'account/updated', {
+      authMode: 'chatgpt',
+    }, vi.fn(async () => undefined));
+    await handleCodexNotification('account-a', 'account/login/completed', {
+      loginId: null, success: true,
+    }, vi.fn(async () => undefined));
+
+    expect(listener).not.toHaveBeenCalled();
   });
 
   it('cannot recreate the singleton once shutdown begins', async () => {
