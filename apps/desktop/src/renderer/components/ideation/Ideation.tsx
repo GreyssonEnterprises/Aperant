@@ -92,6 +92,7 @@ export function Ideation({ projectId, onGoToTask }: IdeationProps) {
           config={config}
           hasToken={hasToken}
           isCheckingToken={isCheckingToken}
+          generationError={generationStatus.error}
           onGenerate={handleGenerate}
           onOpenConfig={() => setShowConfigDialog(true)}
           onToggleIdeationType={toggleIdeationType}

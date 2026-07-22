@@ -11,7 +11,7 @@ import { detectRateLimit, createSDKRateLimitInfo } from '../rate-limit-detector'
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { transformIdeaFromSnakeCase, transformSessionFromSnakeCase } from '../ipc-handlers/ideation/transformers';
 import { transformRoadmapFromSnakeCase } from '../ipc-handlers/roadmap/transformers';
-import type { RawIdea } from '../ipc-handlers/ideation/types';
+import type { RawIdea, RawIdeationData } from '../ipc-handlers/ideation/types';
 import { debounce } from '../utils/debounce';
 import { writeFileWithRetry } from '../utils/atomic-file';
 import { runIdeation, IDEATION_TYPES } from '../ai/runners/ideation';
@@ -303,6 +303,8 @@ export class AgentQueueManager {
 
     // Track progress
     const completedTypes = new Set<string>();
+    const failures: string[] = [];
+    const generatedIdeas: RawIdea[] = [];
     const enabledTypes = config.enabledTypes.length > 0
       ? config.enabledTypes
       : [...IDEATION_TYPES];
@@ -313,7 +315,6 @@ export class AgentQueueManager {
     const promptsDir = resolvePromptsDir();
 
     const outputDir = path.join(projectPath, '.auto-claude', 'ideation');
-
     // Emit initial progress
     this.emitter.emit('ideation-progress', projectId, {
       phase: 'analyzing',
@@ -339,6 +340,10 @@ export class AgentQueueManager {
       this.emitter.emit('ideation-log', projectId, `Starting ${ideationType}...`);
 
       try {
+        const typeFilePath = path.join(outputDir, `${ideationType}_ideas.json`);
+        await fsPromises.unlink(typeFilePath).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error;
+        });
         const result = await runIdeation(
           {
             projectDir: projectPath,
@@ -358,23 +363,24 @@ export class AgentQueueManager {
         );
 
         if (result.success) {
-          completedTypes.add(ideationType);
-          debugLog('[Agent Queue] Ideation type completed:', { projectId, ideationType });
-
           // Load and emit type-specific ideas
-          const typeFilePath = path.join(outputDir, `${ideationType}_ideas.json`);
           try {
             const content = await fsPromises.readFile(typeFilePath, 'utf-8');
             const data: Record<string, RawIdea[]> = JSON.parse(content);
             const rawIdeas: RawIdea[] = data[ideationType] || [];
             const ideas: Idea[] = rawIdeas.map(transformIdeaFromSnakeCase);
+            generatedIdeas.push(...rawIdeas);
+            completedTypes.add(ideationType);
+            debugLog('[Agent Queue] Ideation type completed:', { projectId, ideationType });
             this.emitter.emit('ideation-type-complete', projectId, ideationType, ideas);
           } catch (err) {
             debugError('[Agent Queue] Failed to load ideas for type:', ideationType, err);
-            this.emitter.emit('ideation-type-complete', projectId, ideationType, []);
+            failures.push(`${ideationType} did not produce a valid category output file`);
+            this.emitter.emit('ideation-type-failed', projectId, ideationType);
           }
         } else {
           debugError('[Agent Queue] Ideation type failed:', { projectId, ideationType, error: result.error });
+          failures.push(result.error || `${ideationType} generation failed`);
           this.emitter.emit('ideation-type-failed', projectId, ideationType);
 
           // Check for rate limit
@@ -392,11 +398,22 @@ export class AgentQueueManager {
           break;
         }
         debugError('[Agent Queue] Ideation type error:', { ideationType, err });
+        failures.push(err instanceof Error ? err.message : String(err));
         this.emitter.emit('ideation-type-failed', projectId, ideationType);
       }
     }
 
     if (abortController.signal.aborted) {
+      return;
+    }
+
+    if (completedTypes.size === 0) {
+      const detail = failures[0] ? ` ${failures[0]}` : '';
+      this.emitter.emit(
+        'ideation-error',
+        projectId,
+        `Ideation generation failed for every selected category.${detail}`,
+      );
       return;
     }
 
@@ -408,19 +425,44 @@ export class AgentQueueManager {
       completedTypes: Array.from(completedTypes)
     });
 
-    // Load and emit the complete ideation session
+    // Persist and emit one complete session assembled from category files.
     try {
       const ideationFilePath = path.join(outputDir, 'ideation.json');
-      if (existsSync(ideationFilePath)) {
-        const content = await fsPromises.readFile(ideationFilePath, 'utf-8');
-        const rawSession = JSON.parse(content);
-        const session = transformSessionFromSnakeCase(rawSession, projectId);
-        debugLog('[Agent Queue] Loaded ideation session:', { totalIdeas: session.ideas?.length || 0 });
-        this.emitter.emit('ideation-complete', projectId, session);
-      } else {
-        debugLog('[Agent Queue] ideation.json not found, individual type files used');
-        this.emitter.emit('ideation-complete', projectId, null);
+      let existingSession: RawIdeationData | undefined;
+      if (config.append && existsSync(ideationFilePath)) {
+        existingSession = JSON.parse(await fsPromises.readFile(ideationFilePath, 'utf-8'));
       }
+      const now = new Date().toISOString();
+      const rawSession: RawIdeationData = {
+        id: existingSession?.id || `ideation-${Date.now()}`,
+        config: {
+          enabled_types: config.append
+            ? [...new Set([
+                ...(existingSession?.config?.enabled_types || []),
+                ...enabledTypes,
+              ])]
+            : enabledTypes,
+          include_roadmap_context: config.includeRoadmapContext,
+          include_kanban_context: config.includeKanbanContext,
+          max_ideas_per_type: config.maxIdeasPerType,
+        },
+        ideas: [...(existingSession?.ideas || []), ...generatedIdeas],
+        project_context: existingSession?.project_context || {
+          existing_features: [],
+          tech_stack: [],
+          planned_features: [],
+        },
+        generated_at: existingSession?.generated_at || now,
+        updated_at: now,
+      };
+      await writeFileWithRetry(
+        ideationFilePath,
+        JSON.stringify(rawSession, null, 2),
+        { encoding: 'utf-8' },
+      );
+      const session = transformSessionFromSnakeCase(rawSession, projectId);
+      debugLog('[Agent Queue] Persisted ideation session:', { totalIdeas: session.ideas.length });
+      this.emitter.emit('ideation-complete', projectId, session);
     } catch (err) {
       debugError('[Agent Queue] Failed to load ideation session:', err);
       this.emitter.emit('ideation-error', projectId,

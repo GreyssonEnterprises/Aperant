@@ -17,13 +17,25 @@ vi.mock('../../client/factory', () => ({
   createSimpleClient: (...args: unknown[]) => mockCreateSimpleClient(...args),
 }));
 
+const mockCodexRun = vi.fn();
+const mockCodexCancel = vi.fn();
+
+vi.mock('../../../services/codex/codex-execution-runtime', () => ({
+  createMainCodexExecutionBackend: () => ({
+    run: (...args: unknown[]) => mockCodexRun(...args),
+    cancel: (...args: unknown[]) => mockCodexCancel(...args),
+  }),
+}));
+
 // Mock filesystem: prompt files exist by default
 const mockExistsSync = vi.fn();
 const mockReadFileSync = vi.fn();
+const mockMkdirSync = vi.fn();
 
 vi.mock('node:fs', () => ({
   existsSync: (...args: unknown[]) => mockExistsSync(...args),
   readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
+  mkdirSync: (...args: unknown[]) => mockMkdirSync(...args),
 }));
 
 // Mock the tool registry so we don't need real tool initialization
@@ -86,6 +98,14 @@ describe('runIdeation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCreateSimpleClient.mockResolvedValue(makeMockClient());
+    mockCodexRun.mockResolvedValue({
+      outcome: 'completed',
+      stepsExecuted: 1,
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      messages: [],
+      durationMs: 1,
+      toolCallCount: 0,
+    });
     // Prompt file exists and has content by default
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue('Analyze the codebase for improvements.');
@@ -148,6 +168,40 @@ describe('runIdeation', () => {
     const clientArgs = mockCreateSimpleClient.mock.calls[0][0];
     expect(clientArgs.modelShorthand).toBe('haiku');
     expect(clientArgs.thinkingLevel).toBe('low');
+  });
+
+  it('runs Codex subscription models through the app-server backend', async () => {
+    mockCreateSimpleClient.mockResolvedValue({
+      ...makeMockClient(),
+      resolvedModelId: 'gpt-5.6-sol',
+      thinkingLevel: 'xhigh',
+      queueAuth: {
+        accountId: 'openai-subscription',
+        executionBackend: 'codex-app-server',
+        resolvedModelId: 'gpt-5.6-sol',
+        resolvedProvider: 'openai',
+        reasoningConfig: { type: 'reasoning_effort', level: 'xhigh' },
+      },
+    });
+
+    const result = await runIdeation(baseConfig({
+      modelShorthand: 'gpt-5.6-sol',
+      thinkingLevel: 'xhigh',
+    }));
+
+    expect(result.success).toBe(true);
+    expect(mockStreamText).not.toHaveBeenCalled();
+    expect(mockCodexRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'openai-subscription',
+        modelId: 'gpt-5.6-sol',
+        reasoningEffort: 'xhigh',
+        worktreePath: '/project',
+        allowedWritePaths: ['/project/.auto-claude/ideation'],
+        specDir: '/project/.auto-claude/ideation',
+      }),
+      expect.any(Function),
+    );
   });
 
   it('passes tools from client to streamText', async () => {
@@ -302,5 +356,17 @@ describe('runIdeation', () => {
     const streamArgs = mockStreamText.mock.calls[0][0];
     const systemPrompt = streamArgs.system as string;
     expect(systemPrompt).toContain('10');
+  });
+
+  it('names the exact category output file in the user prompt', async () => {
+    mockStreamText.mockReturnValue(makeStream([]));
+
+    await runIdeation(baseConfig({ ideationType: 'ui_ux_improvements' }));
+
+    const streamArgs = mockStreamText.mock.calls[0][0];
+    expect(streamArgs.prompt).toContain(
+      '/project/.auto-claude/ideation/ui_ux_improvements_ideas.json',
+    );
+    expect(streamArgs.prompt).toContain('"ui_ux_improvements"');
   });
 });

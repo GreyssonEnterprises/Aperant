@@ -13,6 +13,7 @@ interface IdeationEmptyStateProps {
   config: IdeationConfig;
   hasToken: boolean | null;
   isCheckingToken: boolean;
+  generationError?: string;
   onGenerate: () => void;
   onOpenConfig: () => void;
   onToggleIdeationType: (type: IdeationType) => void;
@@ -22,6 +23,7 @@ export function IdeationEmptyState({
   config,
   hasToken,
   isCheckingToken,
+  generationError,
   onGenerate,
   onOpenConfig,
   onToggleIdeationType
@@ -71,6 +73,16 @@ export function IdeationEmptyState({
           <Sparkles className="h-4 w-4 mr-2" />
           Generate Ideas
         </Button>
+
+        {generationError && (
+          <p
+            role="alert"
+            className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-left text-sm text-destructive"
+          >
+            <AlertCircle className="mr-2 inline-block h-4 w-4" />
+            {generationError}
+          </p>
+        )}
 
         {/* Show warning if no provider is configured */}
         {hasToken === false && !isCheckingToken && (

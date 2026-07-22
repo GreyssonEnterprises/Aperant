@@ -1,4 +1,7 @@
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../ai/runners/ideation', () => ({
@@ -67,6 +70,129 @@ describe('AgentQueueManager awaited process replacement and stop', () => {
     await starting;
     expect(h.killProcess).toHaveBeenCalledWith('project-1');
     expect(runIdeation).toHaveBeenCalledOnce();
+  });
+
+  it('emits an error instead of an empty completion when every ideation type fails', async () => {
+    const state = new AgentState();
+    const emitter = new EventEmitter();
+    const queue = new AgentQueueManager(
+      state,
+      new AgentEvents(),
+      { killProcess: vi.fn().mockResolvedValue(true) } as unknown as AgentProcessManager,
+      emitter,
+    );
+    vi.mocked(runIdeation).mockResolvedValue({
+      success: false,
+      text: '',
+      error: 'Codex subscription backend unavailable',
+    });
+    const failed = vi.fn();
+    const completed = vi.fn();
+    emitter.on('ideation-error', failed);
+    emitter.on('ideation-complete', completed);
+
+    await queue.startIdeationGeneration(
+      'project-1',
+      '/project',
+      { enabledTypes: ['feature'] } as never,
+    );
+
+    expect(failed).toHaveBeenCalledWith(
+      'project-1',
+      expect.stringContaining('Codex subscription backend unavailable'),
+    );
+    expect(completed).not.toHaveBeenCalled();
+  });
+
+  it('aggregates category output into a persisted ideation session', async () => {
+    const projectPath = mkdtempSync(join(tmpdir(), 'aperant-ideation-'));
+    const outputDir = join(projectPath, '.auto-claude', 'ideation');
+    const state = new AgentState();
+    const emitter = new EventEmitter();
+    const queue = new AgentQueueManager(
+      state,
+      new AgentEvents(),
+      { killProcess: vi.fn().mockResolvedValue(true) } as unknown as AgentProcessManager,
+      emitter,
+    );
+    vi.mocked(runIdeation).mockImplementation(async () => {
+      const { mkdirSync } = await import('node:fs');
+      mkdirSync(outputDir, { recursive: true });
+      writeFileSync(join(outputDir, 'feature_ideas.json'), JSON.stringify({
+        feature: [{
+          id: 'ci-001',
+          type: 'code_improvements',
+          title: 'Typed IPC errors',
+          description: 'Preserve backend failures.',
+          rationale: 'The event system already supports errors.',
+        }],
+      }));
+      return { success: true, text: '' } as never;
+    });
+    const completed = vi.fn();
+    emitter.on('ideation-complete', completed);
+
+    try {
+      await queue.startIdeationGeneration(
+        'project-1',
+        projectPath,
+        { enabledTypes: ['feature'] } as never,
+      );
+
+      expect(completed).toHaveBeenCalledWith(
+        'project-1',
+        expect.objectContaining({ ideas: [expect.objectContaining({ id: 'ci-001' })] }),
+      );
+      expect(JSON.parse(readFileSync(join(outputDir, 'ideation.json'), 'utf8')).ideas)
+        .toHaveLength(1);
+    } finally {
+      rmSync(projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it('does not accept a stale category file when the current run writes nothing', async () => {
+    const projectPath = mkdtempSync(join(tmpdir(), 'aperant-ideation-stale-'));
+    const outputDir = join(projectPath, '.auto-claude', 'ideation');
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(outputDir, { recursive: true });
+    writeFileSync(join(outputDir, 'feature_ideas.json'), JSON.stringify({
+      feature: [{
+        id: 'stale-001',
+        type: 'code_improvements',
+        title: 'Stale idea',
+        description: 'This came from an earlier run.',
+        rationale: 'It must not be reused.',
+      }],
+    }));
+    const state = new AgentState();
+    const emitter = new EventEmitter();
+    const queue = new AgentQueueManager(
+      state,
+      new AgentEvents(),
+      { killProcess: vi.fn().mockResolvedValue(true) } as unknown as AgentProcessManager,
+      emitter,
+    );
+    vi.mocked(runIdeation).mockResolvedValue({ success: true, text: '' } as never);
+    const failed = vi.fn();
+    const completed = vi.fn();
+    emitter.on('ideation-error', failed);
+    emitter.on('ideation-complete', completed);
+
+    try {
+      await queue.startIdeationGeneration(
+        'project-1',
+        projectPath,
+        { enabledTypes: ['feature'] } as never,
+      );
+
+      expect(failed).toHaveBeenCalledWith(
+        'project-1',
+        expect.stringContaining('did not produce a valid category output file'),
+      );
+      expect(completed).not.toHaveBeenCalled();
+    } finally {
+      rmSync(projectPath, { recursive: true, force: true });
+    }
   });
 
   it('awaits roadmap replacement kill before starting a new runner', async () => {

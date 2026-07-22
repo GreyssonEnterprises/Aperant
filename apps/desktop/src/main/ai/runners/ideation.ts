@@ -11,7 +11,7 @@
  */
 
 import { streamText, stepCountIs } from 'ai';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { createSimpleClient } from '../client/factory';
@@ -19,6 +19,7 @@ import { buildToolRegistry } from '../tools/build-registry';
 import type { ToolContext } from '../tools/types';
 import type { ModelShorthand, ThinkingLevel } from '../config/types';
 import type { SecurityProfile } from '../security/bash-validator';
+import { createMainCodexExecutionBackend } from '../../services/codex/codex-execution-runtime';
 
 // =============================================================================
 // Constants
@@ -71,7 +72,7 @@ export interface IdeationConfig {
   /** Type of ideation to run */
   ideationType: IdeationType;
   /** Model shorthand (defaults to 'sonnet') */
-  modelShorthand?: ModelShorthand;
+  modelShorthand?: ModelShorthand | string;
   /** Thinking level (defaults to 'medium') */
   thinkingLevel?: ThinkingLevel;
   /** Maximum ideas per type (defaults to 5) */
@@ -183,9 +184,51 @@ export async function runIdeation(
   // Detect Codex models — they require instructions via providerOptions, not system
   const modelId = typeof client.model === 'string' ? client.model : client.model.modelId;
   const isCodex = modelId?.includes('codex') ?? false;
-  const userPrompt = `Analyze the project at ${projectDir} and generate up to ${maxIdeasPerType} ${ideationType.replace(/_/g, ' ')} ideas. Use the available tools to explore the codebase, then write your findings as a JSON file to the output directory.`;
+  const outputFile = join(outputDir, `${ideationType}_ideas.json`);
+  const userPrompt = `Analyze the project at ${projectDir} and generate up to ${maxIdeasPerType} ${ideationType.replace(/_/g, ' ')} ideas. Use the available tools to explore the codebase. Write valid JSON to ${outputFile} with "${ideationType}" as the top-level array key.`;
 
   try {
+    if (client.queueAuth?.executionBackend === 'codex-app-server') {
+      mkdirSync(outputDir, { recursive: true });
+      const backend = createMainCodexExecutionBackend();
+      const cancel = () => { void backend.cancel(); };
+      abortSignal?.addEventListener('abort', cancel, { once: true });
+      try {
+        const result = await backend.run({
+          taskId: `ideation-${ideationType}`,
+          accountId: client.queueAuth.accountId,
+          modelId: client.resolvedModelId,
+          reasoningEffort: client.queueAuth.reasoningConfig.level ?? thinkingLevel,
+          systemPrompt: prompt,
+          input: userPrompt,
+          worktreePath: projectDir,
+          allowedWritePaths: [outputDir],
+          specDir: outputDir,
+          phase: `ideation-${ideationType.replace(/_/g, '-')}`,
+        }, (event) => {
+          if (event.type !== 'stream-event') return;
+          if (event.data.type === 'text-delta') {
+            responseText += event.data.text;
+            onStream?.({ type: 'text-delta', text: event.data.text });
+          } else if (event.data.type === 'tool-call') {
+            onStream?.({ type: 'tool-use', name: event.data.toolName });
+          } else if (event.data.type === 'error') {
+            onStream?.({ type: 'error', error: event.data.error.message });
+          }
+        });
+        if (result.outcome !== 'completed') {
+          return {
+            success: false,
+            text: responseText,
+            error: result.error?.message ?? `Codex ideation ended with ${result.outcome}`,
+          };
+        }
+        return { success: true, text: responseText };
+      } finally {
+        abortSignal?.removeEventListener('abort', cancel);
+      }
+    }
+
     const result = streamText({
       model: client.model,
       system: isCodex ? undefined : prompt,
