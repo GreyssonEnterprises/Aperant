@@ -870,6 +870,35 @@ describe('AgentProcessManager - Codex cancellation finalization', () => {
     );
   });
 
+  it('does not delete a newer task owner after an older cancellation settles', async () => {
+    const state = new AgentState();
+    const manager = new AgentProcessManager(state, new AgentEvents(), new EventEmitter());
+    let settle!: (value: import('../ai/session/types').SessionResult) => void;
+    state.addProcess('task-codex', {
+      taskId: 'task-codex', process: null, worker: null,
+      workerBridge: {
+        terminate: vi.fn(() => new Promise<import('../ai/session/types').SessionResult>(
+          (resolve) => { settle = resolve; },
+        )),
+      },
+      startedAt: new Date(), spawnId: 1,
+    });
+
+    const killing = manager.killProcess('task-codex');
+    const newerOwner = {
+      taskId: 'task-codex', process: null, worker: null,
+      startedAt: new Date(), spawnId: 2,
+    };
+    state.addProcess('task-codex', newerOwner);
+    settle({
+      outcome: 'cancelled', stepsExecuted: 0, messages: [], durationMs: 1, toolCallCount: 0,
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    });
+
+    await expect(killing).resolves.toBe(true);
+    expect(state.getProcess('task-codex')).toBe(newerOwner);
+  });
+
   it('rejects replacement spawn when the previous Codex session did not stop safely', async () => {
     spawnCalls.length = 0;
     const state = new AgentState();

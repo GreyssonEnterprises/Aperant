@@ -104,6 +104,12 @@ export class AgentProcessManager {
   private emitter: EventEmitter;
   private autoBuildSourcePath: string = '';
 
+  private deleteProcessIfCurrentSpawn(taskId: string, spawnId: number): void {
+    if (this.state.getProcess(taskId)?.spawnId === spawnId) {
+      this.state.deleteProcess(taskId);
+    }
+  }
+
   constructor(state: AgentState, events: AgentEvents, emitter: EventEmitter) {
     this.state = state;
     this.events = events;
@@ -960,7 +966,7 @@ export class AgentProcessManager {
     // just remove from tracking. The spawn() call will still complete, but the spawned process
     // will be terminated by the post-spawn wasSpawnKilled() check (see spawnProcess() after updateProcess).
     if (!agentProcess.process && !agentProcess.worker && !agentProcess.workerBridge) {
-      this.state.deleteProcess(taskId);
+      this.deleteProcessIfCurrentSpawn(taskId, agentProcess.spawnId);
       return true;
     }
 
@@ -971,7 +977,7 @@ export class AgentProcessManager {
         this.emitter.emit('error', taskId, finalization.error.message, undefined);
         return false;
       }
-      this.state.deleteProcess(taskId);
+      this.deleteProcessIfCurrentSpawn(taskId, agentProcess.spawnId);
       return true;
     }
 
@@ -981,7 +987,7 @@ export class AgentProcessManager {
       } catch {
         // Worker may already be terminated
       }
-      this.state.deleteProcess(taskId);
+      this.deleteProcessIfCurrentSpawn(taskId, agentProcess.spawnId);
       return true;
     }
 
@@ -993,7 +999,7 @@ export class AgentProcessManager {
       });
     }
 
-    this.state.deleteProcess(taskId);
+    this.deleteProcessIfCurrentSpawn(taskId, agentProcess.spawnId);
     return true;
   }
 

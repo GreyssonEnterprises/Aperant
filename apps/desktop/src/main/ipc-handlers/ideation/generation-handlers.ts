@@ -151,6 +151,14 @@ export async function stopIdeationGeneration(
     debugLog("[Ideation Handler] Sending stopped event to renderer");
     const getMainWindow = () => mainWindow;
     safeSendToRenderer(getMainWindow, IPC_CHANNELS.IDEATION_STOPPED, projectId);
+  } else {
+    const getMainWindow = () => mainWindow;
+    safeSendToRenderer(
+      getMainWindow,
+      IPC_CHANNELS.IDEATION_ERROR,
+      projectId,
+      "Ideation could not stop safely",
+    );
   }
 
   return { success: wasStopped };

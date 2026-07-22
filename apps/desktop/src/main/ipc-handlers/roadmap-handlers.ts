@@ -33,6 +33,29 @@ function getFeatureSettings(): { model?: string; thinkingLevel?: string } {
   return getActiveProviderFeatureSettings('roadmap');
 }
 
+export async function stopRoadmapGeneration(
+  projectId: string,
+  agentManager: AgentManager,
+  getMainWindow: () => BrowserWindow | null,
+): Promise<IPCResult> {
+  debugLog("[Roadmap Handler] Stop generation request:", { projectId });
+  const wasStopped = await agentManager.stopRoadmap(projectId);
+  debugLog("[Roadmap Handler] Stop result:", { projectId, wasStopped });
+
+  if (wasStopped) {
+    safeSendToRenderer(getMainWindow, IPC_CHANNELS.ROADMAP_STOPPED, projectId);
+  } else {
+    safeSendToRenderer(
+      getMainWindow,
+      IPC_CHANNELS.ROADMAP_ERROR,
+      projectId,
+      "Roadmap could not stop safely",
+    );
+  }
+
+  return { success: wasStopped };
+}
+
 /**
  * Register all roadmap-related IPC handlers
  */
@@ -330,19 +353,7 @@ export function registerRoadmapHandlers(
   );
 
   ipcMain.handle(IPC_CHANNELS.ROADMAP_STOP, async (_, projectId: string): Promise<IPCResult> => {
-    debugLog("[Roadmap Handler] Stop generation request:", { projectId });
-
-    // Stop roadmap generation for this project
-    const wasStopped = await agentManager.stopRoadmap(projectId);
-
-    debugLog("[Roadmap Handler] Stop result:", { projectId, wasStopped });
-
-    if (wasStopped) {
-      debugLog("[Roadmap Handler] Sending stopped event to renderer");
-      safeSendToRenderer(getMainWindow, IPC_CHANNELS.ROADMAP_STOPPED, projectId);
-    }
-
-    return { success: wasStopped };
+    return stopRoadmapGeneration(projectId, agentManager, getMainWindow);
   });
 
   // ============================================

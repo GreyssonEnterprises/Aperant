@@ -28,7 +28,6 @@ interface QueueRunnerRecord {
   controller: AbortController;
   spawnId: number;
   promise: Promise<void>;
-  stoppedEmitted: boolean;
 }
 
 /**
@@ -72,6 +71,24 @@ export class AgentQueueManager {
 
   /** One authoritative queue runner may own a project's shared AgentState. */
   private runners: Map<string, QueueRunnerRecord> = new Map();
+  /** Serializes every lifecycle transition for a project in invocation order. */
+  private operations: Map<string, Promise<void>> = new Map();
+
+  private enqueueOperation<T>(projectId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.operations.get(projectId) ?? Promise.resolve();
+    const result = previous.then(operation);
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.operations.set(projectId, tail);
+    void tail.finally(() => {
+      if (this.operations.get(projectId) === tail) {
+        this.operations.delete(projectId);
+      }
+    });
+    return result;
+  }
 
   private releaseRunner(
     projectId: string,
@@ -85,12 +102,6 @@ export class AgentQueueManager {
     }
   }
 
-  private emitStoppedOnce(projectId: string, record: QueueRunnerRecord): void {
-    if (record.stoppedEmitted) return;
-    record.stoppedEmitted = true;
-    this.emitter.emit(`${record.kind}-stopped`, projectId);
-  }
-
   private async stopTrackedRunner(
     projectId: string,
     record: QueueRunnerRecord,
@@ -100,32 +111,21 @@ export class AgentQueueManager {
       await record.promise;
     } catch (error) {
       debugError(`[Agent Queue] ${record.kind} runner failed while stopping:`, error);
-      this.emitter.emit(
-        `${record.kind}-error`,
-        projectId,
-        `${record.kind === 'ideation' ? 'Ideation' : 'Roadmap'} could not stop safely`,
-      );
       return false;
     }
     if (this.runners.get(projectId) === record ||
       this.state.getProcess(projectId)?.spawnId === record.spawnId) {
-      this.emitter.emit(
-        `${record.kind}-error`,
-        projectId,
-        `${record.kind === 'ideation' ? 'Ideation' : 'Roadmap'} ownership was not released`,
-      );
       return false;
     }
-    this.emitStoppedOnce(projectId, record);
     return true;
   }
 
-  private async startRunner(
+  private async installRunner(
     kind: QueueRunnerKind,
     projectId: string,
     projectPath: string,
     execute: (controller: AbortController) => Promise<void>,
-  ): Promise<void> {
+  ): Promise<QueueRunnerRecord> {
     const existing = this.runners.get(projectId);
     if (existing) {
       const stopped = await this.stopTrackedRunner(projectId, existing);
@@ -147,7 +147,6 @@ export class AgentQueueManager {
       controller,
       spawnId,
       promise: Promise.resolve(),
-      stoppedEmitted: false,
     };
     this.runners.set(projectId, record);
     this.state.addProcess(projectId, {
@@ -161,7 +160,7 @@ export class AgentQueueManager {
     record.promise = Promise.resolve()
       .then(() => execute(controller))
       .finally(() => this.releaseRunner(projectId, record));
-    return record.promise;
+    return record;
   }
 
   /**
@@ -257,11 +256,14 @@ export class AgentQueueManager {
       config
     });
 
-    await this.startRunner('roadmap', projectId, projectPath, (controller) => (
-      this.runRoadmapRunner(
-        projectId, projectPath, refresh, enableCompetitorAnalysis, controller, config,
-      )
+    const record = await this.enqueueOperation(projectId, () => (
+      this.installRunner('roadmap', projectId, projectPath, (controller) => (
+        this.runRoadmapRunner(
+          projectId, projectPath, refresh, enableCompetitorAnalysis, controller, config,
+        )
+      ))
     ));
+    await record.promise;
   }
 
   /**
@@ -279,9 +281,12 @@ export class AgentQueueManager {
       config
     });
 
-    await this.startRunner('ideation', projectId, projectPath, (controller) => (
-      this.runIdeationRunner(projectId, projectPath, config, controller)
+    const record = await this.enqueueOperation(projectId, () => (
+      this.installRunner('ideation', projectId, projectPath, (controller) => (
+        this.runIdeationRunner(projectId, projectPath, config, controller)
+      ))
     ));
+    await record.promise;
   }
 
   /**
@@ -573,27 +578,29 @@ export class AgentQueueManager {
   async stopIdeation(projectId: string): Promise<boolean> {
     debugLog('[Agent Queue] Stop ideation requested:', { projectId });
 
+    return this.enqueueOperation(projectId, () => this.stopRunner('ideation', projectId));
+  }
+
+  private async stopRunner(kind: QueueRunnerKind, projectId: string): Promise<boolean> {
     const runner = this.runners.get(projectId);
     if (runner) {
-      if (runner.kind !== 'ideation') return false;
-      debugLog('[Agent Queue] Aborting ideation TS runner:', projectId);
+      if (runner.kind !== kind) return false;
+      debugLog(`[Agent Queue] Aborting ${kind} TS runner:`, projectId);
       return this.stopTrackedRunner(projectId, runner);
     }
 
     // Fallback: check for legacy process
     const processInfo = this.state.getProcess(projectId);
-    const isIdeation = processInfo?.queueProcessType === 'ideation';
-    if (isIdeation) {
-      debugLog('[Agent Queue] Killing legacy ideation process:', projectId);
+    if (processInfo?.queueProcessType === kind) {
+      debugLog(`[Agent Queue] Killing legacy ${kind} process:`, projectId);
       const wasStopped = await this.processManager.killProcess(projectId);
       if (!wasStopped) {
         return false;
       }
-      this.emitter.emit('ideation-stopped', projectId);
       return true;
     }
 
-    debugLog('[Agent Queue] No running ideation process found for:', projectId);
+    debugLog(`[Agent Queue] No running ${kind} process found for:`, projectId);
     return false;
   }
 
@@ -612,29 +619,7 @@ export class AgentQueueManager {
    */
   async stopRoadmap(projectId: string): Promise<boolean> {
     debugLog('[Agent Queue] Stop roadmap requested:', { projectId });
-
-    const runner = this.runners.get(projectId);
-    if (runner) {
-      if (runner.kind !== 'roadmap') return false;
-      debugLog('[Agent Queue] Aborting roadmap TS runner:', projectId);
-      return this.stopTrackedRunner(projectId, runner);
-    }
-
-    // Fallback: check for legacy process
-    const processInfo = this.state.getProcess(projectId);
-    const isRoadmap = processInfo?.queueProcessType === 'roadmap';
-    if (isRoadmap) {
-      debugLog('[Agent Queue] Killing legacy roadmap process:', projectId);
-      const wasStopped = await this.processManager.killProcess(projectId);
-      if (!wasStopped) {
-        return false;
-      }
-      this.emitter.emit('roadmap-stopped', projectId);
-      return true;
-    }
-
-    debugLog('[Agent Queue] No running roadmap process found for:', projectId);
-    return false;
+    return this.enqueueOperation(projectId, () => this.stopRunner('roadmap', projectId));
   }
 
   /**
