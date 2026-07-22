@@ -169,7 +169,7 @@ export interface ColorThemeDefinition {
 }
 
 // Thinking level for model (budget token allocation or reasoning effort)
-export type ThinkingLevel = 'low' | 'medium' | 'high' | 'xhigh';
+export type ThinkingLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 // Model type shorthand
 export type ModelTypeShort = 'haiku' | 'sonnet' | 'opus' | 'opus-1m' | 'opus-4.5';
@@ -337,6 +337,7 @@ export interface AppSettings {
   _migratedDefaultModelSync?: boolean;
   _migratedUltrathinkToHigh?: boolean;
   _migratedToPerProviderConfig?: boolean;
+  _migratedCurrentModelCatalog?: boolean;
   // Language preference for UI (i18n)
   language?: SupportedLanguage;
   // Developer tools preferences
@@ -362,5 +363,3 @@ export interface AppSettings {
 
 // GPU acceleration mode for terminal WebGL rendering
 export type GpuAcceleration = 'auto' | 'on' | 'off';
-
-

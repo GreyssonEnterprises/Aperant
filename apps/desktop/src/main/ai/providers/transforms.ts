@@ -250,7 +250,7 @@ export function getCacheBreakpoints(
 // ============================================
 
 /** Valid thinking level values */
-const VALID_THINKING_LEVELS: ReadonlySet<string> = new Set(['low', 'medium', 'high']);
+const VALID_THINKING_LEVELS: ReadonlySet<string> = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 
 /** Mapping from legacy/removed thinking levels to valid ones */
 const LEGACY_THINKING_LEVEL_MAP: Record<string, ThinkingLevel> = {

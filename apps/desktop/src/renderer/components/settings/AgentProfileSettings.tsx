@@ -341,6 +341,9 @@ export function AgentProfileSettings({ provider }: AgentProfileSettingsProps) {
                         onChange={(value) => handlePhaseThinkingChange(phase, value as ThinkingLevel)}
                         modelValue={currentPhaseModels[phase]}
                         provider={provider ?? 'anthropic'}
+                        modelOption={catalogModels.find((option) =>
+                          option.provider === (provider ?? 'anthropic') &&
+                          option.value === currentPhaseModels[phase])}
                       />
                     </div>
                   </div>

@@ -2,8 +2,21 @@ import { describe, it, expect } from 'vitest';
 import {
   getProviderPreset,
   getProviderPresetOrFallback,
+  migrateLegacyModelId,
   PROVIDER_PRESET_DEFINITIONS,
 } from '../models';
+
+describe('migrateLegacyModelId', () => {
+  it.each(['gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex-mini'])(
+    'moves retired Codex model %s to Sol',
+    (modelId) => expect(migrateLegacyModelId(modelId)).toBe('gpt-5.6-sol'),
+  );
+
+  it('preserves current and unrelated models', () => {
+    expect(migrateLegacyModelId('gpt-5.6-sol')).toBe('gpt-5.6-sol');
+    expect(migrateLegacyModelId('claude-opus-4-8')).toBe('claude-opus-4-8');
+  });
+});
 
 describe('getProviderPreset', () => {
   it('returns correct preset for known provider and presetId', () => {
@@ -23,7 +36,7 @@ describe('getProviderPreset', () => {
   it('returns correct preset for openai provider', () => {
     const result = getProviderPreset('openai', 'auto');
     expect(result).not.toBeNull();
-    expect(result?.primaryModel).toBe('gpt-5.3-codex');
+    expect(result?.primaryModel).toBe('gpt-5.6-sol');
   });
 
   it('returns null for unknown presetId', () => {
@@ -53,7 +66,7 @@ describe('getProviderPresetOrFallback', () => {
 
   it('returns openai balanced preset exactly when available', () => {
     const result = getProviderPresetOrFallback('openai', 'balanced');
-    expect(result.primaryModel).toBe('gpt-5.2-codex');
+    expect(result.primaryModel).toBe('gpt-5.6-sol');
     expect(result.primaryThinking).toBe('medium');
   });
 

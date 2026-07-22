@@ -119,6 +119,8 @@ export function MixedPhaseEditor() {
                 onChange={(level) => handleThinkingChange(phase, level as ThinkingLevel)}
                 modelValue={entry.modelId}
                 provider={entry.provider}
+                modelOption={catalogModels.find((option) =>
+                  option.provider === entry.provider && option.value === entry.modelId)}
               />
 
               {/* Provider badge */}

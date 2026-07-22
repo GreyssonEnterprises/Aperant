@@ -31,11 +31,9 @@ export type {
 // ============================================
 
 export const AVAILABLE_MODELS = [
-  { value: 'opus', label: 'Claude Opus 4.6' },
-  { value: 'opus-1m', label: 'Claude Opus 4.6 (1M)' },
-  { value: 'opus-4.5', label: 'Claude Opus 4.5' },
-  { value: 'sonnet', label: 'Claude Sonnet 4.6' },
-  { value: 'haiku', label: 'Claude Haiku 4.5' }
+  { value: 'fable', label: 'Claude Fable 5' },
+  { value: 'opus', label: 'Claude Opus 4.8' },
+  { value: 'sonnet', label: 'Claude Sonnet 5' }
 ] as const;
 
 // ============================================
@@ -88,19 +86,12 @@ function legacyAnthropicModel(
 
 export const ALL_AVAILABLE_MODELS: ModelOption[] = [
   // Anthropic
-  legacyAnthropicModel('opus', 'claude-opus-4-6', 'Most capable'),
-  {
-    ...legacyAnthropicModel('opus-1m', 'claude-opus-4-6', '1M context', 1_000_000),
-    label: 'Claude Opus 4.6 (1M)',
-  },
-  legacyAnthropicModel('sonnet', 'claude-sonnet-4-6', 'Balanced'),
-  legacyAnthropicModel('opus-4.5', 'claude-opus-4-5-20251101', 'Legacy'),
-  legacyAnthropicModel('haiku', 'claude-haiku-4-5-20251001', 'Fast'),
+  legacyAnthropicModel('fable', 'claude-fable-5', 'Fast'),
+  legacyAnthropicModel('opus', 'claude-opus-4-8', 'Most capable'),
+  legacyAnthropicModel('sonnet', 'claude-sonnet-5', 'Balanced'),
   // OpenAI
-  { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', provider: 'openai', description: 'Agentic coding', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 1047576 } },
+  { value: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', provider: 'openai', description: 'Default Codex model', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 1000000 } },
   { value: 'gpt-5.2', label: 'GPT-5.2', provider: 'openai', description: 'Flagship', apiKeyOnly: true, capabilities: { thinking: true, tools: true, vision: true, contextWindow: 400000 } },
-  { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', provider: 'openai', description: 'Coding', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 1047576 } },
-  { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini', provider: 'openai', description: 'Fast coding', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 400000 } },
   { value: 'gpt-5-nano', label: 'GPT-5 Nano', provider: 'openai', description: 'Fastest & cheapest', apiKeyOnly: true, capabilities: { thinking: false, tools: true, vision: true, contextWindow: 400000 } },
   { value: 'o3', label: 'o3', provider: 'openai', description: 'Reasoning', apiKeyOnly: true, capabilities: { thinking: true, tools: true, vision: true, contextWindow: 200000 } },
   { value: 'o4-mini', label: 'o4 Mini', provider: 'openai', description: 'Fast reasoning', apiKeyOnly: true, capabilities: { thinking: true, tools: true, vision: true, contextWindow: 200000 } },
@@ -129,19 +120,31 @@ export const ALL_AVAILABLE_MODELS: ModelOption[] = [
 // Maps model shorthand to actual Claude model IDs
 // Values must match apps/desktop/src/main/ai/config/types.ts MODEL_ID_MAP
 export const MODEL_ID_MAP: Record<string, string> = {
-  opus: 'claude-opus-4-6',
-  'opus-1m': 'claude-opus-4-6',
-  'opus-4.5': 'claude-opus-4-5-20251101',
-  sonnet: 'claude-sonnet-4-6',
-  haiku: 'claude-haiku-4-5-20251001'
+  fable: 'claude-fable-5',
+  opus: 'claude-opus-4-8',
+  sonnet: 'claude-sonnet-5',
+  'opus-1m': 'claude-opus-4-8',
+  'opus-4.5': 'claude-opus-4-8',
+  haiku: 'claude-fable-5'
 } as const;
+
+const LEGACY_CODEX_MODEL_IDS = new Set([
+  'gpt-5.3-codex',
+  'gpt-5.2-codex',
+  'gpt-5.1-codex-mini',
+]);
+
+export function migrateLegacyModelId(modelId: string): string {
+  return LEGACY_CODEX_MODEL_IDS.has(modelId) ? 'gpt-5.6-sol' : modelId;
+}
 
 // Maps thinking levels to budget tokens
 export const THINKING_BUDGET_MAP: Record<string, number> = {
   low: 1024,
   medium: 4096,
   high: 16384,
-  xhigh: 32768
+  xhigh: 32768,
+  max: 65536
 } as const;
 
 // ============================================
@@ -153,7 +156,8 @@ export const THINKING_LEVELS = [
   { value: 'low', label: 'Low', description: 'Brief consideration' },
   { value: 'medium', label: 'Medium', description: 'Moderate analysis' },
   { value: 'high', label: 'High', description: 'Deep thinking' },
-  { value: 'xhigh', label: 'Extra High', description: 'Maximum reasoning' }
+  { value: 'xhigh', label: 'Extra High', description: 'Extended reasoning' },
+  { value: 'max', label: 'Max', description: 'Maximum reasoning' }
 ] as const;
 
 // ============================================
@@ -210,10 +214,10 @@ export const BALANCED_PHASE_THINKING: import('../types/settings').PhaseThinkingC
 
 // Quick Edits - Haiku with low thinking across all phases
 export const QUICK_PHASE_MODELS: PhaseModelConfig = {
-  spec: 'haiku',
-  planning: 'haiku',
-  coding: 'haiku',
-  qa: 'haiku'
+  spec: 'fable',
+  planning: 'fable',
+  coding: 'fable',
+  qa: 'fable'
 };
 
 export const QUICK_PHASE_THINKING: import('../types/settings').PhaseThinkingConfig = {
@@ -238,8 +242,8 @@ export const DEFAULT_FEATURE_MODELS: FeatureModelConfig = {
   roadmap: 'opus',        // Strategic planning benefits from Opus
   githubIssues: 'opus',   // Issue triage and analysis benefits from Opus
   githubPrs: 'opus',      // PR review benefits from thorough Opus analysis
-  utility: 'haiku',       // Fast utility operations (commit messages, merge resolution)
-  naming: 'haiku'         // Fast, cheap model for task titles and terminal names
+  utility: 'fable',       // Fast utility operations (commit messages, merge resolution)
+  naming: 'fable'         // Fast model for task titles and terminal names
 };
 
 // Default feature thinking configuration
@@ -301,7 +305,7 @@ export const DEFAULT_AGENT_PROFILES: AgentProfile[] = [
     id: 'quick',
     name: 'Quick Edits',
     description: 'Fast iterations for simple changes and quick fixes',
-    model: 'haiku',
+    model: 'fable',
     thinkingLevel: 'low',
     icon: 'Zap',
     phaseModels: QUICK_PHASE_MODELS,
@@ -334,13 +338,13 @@ export const PROVIDER_PRESET_DEFINITIONS: Partial<Record<BuiltinProvider, Record
     auto:     { primaryModel: 'opus',   primaryThinking: 'high',   phaseModels: { spec: 'opus', planning: 'opus', coding: 'opus', qa: 'opus' },         phaseThinking: { spec: 'high', planning: 'high', coding: 'low', qa: 'low' } },
     complex:  { primaryModel: 'opus',   primaryThinking: 'high',   phaseModels: { spec: 'opus', planning: 'opus', coding: 'opus', qa: 'opus' },         phaseThinking: { spec: 'high', planning: 'high', coding: 'high', qa: 'high' } },
     balanced: { primaryModel: 'sonnet', primaryThinking: 'medium', phaseModels: { spec: 'sonnet', planning: 'sonnet', coding: 'sonnet', qa: 'sonnet' }, phaseThinking: { spec: 'medium', planning: 'medium', coding: 'medium', qa: 'medium' } },
-    quick:    { primaryModel: 'haiku',  primaryThinking: 'low',    phaseModels: { spec: 'haiku', planning: 'haiku', coding: 'haiku', qa: 'haiku' },     phaseThinking: { spec: 'low', planning: 'low', coding: 'low', qa: 'low' } },
+    quick:    { primaryModel: 'fable',  primaryThinking: 'low',    phaseModels: { spec: 'fable', planning: 'fable', coding: 'fable', qa: 'fable' },     phaseThinking: { spec: 'low', planning: 'low', coding: 'low', qa: 'low' } },
   },
   openai: {
-    auto:     { primaryModel: 'gpt-5.3-codex', primaryThinking: 'high',   phaseModels: { spec: 'gpt-5.3-codex', planning: 'gpt-5.3-codex', coding: 'gpt-5.3-codex', qa: 'gpt-5.3-codex' }, phaseThinking: { spec: 'high', planning: 'high', coding: 'low', qa: 'low' } },
-    complex:  { primaryModel: 'gpt-5.3-codex', primaryThinking: 'xhigh',  phaseModels: { spec: 'gpt-5.3-codex', planning: 'gpt-5.3-codex', coding: 'gpt-5.3-codex', qa: 'gpt-5.3-codex' }, phaseThinking: { spec: 'xhigh', planning: 'xhigh', coding: 'xhigh', qa: 'xhigh' } },
-    balanced: { primaryModel: 'gpt-5.2-codex',  primaryThinking: 'medium', phaseModels: { spec: 'gpt-5.2-codex', planning: 'gpt-5.2-codex', coding: 'gpt-5.2-codex', qa: 'gpt-5.2-codex' }, phaseThinking: { spec: 'medium', planning: 'medium', coding: 'medium', qa: 'medium' } },
-    quick:    { primaryModel: 'gpt-5.1-codex-mini', primaryThinking: 'low', phaseModels: { spec: 'gpt-5.1-codex-mini', planning: 'gpt-5.1-codex-mini', coding: 'gpt-5.1-codex-mini', qa: 'gpt-5.1-codex-mini' }, phaseThinking: { spec: 'low', planning: 'low', coding: 'low', qa: 'low' } },
+    auto:     { primaryModel: 'gpt-5.6-sol', primaryThinking: 'high',   phaseModels: { spec: 'gpt-5.6-sol', planning: 'gpt-5.6-sol', coding: 'gpt-5.6-sol', qa: 'gpt-5.6-sol' }, phaseThinking: { spec: 'high', planning: 'high', coding: 'low', qa: 'low' } },
+    complex:  { primaryModel: 'gpt-5.6-sol', primaryThinking: 'max',  phaseModels: { spec: 'gpt-5.6-sol', planning: 'gpt-5.6-sol', coding: 'gpt-5.6-sol', qa: 'gpt-5.6-sol' }, phaseThinking: { spec: 'max', planning: 'max', coding: 'max', qa: 'max' } },
+    balanced: { primaryModel: 'gpt-5.6-sol', primaryThinking: 'medium', phaseModels: { spec: 'gpt-5.6-sol', planning: 'gpt-5.6-sol', coding: 'gpt-5.6-sol', qa: 'gpt-5.6-sol' }, phaseThinking: { spec: 'medium', planning: 'medium', coding: 'medium', qa: 'medium' } },
+    quick:    { primaryModel: 'gpt-5.6-sol', primaryThinking: 'low', phaseModels: { spec: 'gpt-5.6-sol', planning: 'gpt-5.6-sol', coding: 'gpt-5.6-sol', qa: 'gpt-5.6-sol' }, phaseThinking: { spec: 'low', planning: 'low', coding: 'low', qa: 'low' } },
   },
   google: {
     auto:     { primaryModel: 'gemini-2.5-pro',       primaryThinking: 'high',   phaseModels: { spec: 'gemini-2.5-pro', planning: 'gemini-2.5-pro', coding: 'gemini-2.5-pro', qa: 'gemini-2.5-pro' },                         phaseThinking: { spec: 'high', planning: 'high', coding: 'low', qa: 'low' } },
@@ -407,13 +411,13 @@ export function getProviderPresetOrFallback(provider: BuiltinProvider, presetId:
 }
 
 // Models that support Fast Mode (same model, faster API routing, higher cost)
-export const FAST_MODE_MODELS: readonly string[] = ['opus', 'opus-1m'] as const;
+export const FAST_MODE_MODELS: readonly string[] = ['fable', 'opus', 'sonnet'] as const;
 
 // Models that use adaptive thinking (Opus dynamically decides how much to think within the budget cap)
-export const ADAPTIVE_THINKING_MODELS: readonly string[] = ['opus', 'opus-1m'] as const;
+export const ADAPTIVE_THINKING_MODELS: readonly string[] = ['fable', 'opus', 'sonnet'] as const;
 
 // Valid thinking levels for validation
-export const VALID_THINKING_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const;
+export const VALID_THINKING_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 // Legacy thinking level mappings (must match backend phase_config.py LEGACY_THINKING_LEVEL_MAP)
 export const LEGACY_THINKING_MAP: Record<string, string> = { ultrathink: 'high', none: 'low' } as const;
@@ -449,7 +453,7 @@ export type ReasoningType =
 
 export interface ReasoningConfig {
   type: ReasoningType;
-  level?: 'low' | 'medium' | 'high' | 'xhigh';
+  level?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
 export interface ProviderModelSpec {
@@ -460,37 +464,42 @@ export interface ProviderModelSpec {
 export const DEFAULT_MODEL_EQUIVALENCES: Record<string, Partial<Record<BuiltinProvider, ProviderModelSpec>>> = {
   // ── Anthropic shorthands ──────────────────────────────────────────────────
   'opus': {
-    anthropic: { modelId: 'claude-opus-4-6', reasoning: { type: 'adaptive_effort', level: 'high' } },
-    openai: { modelId: 'gpt-5.3-codex', reasoning: { type: 'reasoning_effort', level: 'high' } },
+    anthropic: { modelId: 'claude-opus-4-8', reasoning: { type: 'adaptive_effort', level: 'high' } },
+    openai: { modelId: 'gpt-5.6-sol', reasoning: { type: 'reasoning_effort', level: 'high' } },
     google: { modelId: 'gemini-2.5-pro', reasoning: { type: 'thinking_toggle', level: 'high' } },
     xai: { modelId: 'grok-4-0709', reasoning: { type: 'reasoning_effort', level: 'high' } },
     mistral: { modelId: 'mistral-large-latest', reasoning: { type: 'none' } },
     groq: { modelId: 'meta-llama/llama-4-maverick', reasoning: { type: 'none' } },
     zai: { modelId: 'glm-5', reasoning: { type: 'none' } },
   },
+  'fable': {
+    anthropic: { modelId: 'claude-fable-5', reasoning: { type: 'adaptive_effort', level: 'high' } },
+    openai: { modelId: 'gpt-5.6-sol', reasoning: { type: 'reasoning_effort', level: 'low' } },
+    google: { modelId: 'gemini-2.5-flash-lite', reasoning: { type: 'thinking_toggle', level: 'low' } },
+  },
   'glm-5': {
     zai: { modelId: 'glm-5', reasoning: { type: 'none' } },
-    anthropic: { modelId: 'claude-opus-4-6', reasoning: { type: 'adaptive_effort', level: 'high' } },
-    openai: { modelId: 'gpt-5.3-codex', reasoning: { type: 'reasoning_effort', level: 'high' } },
+    anthropic: { modelId: 'claude-opus-4-8', reasoning: { type: 'adaptive_effort', level: 'high' } },
+    openai: { modelId: 'gpt-5.6-sol', reasoning: { type: 'reasoning_effort', level: 'high' } },
   },
   'glm-4.7': {
     zai: { modelId: 'glm-4.7', reasoning: { type: 'none' } },
-    anthropic: { modelId: 'claude-sonnet-4-6', reasoning: { type: 'thinking_tokens', level: 'medium' } },
-    openai: { modelId: 'gpt-5.2', reasoning: { type: 'reasoning_effort', level: 'medium' } },
+    anthropic: { modelId: 'claude-sonnet-5', reasoning: { type: 'adaptive_effort', level: 'medium' } },
+    openai: { modelId: 'gpt-5.6-sol', reasoning: { type: 'reasoning_effort', level: 'medium' } },
   },
   'opus-1m': {
-    anthropic: { modelId: 'claude-opus-4-6', reasoning: { type: 'adaptive_effort', level: 'high' } },
-    openai: { modelId: 'gpt-5.2', reasoning: { type: 'reasoning_effort', level: 'high' } },
+    anthropic: { modelId: 'claude-opus-4-8', reasoning: { type: 'adaptive_effort', level: 'high' } },
+    openai: { modelId: 'gpt-5.6-sol', reasoning: { type: 'reasoning_effort', level: 'high' } },
     google: { modelId: 'gemini-2.5-pro', reasoning: { type: 'thinking_toggle', level: 'high' } },
   },
   'opus-4.5': {
-    anthropic: { modelId: 'claude-opus-4-5-20251101', reasoning: { type: 'thinking_tokens', level: 'high' } },
-    openai: { modelId: 'gpt-5.3-codex', reasoning: { type: 'reasoning_effort', level: 'high' } },
+    anthropic: { modelId: 'claude-opus-4-8', reasoning: { type: 'adaptive_effort', level: 'high' } },
+    openai: { modelId: 'gpt-5.6-sol', reasoning: { type: 'reasoning_effort', level: 'high' } },
     google: { modelId: 'gemini-2.5-pro', reasoning: { type: 'thinking_toggle', level: 'high' } },
   },
   'sonnet': {
-    anthropic: { modelId: 'claude-sonnet-4-6', reasoning: { type: 'thinking_tokens', level: 'medium' } },
-    openai: { modelId: 'gpt-5.2-codex', reasoning: { type: 'reasoning_effort', level: 'medium' } },
+    anthropic: { modelId: 'claude-sonnet-5', reasoning: { type: 'adaptive_effort', level: 'medium' } },
+    openai: { modelId: 'gpt-5.6-sol', reasoning: { type: 'reasoning_effort', level: 'medium' } },
     google: { modelId: 'gemini-2.5-flash', reasoning: { type: 'thinking_toggle', level: 'medium' } },
     mistral: { modelId: 'mistral-large-latest', reasoning: { type: 'none' } },
     groq: { modelId: 'llama-3.3-70b-versatile', reasoning: { type: 'none' } },
@@ -498,69 +507,74 @@ export const DEFAULT_MODEL_EQUIVALENCES: Record<string, Partial<Record<BuiltinPr
     zai: { modelId: 'glm-4.7', reasoning: { type: 'none' } },
   },
   'haiku': {
-    anthropic: { modelId: 'claude-haiku-4-5-20251001', reasoning: { type: 'none' } },
-    openai: { modelId: 'gpt-5.1-codex-mini', reasoning: { type: 'reasoning_effort', level: 'low' } },
+    anthropic: { modelId: 'claude-fable-5', reasoning: { type: 'adaptive_effort', level: 'low' } },
+    openai: { modelId: 'gpt-5.6-sol', reasoning: { type: 'reasoning_effort', level: 'low' } },
     google: { modelId: 'gemini-2.5-flash-lite', reasoning: { type: 'thinking_toggle', level: 'low' } },
     mistral: { modelId: 'mistral-small-latest', reasoning: { type: 'none' } },
     groq: { modelId: 'llama-3.3-70b-versatile', reasoning: { type: 'none' } },
     zai: { modelId: 'glm-4.5-flash', reasoning: { type: 'none' } },
   },
   // ── OpenAI models ─────────────────────────────────────────────────────────
+  'gpt-5.6-sol': {
+    openai: { modelId: 'gpt-5.6-sol', reasoning: { type: 'reasoning_effort', level: 'low' } },
+    anthropic: { modelId: 'claude-opus-4-8', reasoning: { type: 'adaptive_effort', level: 'high' } },
+    google: { modelId: 'gemini-2.5-pro', reasoning: { type: 'thinking_toggle', level: 'high' } },
+  },
   'gpt-5.3-codex': {
-    openai: { modelId: 'gpt-5.3-codex', reasoning: { type: 'reasoning_effort', level: 'high' } },
-    anthropic: { modelId: 'claude-opus-4-6', reasoning: { type: 'adaptive_effort', level: 'high' } },
+    openai: { modelId: 'gpt-5.6-sol', reasoning: { type: 'reasoning_effort', level: 'high' } },
+    anthropic: { modelId: 'claude-opus-4-8', reasoning: { type: 'adaptive_effort', level: 'high' } },
     google: { modelId: 'gemini-2.5-pro', reasoning: { type: 'thinking_toggle', level: 'high' } },
   },
   'gpt-5.2': {
     openai: { modelId: 'gpt-5.2', reasoning: { type: 'reasoning_effort', level: 'high' } },
-    anthropic: { modelId: 'claude-sonnet-4-6', reasoning: { type: 'thinking_tokens', level: 'high' } },
+    anthropic: { modelId: 'claude-sonnet-5', reasoning: { type: 'adaptive_effort', level: 'high' } },
     google: { modelId: 'gemini-2.5-pro', reasoning: { type: 'thinking_toggle', level: 'high' } },
   },
   'gpt-5.2-codex': {
-    openai: { modelId: 'gpt-5.2-codex', reasoning: { type: 'reasoning_effort', level: 'high' } },
-    anthropic: { modelId: 'claude-opus-4-6', reasoning: { type: 'adaptive_effort', level: 'high' } },
+    openai: { modelId: 'gpt-5.6-sol', reasoning: { type: 'reasoning_effort', level: 'high' } },
+    anthropic: { modelId: 'claude-opus-4-8', reasoning: { type: 'adaptive_effort', level: 'high' } },
     google: { modelId: 'gemini-2.5-pro', reasoning: { type: 'thinking_toggle', level: 'high' } },
   },
   'gpt-5.1-codex-mini': {
-    openai: { modelId: 'gpt-5.1-codex-mini', reasoning: { type: 'reasoning_effort', level: 'low' } },
-    anthropic: { modelId: 'claude-haiku-4-5-20251001', reasoning: { type: 'none' } },
+    openai: { modelId: 'gpt-5.6-sol', reasoning: { type: 'reasoning_effort', level: 'low' } },
+    anthropic: { modelId: 'claude-fable-5', reasoning: { type: 'adaptive_effort', level: 'low' } },
     google: { modelId: 'gemini-2.5-flash-lite', reasoning: { type: 'thinking_toggle', level: 'low' } },
   },
   'gpt-5-nano': {
     openai: { modelId: 'gpt-5-nano', reasoning: { type: 'none' } },
-    anthropic: { modelId: 'claude-haiku-4-5-20251001', reasoning: { type: 'none' } },
+    anthropic: { modelId: 'claude-fable-5', reasoning: { type: 'adaptive_effort', level: 'low' } },
     google: { modelId: 'gemini-2.5-flash-lite', reasoning: { type: 'thinking_toggle', level: 'low' } },
   },
   'o3': {
     openai: { modelId: 'o3', reasoning: { type: 'reasoning_effort', level: 'high' } },
-    anthropic: { modelId: 'claude-opus-4-6', reasoning: { type: 'adaptive_effort', level: 'high' } },
+    anthropic: { modelId: 'claude-opus-4-8', reasoning: { type: 'adaptive_effort', level: 'high' } },
     google: { modelId: 'gemini-2.5-pro', reasoning: { type: 'thinking_toggle', level: 'high' } },
   },
   'o4-mini': {
     openai: { modelId: 'o4-mini', reasoning: { type: 'reasoning_effort', level: 'medium' } },
-    anthropic: { modelId: 'claude-sonnet-4-6', reasoning: { type: 'thinking_tokens', level: 'medium' } },
+    anthropic: { modelId: 'claude-sonnet-5', reasoning: { type: 'adaptive_effort', level: 'medium' } },
     google: { modelId: 'gemini-2.5-flash', reasoning: { type: 'thinking_toggle', level: 'medium' } },
   },
   // ── Google models ─────────────────────────────────────────────────────────
   'gemini-2.5-pro': {
     google: { modelId: 'gemini-2.5-pro', reasoning: { type: 'thinking_toggle', level: 'high' } },
-    anthropic: { modelId: 'claude-opus-4-6', reasoning: { type: 'adaptive_effort', level: 'high' } },
-    openai: { modelId: 'gpt-5.3-codex', reasoning: { type: 'reasoning_effort', level: 'high' } },
+    anthropic: { modelId: 'claude-opus-4-8', reasoning: { type: 'adaptive_effort', level: 'high' } },
+    openai: { modelId: 'gpt-5.6-sol', reasoning: { type: 'reasoning_effort', level: 'high' } },
   },
   'gemini-2.5-flash': {
     google: { modelId: 'gemini-2.5-flash', reasoning: { type: 'thinking_toggle', level: 'medium' } },
-    anthropic: { modelId: 'claude-sonnet-4-6', reasoning: { type: 'thinking_tokens', level: 'medium' } },
+    anthropic: { modelId: 'claude-sonnet-5', reasoning: { type: 'adaptive_effort', level: 'medium' } },
     openai: { modelId: 'gpt-5.2', reasoning: { type: 'reasoning_effort', level: 'medium' } },
   },
   // ── xAI models ────────────────────────────────────────────────────────────
   'grok-4-0709': {
     xai: { modelId: 'grok-4-0709', reasoning: { type: 'reasoning_effort', level: 'high' } },
-    anthropic: { modelId: 'claude-opus-4-6', reasoning: { type: 'adaptive_effort', level: 'high' } },
-    openai: { modelId: 'gpt-5.3-codex', reasoning: { type: 'reasoning_effort', level: 'high' } },
+    anthropic: { modelId: 'claude-opus-4-8', reasoning: { type: 'adaptive_effort', level: 'high' } },
+    openai: { modelId: 'gpt-5.6-sol', reasoning: { type: 'reasoning_effort', level: 'high' } },
   },
   'grok-3-mini': {
     xai: { modelId: 'grok-3-mini', reasoning: { type: 'reasoning_effort', level: 'medium' } },
-    anthropic: { modelId: 'claude-sonnet-4-6', reasoning: { type: 'thinking_tokens', level: 'medium' } },
+    anthropic: { modelId: 'claude-sonnet-5', reasoning: { type: 'adaptive_effort', level: 'medium' } },
     openai: { modelId: 'o4-mini', reasoning: { type: 'reasoning_effort', level: 'medium' } },
   },
 };
@@ -643,7 +657,7 @@ export function resolveModelEquivalent(
   const direct = DEFAULT_MODEL_EQUIVALENCES[modelValue]?.[targetProvider];
   if (direct) return direct;
 
-  // Reverse lookup: if modelValue is a full model ID (e.g. 'claude-opus-4-6'),
+  // Reverse lookup: if modelValue is a full model ID (e.g. 'claude-opus-4-8'),
   // find which equivalence entry resolves to that ID and use the target provider mapping
   for (const [_key, providerMap] of Object.entries(DEFAULT_MODEL_EQUIVALENCES)) {
     for (const spec of Object.values(providerMap)) {
@@ -660,7 +674,7 @@ export function resolveModelEquivalent(
 /**
  * Look up the context window size for a model shorthand or full model ID.
  * Searches ALL_AVAILABLE_MODELS by value first, then searches
- * DEFAULT_MODEL_EQUIVALENCES for full model IDs (e.g., 'claude-opus-4-6').
+ * DEFAULT_MODEL_EQUIVALENCES for full model IDs (e.g., 'claude-opus-4-8').
  * Falls back to 200,000 (conservative default) if not found.
  */
 export function getModelContextWindow(modelIdOrShorthand: string): number {
@@ -675,7 +689,7 @@ export function getModelContextWindow(modelIdOrShorthand: string): number {
     return descriptor.contextWindow;
   }
 
-  // Search equivalences for full model IDs (e.g., 'claude-opus-4-6' → find 'opus' entry)
+  // Search equivalences for full model IDs (e.g., 'claude-opus-4-8' → find 'opus' entry)
   for (const [shorthand, providerMap] of Object.entries(DEFAULT_MODEL_EQUIVALENCES)) {
     for (const spec of Object.values(providerMap)) {
       if (spec?.modelId === modelIdOrShorthand) {

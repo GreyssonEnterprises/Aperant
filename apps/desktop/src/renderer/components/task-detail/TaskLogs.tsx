@@ -70,7 +70,8 @@ const THINKING_SHORT_LABELS: Record<ThinkingLevel, string> = {
   low: 'Low',
   medium: 'Med',
   high: 'High',
-  xhigh: 'XHigh'
+  xhigh: 'XHigh',
+  max: 'Max'
 };
 
 // Resolve a model shorthand to a display label, using provider context when available

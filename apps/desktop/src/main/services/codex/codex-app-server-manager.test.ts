@@ -59,16 +59,20 @@ class ScriptedProcess extends EventEmitter implements CodexJsonlProcess {
             } else if (request.method === 'model/list') {
               this.reply(request.id, {
                 data: [{
-                  id: 'gpt-5.6-codex',
-                  model: 'gpt-5.6-codex',
-                  displayName: 'GPT-5.6 Codex',
+                  id: 'gpt-5.6-sol',
+                  model: 'gpt-5.6-sol',
+                  displayName: 'GPT-5.6 Sol',
                   description: 'Current Codex model',
                   hidden: false,
                   isDefault: true,
-                  defaultReasoningEffort: 'medium',
+                  defaultReasoningEffort: 'low',
                   supportedReasoningEfforts: [
                     { reasoningEffort: 'low', description: 'Fast' },
                     { reasoningEffort: 'medium', description: 'Balanced' },
+                    { reasoningEffort: 'high', description: 'Deep' },
+                    { reasoningEffort: 'xhigh', description: 'Extra high' },
+                    { reasoningEffort: 'max', description: 'Maximum' },
+                    { reasoningEffort: 'ultra', description: 'Internal' },
                   ],
                 }],
                 nextCursor: null,
@@ -814,21 +818,28 @@ describe('per-account Codex app-server manager', () => {
       authUrl: 'https://auth.openai.com/example',
     });
     const models = await manager.listModels('account-a');
-    await expect(manager.verifyExecutionModel('account-a', 'gpt-5.6-codex', 'low'))
+    await expect(manager.verifyExecutionModel('account-a', 'gpt-5.6-sol', 'low'))
       .resolves.toBeUndefined();
     await expect(manager.verifyExecutionModel('account-a', 'missing-codex', 'low'))
       .rejects.toMatchObject({ code: 'discovery-failed' });
-    await expect(manager.verifyExecutionModel('account-a', 'gpt-5.6-codex', 'high'))
+    await expect(manager.verifyExecutionModel('account-a', 'gpt-5.6-sol', 'max'))
+      .resolves.toBeUndefined();
+    await expect(manager.verifyExecutionModel('account-a', 'gpt-5.6-sol', 'ultra'))
       .rejects.toMatchObject({ code: 'discovery-failed' });
 
     expect(models).toEqual([
       expect.objectContaining({
-        id: 'gpt-5.6-codex',
+        id: 'gpt-5.6-sol',
         provider: 'openai',
         backend: 'codex-app-server',
         availability: 'available',
         source: 'provider',
-        thinking: { mode: 'manual', effortLevels: ['low', 'medium'] },
+        isDefault: true,
+        thinking: {
+          mode: 'manual',
+          defaultEffort: 'low',
+          effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+        },
       }),
     ]);
     expect(catalogHandoff).toHaveBeenCalledWith('account-a', models);

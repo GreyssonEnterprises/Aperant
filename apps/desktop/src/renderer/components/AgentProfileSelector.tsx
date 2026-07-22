@@ -367,6 +367,8 @@ export function AgentProfileSelector({
                       modelValue={currentPhaseModels[phase]}
                       provider={activeProvider ?? 'anthropic'}
                       disabled={disabled}
+                      modelOption={phaseModelOptions.find((option) =>
+                        option.value === currentPhaseModels[phase])}
                     />
                   </div>
                 </div>
@@ -416,6 +418,7 @@ export function AgentProfileSelector({
             modelValue={model || 'sonnet'}
             provider={activeProvider ?? 'anthropic'}
             disabled={disabled}
+            modelOption={phaseModelOptions.find((option) => option.value === model)}
           />
         </div>
       )}

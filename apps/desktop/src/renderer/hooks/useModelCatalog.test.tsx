@@ -12,7 +12,7 @@ describe('useModelCatalog Codex fallback gating', () => {
     const { result } = renderHook(() => useModelCatalog({ provider: 'openai' }));
 
     expect(result.current.isLoading).toBe(true);
-    expect(result.current.options.find((model) => model.value === 'gpt-5.3-codex')).toMatchObject({
+    expect(result.current.options.find((model) => model.value === 'gpt-5.6-sol')).toMatchObject({
       availability: 'unavailable',
     });
   });
@@ -27,7 +27,7 @@ describe('useModelCatalog Codex fallback gating', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     expect(result.current.error).toBe('catalog unavailable');
-    expect(result.current.options.find((model) => model.value === 'gpt-5.3-codex')).toMatchObject({
+    expect(result.current.options.find((model) => model.value === 'gpt-5.6-sol')).toMatchObject({
       availability: 'unavailable',
     });
   });

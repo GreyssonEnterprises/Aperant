@@ -1,7 +1,7 @@
 import type { Phase } from '../../ai/config/types';
 
 const PHASES = new Set<Phase>(['spec', 'planning', 'coding', 'qa']);
-const REASONING_EFFORTS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh']);
+const REASONING_EFFORTS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 const REQUEST_KEYS = new Set([
   'phase', 'reasoningEffort', 'systemPrompt', 'input', 'outputSchema',
 ]);

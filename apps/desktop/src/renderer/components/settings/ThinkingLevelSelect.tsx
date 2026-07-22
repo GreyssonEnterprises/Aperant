@@ -15,13 +15,15 @@ import {
 } from '../ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { cn } from '../../lib/utils';
+import type { CatalogModelOption } from '../../lib/model-catalog-options';
 
-interface ThinkingLevelSelectProps {
+export interface ThinkingLevelSelectProps {
   value: string;
   onChange: (value: string) => void;
   modelValue: string;
   provider: BuiltinProvider;
   disabled?: boolean;
+  modelOption?: CatalogModelOption;
 }
 
 /**
@@ -37,10 +39,21 @@ export function ThinkingLevelSelect({
   modelValue,
   provider,
   disabled,
+  modelOption,
 }: ThinkingLevelSelectProps) {
   const { t } = useTranslation('settings');
 
-  const config = getReasoningConfigForModel(modelValue, provider);
+  const catalogThinking = modelOption?.thinking;
+  const config = catalogThinking && catalogThinking.effortLevels.length > 0
+    ? {
+        type: catalogThinking.mode === 'adaptive' || catalogThinking.mode === 'always-adaptive'
+          ? 'adaptive_effort' as const
+          : provider === 'openai' || provider === 'xai'
+            ? 'reasoning_effort' as const
+            : 'thinking_tokens' as const,
+        level: catalogThinking.defaultEffort,
+      }
+    : getReasoningConfigForModel(modelValue, provider);
   const reasoningType: ReasoningType = config.type;
 
   const badgeConfig = REASONING_TYPE_BADGES[reasoningType];
@@ -130,9 +143,12 @@ export function ThinkingLevelSelect({
 
   // ── Standard Low / Medium / High / Extra High dropdown ───────────────────
   // Only show 'xhigh' (Extra High) for reasoning_effort models (OpenAI, xAI)
-  const levels = reasoningType === 'reasoning_effort'
-    ? THINKING_LEVELS
-    : THINKING_LEVELS.filter((l) => l.value !== 'xhigh');
+  const supportedLevels = catalogThinking?.effortLevels ?? [];
+  const levels = supportedLevels.length > 0
+    ? THINKING_LEVELS.filter((level) => supportedLevels.includes(level.value))
+    : reasoningType === 'reasoning_effort'
+      ? THINKING_LEVELS.filter((level) => level.value !== 'max')
+      : THINKING_LEVELS.filter((level) => level.value !== 'xhigh' && level.value !== 'max');
 
   return (
     <div className="space-y-1">

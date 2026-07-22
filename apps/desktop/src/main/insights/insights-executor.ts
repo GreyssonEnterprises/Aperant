@@ -85,7 +85,7 @@ export class InsightsExecutor extends EventEmitter {
 
     // Map InsightsModelConfig to ModelShorthand/ThinkingLevel
     const modelShorthand: ModelShorthand = (modelConfig?.model as ModelShorthand) ?? 'sonnet';
-    const thinkingLevel: 'low' | 'medium' | 'high' | 'xhigh' = modelConfig?.thinkingLevel ?? 'medium';
+    const thinkingLevel = modelConfig?.thinkingLevel ?? 'medium';
 
     // Map history to InsightsMessage format
     const history = conversationHistory

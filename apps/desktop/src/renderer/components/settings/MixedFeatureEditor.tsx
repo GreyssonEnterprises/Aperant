@@ -134,6 +134,8 @@ export function MixedFeatureEditor() {
                 onChange={(level) => handleThinkingChange(feature, level as ThinkingLevel)}
                 modelValue={entry.modelId}
                 provider={entry.provider}
+                modelOption={catalogModels.find((option) =>
+                  option.provider === entry.provider && option.value === entry.modelId)}
               />
 
               {/* Provider badge */}

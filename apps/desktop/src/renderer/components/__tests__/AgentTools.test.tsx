@@ -48,7 +48,7 @@ describe('AgentTools - Agent Profile Resolution', () => {
       expect(profile).toBeDefined();
       expect(profile?.id).toBe('quick');
       expect(profile?.name).toBe('Quick Edits');
-      expect(profile?.model).toBe('haiku');
+      expect(profile?.model).toBe('fable');
     });
   });
 
@@ -254,7 +254,7 @@ describe('AgentTools - Agent Profile Resolution', () => {
         { type: 'feature', feature: 'utility' },
         resolvedSettings
       );
-      expect(utilityAgent.model).toBe('haiku');
+      expect(utilityAgent.model).toBe('fable');
       expect(utilityAgent.thinking).toBe('low');
     });
 

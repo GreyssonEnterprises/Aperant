@@ -8,7 +8,7 @@ import { is } from '@electron-toolkit/utils';
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-import { IPC_CHANNELS, DEFAULT_APP_SETTINGS, DEFAULT_AGENT_PROFILES, SPELL_CHECK_LANGUAGE_MAP, DEFAULT_SPELL_CHECK_LANGUAGE, sanitizeThinkingLevel, VALID_THINKING_LEVELS } from '../../shared/constants';
+import { IPC_CHANNELS, DEFAULT_APP_SETTINGS, DEFAULT_AGENT_PROFILES, SPELL_CHECK_LANGUAGE_MAP, DEFAULT_SPELL_CHECK_LANGUAGE, migrateLegacyModelId, sanitizeThinkingLevel, VALID_THINKING_LEVELS } from '../../shared/constants';
 import { setAppLanguage } from '../app-language';
 import type {
   AppSettings,
@@ -31,6 +31,15 @@ import { getModelCatalogService } from '../services/model-catalog-runtime';
 const settingsPath = getSettingsPath();
 
 const providerAccountMutationLocks = new Map<string, Promise<void>>();
+function migrateModelValues<T extends object>(models: T | undefined): void {
+  if (!models) return;
+  for (const key of Object.keys(models) as Array<keyof T>) {
+    const model = models[key];
+    if (typeof model === 'string') {
+      models[key] = migrateLegacyModelId(model) as T[keyof T];
+    }
+  }
+}
 
 async function withProviderAccountMutationLock<T>(
   accountId: string,
@@ -400,6 +409,24 @@ export function registerSettingsHandlers(
           settings.providerAgentConfig = perProvider;
         }
         settings._migratedToPerProviderConfig = true;
+        needsSave = true;
+      }
+
+      // Migration: replace retired Codex preset models in persisted settings.
+      if (!settings._migratedCurrentModelCatalog) {
+        settings.defaultModel = migrateLegacyModelId(settings.defaultModel);
+        migrateModelValues(settings.customPhaseModels);
+        migrateModelValues(settings.featureModels);
+        const openAiConfig = settings.providerAgentConfig?.openai;
+        migrateModelValues(openAiConfig?.customPhaseModels);
+        migrateModelValues(openAiConfig?.featureModels);
+        for (const entry of Object.values(settings.customMixedPhaseConfig ?? {})) {
+          if (entry.provider === 'openai') entry.modelId = migrateLegacyModelId(entry.modelId);
+        }
+        for (const entry of Object.values(settings.customMixedFeatureConfig ?? {})) {
+          if (entry.provider === 'openai') entry.modelId = migrateLegacyModelId(entry.modelId);
+        }
+        settings._migratedCurrentModelCatalog = true;
         needsSave = true;
       }
 

@@ -21,8 +21,9 @@ import {
 
 describe('MODEL_ID_MAP', () => {
   it('should map all model shorthands', () => {
-    expect(MODEL_ID_MAP.opus).toBe('claude-opus-4-6');
-    expect(MODEL_ID_MAP['opus-1m']).toBe('claude-opus-4-6');
+    expect(MODEL_ID_MAP.fable).toBe('claude-fable-5');
+    expect(MODEL_ID_MAP.opus).toBe('claude-opus-4-8');
+    expect(MODEL_ID_MAP['opus-1m']).toBe('claude-opus-4-8');
     expect(MODEL_ID_MAP['opus-4.5']).toBeDefined();
     expect(MODEL_ID_MAP.sonnet).toBeDefined();
     expect(MODEL_ID_MAP.haiku).toBeDefined();
@@ -30,17 +31,19 @@ describe('MODEL_ID_MAP', () => {
 });
 
 describe('THINKING_BUDGET_MAP', () => {
-  it('should define budgets for all four tiers', () => {
+  it('should define budgets for all five tiers', () => {
     expect(THINKING_BUDGET_MAP.low).toBe(1024);
     expect(THINKING_BUDGET_MAP.medium).toBe(4096);
     expect(THINKING_BUDGET_MAP.high).toBe(16384);
     expect(THINKING_BUDGET_MAP.xhigh).toBe(32768);
+    expect(THINKING_BUDGET_MAP.max).toBe(65536);
   });
 
   it('should have increasing budgets', () => {
     expect(THINKING_BUDGET_MAP.low).toBeLessThan(THINKING_BUDGET_MAP.medium);
     expect(THINKING_BUDGET_MAP.medium).toBeLessThan(THINKING_BUDGET_MAP.high);
     expect(THINKING_BUDGET_MAP.high).toBeLessThan(THINKING_BUDGET_MAP.xhigh);
+    expect(THINKING_BUDGET_MAP.xhigh).toBeLessThan(THINKING_BUDGET_MAP.max);
   });
 });
 
@@ -68,6 +71,7 @@ describe('sanitizeThinkingLevel', () => {
     expect(sanitizeThinkingLevel('medium')).toBe('medium');
     expect(sanitizeThinkingLevel('high')).toBe('high');
     expect(sanitizeThinkingLevel('xhigh')).toBe('xhigh');
+    expect(sanitizeThinkingLevel('max')).toBe('max');
   });
 
   it('should map legacy "ultrathink" to "high"', () => {
@@ -96,9 +100,10 @@ describe('resolveModelId', () => {
   });
 
   it('should resolve shorthands to model IDs', () => {
-    expect(resolveModelId('opus')).toBe('claude-opus-4-6');
+    expect(resolveModelId('fable')).toBe('claude-fable-5');
+    expect(resolveModelId('opus')).toBe('claude-opus-4-8');
     expect(resolveModelId('sonnet')).toMatch(/^claude-sonnet/);
-    expect(resolveModelId('haiku')).toMatch(/^claude-haiku/);
+    expect(resolveModelId('haiku')).toBe('claude-fable-5');
   });
 
   it('should pass through full model IDs unchanged', () => {
@@ -157,7 +162,7 @@ describe('getThinkingBudget', () => {
 
 describe('isAdaptiveModel', () => {
   it('should return true for adaptive models', () => {
-    expect(isAdaptiveModel('claude-opus-4-6')).toBe(true);
+    expect(isAdaptiveModel('claude-opus-4-8')).toBe(true);
   });
 
   it('should return false for non-adaptive models', () => {
@@ -177,17 +182,17 @@ describe('getThinkingKwargsForModel', () => {
   });
 
   it('should return both maxThinkingTokens and effortLevel for adaptive models', () => {
-    const kwargs = getThinkingKwargsForModel('claude-opus-4-6', 'high');
+    const kwargs = getThinkingKwargsForModel('claude-opus-4-8', 'high');
     expect(kwargs.maxThinkingTokens).toBe(16384);
     expect(kwargs.effortLevel).toBe('high');
   });
 
   it('should map thinking levels to effort levels correctly', () => {
     expect(
-      getThinkingKwargsForModel('claude-opus-4-6', 'low').effortLevel,
+      getThinkingKwargsForModel('claude-opus-4-8', 'low').effortLevel,
     ).toBe('low');
     expect(
-      getThinkingKwargsForModel('claude-opus-4-6', 'medium').effortLevel,
+      getThinkingKwargsForModel('claude-opus-4-8', 'medium').effortLevel,
     ).toBe('medium');
   });
 });

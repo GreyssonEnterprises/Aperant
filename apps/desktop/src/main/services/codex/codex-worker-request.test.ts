@@ -19,6 +19,15 @@ describe('Codex worker request validation', () => {
     });
   });
 
+  it('accepts max reasoning effort', () => {
+    expect(parseCodexWorkerRequest({
+      phase: 'coding',
+      reasoningEffort: 'max',
+      systemPrompt: 'Implement the approved subtask.',
+      input: 'Run the coding phase.',
+    })).toMatchObject({ reasoningEffort: 'max' });
+  });
+
   it.each([
     { phase: '../escape', systemPrompt: 'x', input: 'x' },
     { phase: 'coding', systemPrompt: 'x', input: 'x', accountId: 'other-account' },

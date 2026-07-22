@@ -62,7 +62,7 @@ describe('model catalog service', () => {
       source: 'provider',
       availability: 'available',
     });
-    expect(first.find((model) => model.id === 'claude-opus-4-6')).toMatchObject({
+    expect(first.find((model) => model.id === 'claude-opus-4-8')).toMatchObject({
       source: 'bundled',
       availability: 'unavailable',
     });
@@ -405,7 +405,7 @@ describe('model catalog service', () => {
 
     const models = await service.list({ provider: 'openai' });
 
-    expect(models.find((model) => model.id === 'gpt-5.3-codex')?.availability).toBe('unavailable');
+    expect(models.find((model) => model.id === 'gpt-5.6-sol')?.availability).toBe('unavailable');
     expect(models.find((model) => model.id === 'gpt-5.2')?.availability).toBe('available');
   });
 });

@@ -11,6 +11,7 @@ import {
 } from '@shared/constants/models';
 import type { BuiltinProvider } from '@shared/types/provider-account';
 import type { FeatureModelConfig, ThinkingLevel } from '@shared/types/settings';
+import { useModelCatalog } from '../../hooks/useModelCatalog';
 
 interface FeatureModelSettingsProps {
   provider: BuiltinProvider;
@@ -29,6 +30,7 @@ interface FeatureModelSettingsProps {
 export function FeatureModelSettings({ provider }: FeatureModelSettingsProps) {
   const { t } = useTranslation('settings');
   const settings = useSettingsStore((state) => state.settings);
+  const { options: catalogModels } = useModelCatalog({ provider });
 
   // For Ollama, default to empty strings — Anthropic model shorthands are meaningless
   const providerFeatureDefaults: FeatureModelConfig = provider === 'ollama'
@@ -97,6 +99,7 @@ export function FeatureModelSettings({ provider }: FeatureModelSettingsProps) {
                 onChange={(value) => handleThinkingChange(feature, value)}
                 modelValue={currentModel}
                 provider={provider}
+                modelOption={catalogModels.find((option) => option.value === currentModel)}
               />
             </div>
           </div>

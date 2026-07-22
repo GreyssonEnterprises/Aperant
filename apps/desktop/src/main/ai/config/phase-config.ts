@@ -51,7 +51,7 @@ export const SPEC_PHASE_THINKING_LEVELS: Record<string, ThinkingLevel> = {
 // Thinking Level Validation
 // ============================================
 
-const VALID_THINKING_LEVELS = new Set<string>(['low', 'medium', 'high', 'xhigh']);
+const VALID_THINKING_LEVELS = new Set<string>(['low', 'medium', 'high', 'xhigh', 'max']);
 
 const LEGACY_THINKING_LEVEL_MAP: Record<string, ThinkingLevel> = {
   ultrathink: 'high',

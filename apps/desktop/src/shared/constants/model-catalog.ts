@@ -18,6 +18,9 @@ interface BundledModelDefinition {
   contextWindow?: number;
   maxOutputTokens?: number;
   thinking?: ModelThinkingMode;
+  effortLevels?: string[];
+  defaultEffort?: string;
+  isDefault?: boolean;
 }
 
 function bundledModel(definition: BundledModelDefinition): ModelDescriptor {
@@ -35,8 +38,12 @@ function bundledModel(definition: BundledModelDefinition): ModelDescriptor {
       : { maxOutputTokens: definition.maxOutputTokens }),
     thinking: {
       mode: definition.thinking ?? 'none',
-      effortLevels: [],
+      effortLevels: [...(definition.effortLevels ?? [])],
+      ...(definition.defaultEffort === undefined
+        ? {}
+        : { defaultEffort: definition.defaultEffort }),
     },
+    ...(definition.isDefault === undefined ? {} : { isDefault: definition.isDefault }),
     source: 'bundled',
     availability: 'unverified',
   };
@@ -51,6 +58,7 @@ export const BUNDLED_MODEL_CATALOG: ModelDescriptor[] = [
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
     thinking: 'always-adaptive',
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
   }),
   bundledModel({
     id: 'claude-opus-4-8',
@@ -60,6 +68,7 @@ export const BUNDLED_MODEL_CATALOG: ModelDescriptor[] = [
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
     thinking: 'adaptive',
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
   }),
   bundledModel({
     id: 'claude-sonnet-5',
@@ -69,69 +78,24 @@ export const BUNDLED_MODEL_CATALOG: ModelDescriptor[] = [
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
     thinking: 'adaptive',
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
   }),
   bundledModel({
-    id: 'claude-opus-4-6',
-    label: 'Claude Opus 4.6',
-    provider: 'anthropic',
-    authModes: OAUTH_AND_API_KEY,
-    contextWindow: 200_000,
-    thinking: 'adaptive',
-  }),
-  bundledModel({
-    id: 'claude-sonnet-4-6',
-    label: 'Claude Sonnet 4.6',
-    provider: 'anthropic',
-    authModes: OAUTH_AND_API_KEY,
-    contextWindow: 200_000,
-    thinking: 'manual',
-  }),
-  bundledModel({
-    id: 'claude-opus-4-5-20251101',
-    label: 'Claude Opus 4.5',
-    provider: 'anthropic',
-    authModes: OAUTH_AND_API_KEY,
-    contextWindow: 200_000,
-    thinking: 'manual',
-  }),
-  bundledModel({
-    id: 'claude-haiku-4-5-20251001',
-    label: 'Claude Haiku 4.5',
-    provider: 'anthropic',
-    authModes: OAUTH_AND_API_KEY,
-    contextWindow: 200_000,
-  }),
-  bundledModel({
-    id: 'gpt-5.3-codex',
-    label: 'GPT-5.3 Codex',
+    id: 'gpt-5.6-sol',
+    label: 'GPT-5.6 Sol',
     provider: 'openai',
     authModes: OAUTH_AND_API_KEY,
     backend: 'codex-app-server',
-    contextWindow: 1_047_576,
+    contextWindow: 1_000_000,
     thinking: 'manual',
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultEffort: 'low',
+    isDefault: true,
   }),
   bundledModel({
     id: 'gpt-5.2',
     label: 'GPT-5.2',
     provider: 'openai',
-    contextWindow: 400_000,
-    thinking: 'manual',
-  }),
-  bundledModel({
-    id: 'gpt-5.2-codex',
-    label: 'GPT-5.2 Codex',
-    provider: 'openai',
-    authModes: OAUTH_AND_API_KEY,
-    backend: 'codex-app-server',
-    contextWindow: 1_047_576,
-    thinking: 'manual',
-  }),
-  bundledModel({
-    id: 'gpt-5.1-codex-mini',
-    label: 'GPT-5.1 Codex Mini',
-    provider: 'openai',
-    authModes: OAUTH_AND_API_KEY,
-    backend: 'codex-app-server',
     contextWindow: 400_000,
     thinking: 'manual',
   }),

@@ -13,13 +13,13 @@ import type { SupportedProvider } from '../providers/types';
 // ============================================
 
 /** Valid model shorthands used throughout the application */
-export type ModelShorthand = 'opus' | 'opus-1m' | 'opus-4.5' | 'sonnet' | 'haiku';
+export type ModelShorthand = 'fable' | 'opus' | 'opus-1m' | 'opus-4.5' | 'sonnet' | 'haiku';
 
 /** Valid thinking levels */
-export type ThinkingLevel = 'low' | 'medium' | 'high' | 'xhigh';
+export type ThinkingLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 /** Valid effort levels for adaptive thinking models */
-export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh';
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 /** Execution phases for task pipeline */
 export type Phase = 'spec' | 'planning' | 'coding' | 'qa';
@@ -35,11 +35,12 @@ export type Phase = 'spec' | 'planning' | 'coding' | 'qa';
  * - apps/desktop/src/shared/constants/models.ts MODEL_ID_MAP
  */
 export const MODEL_ID_MAP: Record<ModelShorthand, string> = {
-  opus: 'claude-opus-4-6',
-  'opus-1m': 'claude-opus-4-6',
-  'opus-4.5': 'claude-opus-4-5-20251101',
-  sonnet: 'claude-sonnet-4-6',
-  haiku: 'claude-haiku-4-5-20251001',
+  fable: 'claude-fable-5',
+  opus: 'claude-opus-4-8',
+  'opus-1m': 'claude-opus-4-8',
+  'opus-4.5': 'claude-opus-4-8',
+  sonnet: 'claude-sonnet-5',
+  haiku: 'claude-fable-5',
 } as const;
 
 /**
@@ -65,6 +66,7 @@ export const THINKING_BUDGET_MAP: Record<ThinkingLevel, number> = {
   medium: 4096,
   high: 16384,
   xhigh: 32768,
+  max: 65536,
 } as const;
 
 /**
@@ -76,6 +78,7 @@ export const EFFORT_LEVEL_MAP: Record<EffortLevel, string> = {
   medium: 'medium',
   high: 'high',
   xhigh: 'xhigh',
+  max: 'max',
 } as const;
 
 /**
@@ -83,6 +86,9 @@ export const EFFORT_LEVEL_MAP: Record<EffortLevel, string> = {
  * These models get both max_thinking_tokens AND effort_level.
  */
 export const ADAPTIVE_THINKING_MODELS: ReadonlySet<string> = new Set([
+  'claude-fable-5',
+  'claude-opus-4-8',
+  'claude-sonnet-5',
   'claude-opus-4-6',
 ]);
 
@@ -224,6 +230,7 @@ export function buildThinkingProviderOptions(
           medium: 'medium',
           high: 'high',
           xhigh: 'high',
+          max: 'high',
         };
         return { openai: { reasoningEffort: effortMap[thinkingLevel] } };
       }

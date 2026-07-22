@@ -28,6 +28,7 @@ export type ModelCatalogErrorCode =
 export interface ModelThinkingSupport {
   mode: ModelThinkingMode;
   effortLevels: string[];
+  defaultEffort?: string;
 }
 
 export interface ModelDescriptor {
@@ -38,6 +39,7 @@ export interface ModelDescriptor {
   backend: ModelBackend;
   contextWindow?: number;
   maxOutputTokens?: number;
+  isDefault?: boolean;
   thinking: ModelThinkingSupport;
   source: ModelDescriptorSource;
   availability: ModelAvailability;

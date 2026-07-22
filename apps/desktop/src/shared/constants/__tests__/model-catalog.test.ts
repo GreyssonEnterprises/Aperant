@@ -42,43 +42,53 @@ describe('BUNDLED_MODEL_CATALOG', () => {
       backend: 'vercel',
       contextWindow: 1_000_000,
       maxOutputTokens: 128_000,
-      thinking: { mode: thinkingMode, effortLevels: [] },
+      thinking: {
+        mode: thinkingMode,
+        effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+      },
     });
   });
 
-  it('retains the concrete Haiku model used by legacy aliases', () => {
-    expect(
-      findModelDescriptor(
-        BUNDLED_MODEL_CATALOG,
-        'anthropic',
-        'claude-haiku-4-5-20251001',
-      ),
-    ).toMatchObject({
-      label: 'Claude Haiku 4.5',
-      thinking: { mode: 'none' },
-    });
+  it('exposes only the three current Anthropic choices', () => {
+    expect(BUNDLED_MODEL_CATALOG
+      .filter((model) => model.provider === 'anthropic')
+      .map((model) => model.id)).toEqual([
+        'claude-fable-5',
+        'claude-opus-4-8',
+        'claude-sonnet-5',
+      ]);
   });
 
-  it('is re-exported without changing legacy aliases or saved values', () => {
+  it('maps current Anthropic aliases without surfacing legacy choices', () => {
     expect(MODELS_MODULE_CATALOG).toBe(BUNDLED_MODEL_CATALOG);
     expect(AVAILABLE_MODELS.map((model) => model.value)).toEqual([
+      'fable',
       'opus',
-      'opus-1m',
-      'opus-4.5',
       'sonnet',
-      'haiku',
     ]);
     expect(MODEL_ID_MAP).toMatchObject({
-      opus: 'claude-opus-4-6',
-      'opus-1m': 'claude-opus-4-6',
-      'opus-4.5': 'claude-opus-4-5-20251101',
-      sonnet: 'claude-sonnet-4-6',
-      haiku: 'claude-haiku-4-5-20251001',
+      fable: 'claude-fable-5',
+      opus: 'claude-opus-4-8',
+      sonnet: 'claude-sonnet-5',
     });
     expect(getModelContextWindow('claude-sonnet-5')).toBe(1_000_000);
     expect(
       getReasoningConfigForModel('claude-fable-5', 'anthropic'),
     ).toEqual({ type: 'adaptive_effort', level: 'high' });
+  });
+
+  it('describes the Codex default with a 1M context window', () => {
+    expect(findModelDescriptor(BUNDLED_MODEL_CATALOG, 'openai', 'gpt-5.6-sol'))
+      .toMatchObject({
+        label: 'GPT-5.6 Sol',
+        contextWindow: 1_000_000,
+        isDefault: true,
+        thinking: {
+          mode: 'manual',
+          defaultEffort: 'low',
+          effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+        },
+      });
   });
 });
 

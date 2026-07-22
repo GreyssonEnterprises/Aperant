@@ -102,7 +102,15 @@ interface PendingSession {
   processEnded?: boolean;
 }
 
+const SUPPORTED_REASONING_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+
 function toDescriptor(model: CodexModel): ModelDescriptor {
+  const effortLevels = model.supportedReasoningEfforts
+    .map((effort) => effort.reasoningEffort)
+    .filter((effort) => SUPPORTED_REASONING_EFFORTS.has(effort));
+  const defaultEffort = SUPPORTED_REASONING_EFFORTS.has(model.defaultReasoningEffort)
+    ? model.defaultReasoningEffort
+    : effortLevels[0];
   return {
     id: model.model,
     label: model.displayName,
@@ -110,9 +118,11 @@ function toDescriptor(model: CodexModel): ModelDescriptor {
     authModes: ['oauth'],
     backend: 'codex-app-server',
     thinking: {
-      mode: model.supportedReasoningEfforts.length > 0 ? 'manual' : 'none',
-      effortLevels: model.supportedReasoningEfforts.map((effort) => effort.reasoningEffort),
+      mode: effortLevels.length > 0 ? 'manual' : 'none',
+      effortLevels,
+      ...(defaultEffort === undefined ? {} : { defaultEffort }),
     },
+    isDefault: model.isDefault,
     source: 'provider',
     availability: 'available',
   };

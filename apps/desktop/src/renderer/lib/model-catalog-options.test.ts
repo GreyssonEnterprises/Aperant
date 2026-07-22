@@ -10,8 +10,8 @@ import {
 
 function descriptor(overrides: Partial<ModelDescriptor> = {}): ModelDescriptor {
   return {
-    id: 'claude-opus-4-6',
-    label: 'Claude Opus 4.6',
+    id: 'claude-opus-4-8',
+    label: 'Claude Opus 4.8',
     provider: 'anthropic',
     authModes: ['api-key'],
     backend: 'vercel',
@@ -24,7 +24,7 @@ function descriptor(overrides: Partial<ModelDescriptor> = {}): ModelDescriptor {
 }
 
 describe('catalog model options', () => {
-  it('keeps legacy Anthropic aliases while adding discovered IDs', () => {
+  it('shows only current Anthropic aliases from provider discovery', () => {
     const options = toCatalogModelOptions([
       descriptor(),
       descriptor({ id: 'claude-new', label: 'Claude New', source: 'provider' }),
@@ -32,8 +32,34 @@ describe('catalog model options', () => {
 
     expect(options).toEqual(expect.arrayContaining([
       expect.objectContaining({ value: 'opus', provider: 'anthropic' }),
-      expect.objectContaining({ value: 'claude-new', provider: 'anthropic' }),
     ]));
+    expect(options.some((option) => option.value === 'claude-new')).toBe(false);
+  });
+
+  it('preserves context, default, and effort metadata for Codex models', () => {
+    const options = toCatalogModelOptions([descriptor({
+      id: 'gpt-5.6-sol',
+      label: 'GPT-5.6 Sol',
+      provider: 'openai',
+      authModes: ['oauth'],
+      backend: 'codex-app-server',
+      contextWindow: 1_000_000,
+      isDefault: true,
+      thinking: {
+        mode: 'manual',
+        defaultEffort: 'low',
+        effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+      },
+    })]);
+
+    expect(options.find((option) => option.value === 'gpt-5.6-sol')).toMatchObject({
+      isDefault: true,
+      capabilities: { contextWindow: 1_000_000 },
+      thinking: {
+        defaultEffort: 'low',
+        effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+      },
+    });
   });
 
   it('groups catalog options by provider', () => {

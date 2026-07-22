@@ -3,13 +3,15 @@ import {
   MODEL_ID_MAP,
   type ModelOption,
 } from '@shared/constants/models';
-import type { ModelAvailability, ModelDescriptor } from '@shared/types/model-catalog';
+import type { ModelAvailability, ModelDescriptor, ModelThinkingSupport } from '@shared/types/model-catalog';
 import type { BuiltinProvider } from '@shared/types/provider-account';
 import { isCodexSubscriptionModel } from '@shared/utils/model-catalog';
 
 export interface CatalogModelOption extends ModelOption {
   availability: ModelAvailability;
   accountId?: string;
+  thinking?: ModelThinkingSupport;
+  isDefault?: boolean;
 }
 
 function descriptorToOption(descriptor: ModelDescriptor): CatalogModelOption {
@@ -19,6 +21,11 @@ function descriptorToOption(descriptor: ModelDescriptor): CatalogModelOption {
     label: descriptor.label,
     provider: descriptor.provider,
     availability: deferredCodex ? 'unavailable' : descriptor.availability,
+    thinking: {
+      ...descriptor.thinking,
+      effortLevels: [...descriptor.thinking.effortLevels],
+    },
+    ...(descriptor.isDefault === undefined ? {} : { isDefault: descriptor.isDefault }),
     capabilities: {
       thinking: descriptor.thinking.mode !== 'none' && descriptor.thinking.mode !== 'unknown',
       tools: true,
@@ -51,16 +58,18 @@ export function toCatalogModelOptions(
       ...legacy,
       label: descriptor.label || legacy.label,
       availability: descriptorToOption(descriptor).availability,
+      thinking: descriptorToOption(descriptor).thinking,
+      ...(descriptor.isDefault === undefined ? {} : { isDefault: descriptor.isDefault }),
       capabilities: legacy.capabilities ?? descriptorToOption(descriptor).capabilities,
     });
   }
 
   const aliasedAnthropicIds = new Set(Object.values(MODEL_ID_MAP));
   for (const descriptor of descriptors) {
-    if (descriptor.provider === 'anthropic' &&
-        descriptor.source === 'bundled' &&
-        aliasedAnthropicIds.has(descriptor.id)) {
-      continue;
+    if (descriptor.provider === 'anthropic' && descriptor.source !== 'custom') {
+      if (aliasedAnthropicIds.has(descriptor.id) || descriptor.source === 'provider') {
+        continue;
+      }
     }
     add(descriptorToOption(descriptor));
   }
